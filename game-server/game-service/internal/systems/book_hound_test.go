@@ -1,6 +1,7 @@
 package systems
 
 import (
+	"bytes"
 	"math"
 	"testing"
 
@@ -17,7 +18,7 @@ import (
 const houndHome = 500.0
 
 // callHound has a level-15 archer at (houndHome, houndHome) call the hound at
-// (houndHome + x, houndHome) and lets the 2 s cast run out. The books are the
+// (houndHome + x, houndHome) and lets the 2 s cast run out, its own tick counted. The books are the
 // world's.
 func callHound(t *testing.T, em *ecs.EntityManager, archer *ecs.Entity, x float64) *ecs.Entity {
 	t.Helper()
@@ -28,10 +29,10 @@ func callHound(t *testing.T, em *ecs.EntityManager, archer *ecs.Entity, x float6
 	}
 	require.NoError(t, books.Cast(BookCast{
 		Caster: archer, Page: page, TargetX: houndHome + x, TargetY: houndHome,
-		CellSize: testCell, BookWorld: BookWorld{Walkable: anyGround},
+		CellSize: testCell, BookGround: BookGround{Walkable: anyGround},
 	}))
-	for range ticksOf(2) + 1 {
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookWorld{Walkable: anyGround})
+	for range ticksOf(2) {
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
 	}
 	hound, ok := houndOfArcher(em, archer)
 	require.True(t, ok, "the hound is called")
@@ -278,4 +279,50 @@ func distanceOf(t *testing.T, a, b *ecs.Entity) float64 {
 	at, _ := centreOf(a)
 	to, _ := centreOf(b)
 	return math.Hypot(to.X-at.X, to.Y-at.Y)
+}
+
+// A hound whose 40 s run out on this tick is taken from the world at the
+// tick's start, and acts no more on the tick's own entities: no bite lands, so
+// no kill is the archer's, and no monster takes it as a quarry. R28 "When its
+// time is up it is gone".
+func TestHound_OnTheTickItsTimeIsUpItActsNoMore(t *testing.T) {
+	em := ecs.NewEntityManager()
+	archer := houndArcher(em)
+	hound := callHound(t, em, archer, 3*testCell)
+	moveTo(t, archer, houndHome-20*testCell, houndHome) // out of every aggro
+	g := held(em, 3*testCell+40, 0, 10)                 // in reach: a bite kills it
+	h := hunter(em, houndHome+5*testCell, houndHome)    // the hound inside its aggro
+	ec, _ := hound.GetComponent(ecs.ComponentTypeBookEffect)
+	ec.(*components.BookEffectComponent).Remaining = castTick // its last tick
+	houndT(t, hound).BiteIn = 0
+	floor := newHoundFloor(em)
+
+	entities := em.GetAllEntities() // the tick's entities, as the session reads them once
+	NewBookSystem(em).Update(castTick, entities)
+	floor.ai.Update(castTick, entities)
+	kills := floor.combat.Update(castTick, entities, nil)
+
+	assert.Empty(t, houndsIn(em), "gone at 40 s")
+	assert.Empty(t, kills, "no bite on its last tick")
+	assert.Equal(t, 10, healthT(t, g).CurrentHealth)
+	assert.NotEqual(t, hound.ID, monster(h).Target, "no quarry")
+}
+
+// Two monsters as near as each other: the hound takes the one with the lower
+// entity id, whatever order the world lists them in. R28.
+func TestNearestMonster_BreaksATieByEntityID(t *testing.T) {
+	em := ecs.NewEntityManager()
+	a := ghoul(em, houndHome+testCell, houndHome, 50)
+	b := ghoul(em, houndHome-testCell, houndHome, 50)
+	want := a
+	if bytes.Compare(b.ID[:], a.ID[:]) < 0 {
+		want = b
+	}
+	at := components.NewTransformComponent(houndHome, houndHome)
+
+	for _, order := range [][]*ecs.Entity{{a, b}, {b, a}} {
+		got, ok := nearestMonster(at, 5*testCell, order)
+		require.True(t, ok)
+		assert.Equal(t, want.ID, got.ID)
+	}
 }

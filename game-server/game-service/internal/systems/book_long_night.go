@@ -11,8 +11,8 @@ import (
 /**
 * The Scar of the Long Night gives the warrior long night for 6 s. While it
 * runs every living monster within 5 cells of the warrior, there when it
-* starts or come since, takes the warrior as its target and holds them as a
-* retaliation is held, past its leash; and every hit on the warrior deals 30 %
+* starts or come since, takes the warrior as its target and holds them past
+* its leash, marked taunted; and every hit on the warrior deals 30 %
 * less. A stunned monster stays stunned. When it ends, monsters choose their
 * targets as they normally do. FS-X2CMM §E R31.
 *
@@ -32,11 +32,9 @@ const (
 )
 
 // resolveLongNight sets long night on the warrior, its reach measured in the
-// cast's floor cell.
+// cast's floor cell; the reach goes with the state (stateComponents).
 func resolveLongNight(_ *ecs.EntityManager, cast BookCast) {
-	if book, ok := bookOf(cast.Caster); ok {
-		book.LongNightReach = longNightCells * cast.CellSize
-	}
+	cast.Caster.AddComponent(&components.LongNightComponent{Reach: longNightCells * cast.CellSize})
 	setBookState(cast.Caster, components.BookStateLongNight, longNightSeconds)
 }
 
@@ -54,8 +52,9 @@ func longNights(dst []longNight, entities []*ecs.Entity) []longNight {
 		if !ok || !nightRuns(book) || !InPlay(entity) {
 			continue
 		}
-		if at, ok := centreOf(entity); ok {
-			dst = append(dst, longNight{quarry: quarry{id: entity.ID, at: at}, reach: book.LongNightReach})
+		nc, hasReach := entity.GetComponent(ecs.ComponentTypeLongNight)
+		if at, ok := centreOf(entity); ok && hasReach {
+			dst = append(dst, longNight{quarry: quarry{id: entity.ID, at: at}, reach: nc.(*components.LongNightComponent).Reach})
 		}
 	}
 	return dst
@@ -63,24 +62,27 @@ func longNights(dst []longNight, entities []*ecs.Entity) []longNight {
 
 // taunt turns the monster on a warrior under the Long Night before it settles
 // its target: the one it already holds, else the nearest within whose reach it
-// stands. It holds them as a retaliation is, so its leash does not drop them
-// while the night runs. A stun is left as it is: the monster takes the target
-// and stands.
+// stands. It marks the monster taunted, so its leash does not drop them while
+// the night runs; with no night holding it the mark is cleared, and the monster
+// settles its target as it normally does. A stun is left as it is: the monster
+// takes the target and stands.
 func (s *MonsterAISystem) taunt(monster *components.MonsterComponent, at *components.TransformComponent) {
 	warrior, ok := heldNight(monster.Target, s.nights)
 	if !ok {
 		warrior, ok = nearestNight(at, s.nights)
 	}
+	monster.Taunted = ok
 	if !ok {
 		return
 	}
 	if monster.Target != warrior.id {
 		monster.Target = warrior.id
-		// a new target, as target() takes one: somewhere fresh, no stale path
+		// a new target, as target() takes one: somewhere fresh, no stale path,
+		// and no retaliation on whoever it held before
 		monster.Wander = components.Wandering{}
 		forget(&monster.Route)
+		monster.Retaliating = false
 	}
-	monster.Retaliating = true
 }
 
 // heldNight is the warrior under the night the monster already holds.

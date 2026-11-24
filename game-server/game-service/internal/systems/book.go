@@ -50,12 +50,12 @@ type BookCast struct {
 	Target *ecs.Entity
 	// CellSize is the floor's cell edge in px, the unit of every range.
 	CellSize float64
-	BookWorld
+	BookGround
 }
 
-// BookWorld is what a page reads of its world past the entities: the floor's
+// BookGround is what a page reads of its world past the entities: the floor's
 // ground and how a body moves over it. The session's; a test's stand-in.
-type BookWorld struct {
+type BookGround struct {
 	// Walkable is whether a point is ground a body could stand on, not rock
 	// or a wall: a ground page's point must be (R14). Nil walks nowhere.
 	Walkable func(x, y float64) bool
@@ -177,25 +177,31 @@ func (s *BookSystem) resolve(cast BookCast, book *components.BookComponent) {
 	pageResolvers[cast.Page.ID](s.em, cast)
 }
 
-// Update runs every book down by the tick: its book cooldowns and its timed
-// states, each gone once its time is up, and a drunk draught's heal; and the
-// floor's book effects, each taken from the world once its time is up (a hound
-// too at no health). A rune
-// first catches what stands on it, and goes on its third catch. It runs
-// before the monsters think, so a monster caught stands from this tick. Simulation time; a book's across
-// floors. FS-X2CMM §A R8, §E R21, R24, R27.
+// Update is the books' tick, in simulation time: the floor's book effects
+// first (ageBookEffects), then each drinker's draught heal, then every book
+// run down. It runs before the monsters think, so a monster a rune caught
+// stands from this tick. FS-X2CMM §A R8, §E R21, R24, R27.
 func (s *BookSystem) Update(deltaTime float64, entities []*ecs.Entity) {
+	s.ageBookEffects(deltaTime, entities)
+	s.healDraughts(deltaTime, entities)
+	runDownBooks(deltaTime, entities)
+}
+
+// stateComponents is the component a timed book state keeps on its delver,
+// taken off when the state ends.
+var stateComponents = map[components.BookStateName]ecs.ComponentType{
+	components.BookStateLongNight: ecs.ComponentTypeLongNight,
+	components.BookStateDraught:   ecs.ComponentTypeDraughtHeal,
+}
+
+// runDownBooks runs every book down by the tick: its book cooldowns and its
+// timed states, each gone once its time is up, a state's own component with
+// it. A book's run across floors.
+func runDownBooks(deltaTime float64, entities []*ecs.Entity) {
 	for _, entity := range entities {
-		if s.catchOnRune(entity, entities) {
-			continue // spent on its third catch, and gone
-		}
-		s.ageBookEffect(entity, deltaTime)
 		book, ok := bookOf(entity)
 		if !ok {
 			continue
-		}
-		if book.Draught != nil {
-			healDraught(entity, book, deltaTime)
 		}
 		for id, cooldown := range book.Cooldowns {
 			if cooldown.Remaining -= deltaTime; cooldown.Remaining <= 0 {
@@ -207,6 +213,9 @@ func (s *BookSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 		for name, left := range book.States {
 			if left -= deltaTime; left <= 0 {
 				delete(book.States, name)
+				if kept, ok := stateComponents[name]; ok {
+					entity.RemoveComponent(kept)
+				}
 				continue
 			}
 			book.States[name] = left

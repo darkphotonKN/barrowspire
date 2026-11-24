@@ -132,6 +132,10 @@ type MonsterComponent struct {
 	// beyond the leash radius and it has not yet closed inside that radius of
 	// them: until it does, the leash does not apply to them.
 	Retaliating bool
+	// Taunted is set while a warrior's Long Night holds it on them: the leash
+	// does not apply to them until the night ends (FS-X2CMM R31). The night
+	// sets and clears it each tick (MonsterAISystem.taunt).
+	Taunted bool
 
 	// Wander is its walk around home while it has no target.
 	Wander Wandering

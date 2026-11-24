@@ -22,7 +22,7 @@ func anyGround(_, _ float64) bool { return true }
 func witchlightCast(em *ecs.EntityManager, x float64) (*ecs.Entity, BookCast) {
 	mage := bookDelver(em, "mage", 2, 0, 0, components.PageWitchlight)
 	page, _ := BookPageOf(string(components.PageWitchlight))
-	return mage, BookCast{Caster: mage, Page: page, TargetX: x, CellSize: testCell, BookWorld: BookWorld{Walkable: anyGround}}
+	return mage, BookCast{Caster: mage, Page: page, TargetX: x, CellSize: testCell, BookGround: BookGround{Walkable: anyGround}}
 }
 
 // castTicks counts the casts of the world through n ticks, nothing else in it
@@ -30,7 +30,7 @@ func witchlightCast(em *ecs.EntityManager, x float64) (*ecs.Entity, BookCast) {
 func castTicks(s *BookSystem, em *ecs.EntityManager, n int) {
 	for range n {
 		s.Update(castTick, em.GetAllEntities())
-		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookWorld{Walkable: anyGround})
+		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
 	}
 }
 
@@ -46,7 +46,7 @@ func bookEffectsOf(em *ecs.EntityManager) []*components.BookEffectComponent {
 
 // A cast with a cast time starts casting on its tick and has its effect only
 // once the cast time has run out: nothing is paid until then. 1 s at 30 ticks
-// a second completes on the 30th tick after the cast's own. R16–R17, R21.
+// a second completes on the 30th tick, the cast's own counted. R16–R17, R21.
 func TestBookSystemCast_WitchlightSetsDownItsLightOnlyAfterItsCastTime(t *testing.T) {
 	em := ecs.NewEntityManager()
 	mage, cast := witchlightCast(em, 5*testCell)
@@ -61,9 +61,9 @@ func TestBookSystemCast_WitchlightSetsDownItsLightOnlyAfterItsCastTime(t *testin
 	assert.Equal(t, 100, pool.Current, "nothing paid at the start")
 	assert.Empty(t, book.Cooldowns)
 
-	// the cast's own tick, then 29 more: still casting
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookWorld{Walkable: anyGround})
-	castTicks(books, em, 29)
+	// the cast's own tick, then 28 more: still casting
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
+	castTicks(books, em, 28)
 	require.NotNil(t, book.Casting, "still casting before 1 s")
 	assert.Empty(t, bookEffectsOf(em), "no light yet")
 
@@ -144,7 +144,7 @@ func TestBookSystemAdvanceCasts_BreaksWithNothingSpent(t *testing.T) {
 			mage, cast := witchlightCast(em, 5*testCell)
 			books := NewBookSystem(em)
 			require.NoError(t, books.Cast(cast))
-			castTicks(books, em, 30)
+			castTicks(books, em, 29)
 			book := bookOfT(t, mage)
 			require.NotNil(t, book.Casting, "one tick from completing")
 			// the tick's entities are read before anything takes a body out
@@ -152,7 +152,7 @@ func TestBookSystemAdvanceCasts_BreaksWithNothingSpent(t *testing.T) {
 			books.MarkHealth(entities)
 
 			attackers := tt.breakIt(em, mage)
-			books.AdvanceCasts(castTick, entities, attackers, BookWorld{Walkable: anyGround})
+			books.AdvanceCasts(castTick, entities, attackers, BookGround{Walkable: anyGround})
 
 			assert.Nil(t, book.Casting, "the cast is broken")
 			pool, _ := bookPool(mage)
@@ -175,7 +175,7 @@ func TestBookSystemAdvanceCasts_AHealBeforeTheMarkBreaksNothing(t *testing.T) {
 
 	hc.(*components.HealthComponent).CurrentHealth = 60
 	books.MarkHealth(em.GetAllEntities())
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookWorld{Walkable: anyGround})
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
 
 	assert.NotNil(t, bookOfT(t, mage).Casting, "a heal breaks nothing")
 }
@@ -221,7 +221,7 @@ func TestBookSystemAdvanceCasts_CompletionRechecksTheTarget(t *testing.T) {
 	require.NoError(t, books.Cast(cast))
 
 	for range 31 {
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookWorld{Walkable: func(_, _ float64) bool { return false }})
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: func(_, _ float64) bool { return false }})
 	}
 
 	assert.Empty(t, bookEffectsOf(em), "no light on rock")

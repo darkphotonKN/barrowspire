@@ -97,10 +97,10 @@ func HoundOf(entity *ecs.Entity) (*components.HoundComponent, bool) {
 	return hc.(*components.HoundComponent), true
 }
 
-// standingHound is whether the entity is a hound with health left: a body a
-// monster may take as its quarry.
+// standingHound is whether the entity is a hound with health and time left: a
+// body a monster may take as its quarry, that bites and heels.
 func standingHound(entity *ecs.Entity) bool {
-	return entity.HasComponent(ecs.ComponentTypeHound) && alive(entity)
+	return entity.HasComponent(ecs.ComponentTypeHound) && alive(entity) && !BookEffectExpired(entity)
 }
 
 // houndDown is whether the entity is a hound at no health: it goes on the
@@ -125,7 +125,7 @@ func sparesHound(attack components.AttackSnapshot, target *ecs.Entity) bool {
 func (s *MonsterAISystem) runHounds(deltaTime float64, entities []*ecs.Entity) {
 	for _, entity := range entities {
 		hound, ok := HoundOf(entity)
-		if !ok || !alive(entity) {
+		if !ok || !standingHound(entity) {
 			continue
 		}
 		at, hasPlace := centreOf(entity)
@@ -190,7 +190,8 @@ func unitToward(at *components.TransformComponent, x, y float64) (float64, float
 	return dx / d, dy / d
 }
 
-// nearestMonster is the nearest living monster within radius of at.
+// nearestMonster is the nearest living monster within radius of at, the
+// lower entity id at a tie (nearerFirst).
 func nearestMonster(at *components.TransformComponent, radius float64, entities []*ecs.Entity) (*ecs.Entity, bool) {
 	var best *ecs.Entity
 	bestDistance := math.Inf(1)
@@ -202,7 +203,7 @@ func nearestMonster(at *components.TransformComponent, radius float64, entities 
 		if !ok {
 			continue
 		}
-		if d := distance(at, to); d <= radius && d < bestDistance {
+		if d := distance(at, to); d <= radius && (best == nil || nearerFirst(d, entity.ID, bestDistance, best.ID) < 0) {
 			best, bestDistance = entity, d
 		}
 	}
@@ -219,7 +220,7 @@ func nearestMonster(at *components.TransformComponent, radius float64, entities 
 func (s *CombatSystem) houndsBite(deltaTime float64, entities []*ecs.Entity) {
 	for _, entity := range entities {
 		hound, ok := HoundOf(entity)
-		if !ok || !alive(entity) {
+		if !ok || !standingHound(entity) {
 			continue
 		}
 		if hound.BiteIn = max(hound.BiteIn-deltaTime, 0); hound.BiteIn > castEpsilon {

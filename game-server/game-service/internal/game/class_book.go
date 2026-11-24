@@ -60,13 +60,13 @@ func (s *Session) castPage(playerID uuid.UUID, page systems.BookPage, cast types
 	}
 
 	err := systems.NewBookSystem(s.EntityManager).Cast(systems.BookCast{
-		Caster:    caster,
-		Page:      page,
-		TargetX:   cast.TargetX,
-		TargetY:   cast.TargetY,
-		Target:    s.pageTarget(cast.TargetID),
-		CellSize:  s.bookCellSize(),
-		BookWorld: s.bookWorld(),
+		Caster:     caster,
+		Page:       page,
+		TargetX:    cast.TargetX,
+		TargetY:    cast.TargetY,
+		Target:     s.pageTarget(cast.TargetID),
+		CellSize:   s.bookCellSize(),
+		BookGround: s.bookGround(),
 	})
 	if err != nil {
 		slog.Debug("Refusing a book ability", "session_id", s.ID, "player_id", playerID, "page", page.ID, "reason", err)
@@ -129,14 +129,14 @@ func (s *Session) advanceCasts(deltaTime float64, entities []*ecs.Entity, attack
 	if s.worldType != types.WorldTypeRun {
 		return
 	}
-	systems.NewBookSystem(s.EntityManager).AdvanceCasts(deltaTime, entities, attackers, s.bookWorld())
+	systems.NewBookSystem(s.EntityManager).AdvanceCasts(deltaTime, entities, attackers, s.bookGround())
 }
 
-// bookWorld is the run's floor as a page reads it: its ground, the walk's own
+// bookGround is the run's floor as a page reads it: its ground, the walk's own
 // ground a move over it lands on (as a blink's does), and the combat's end to
 // a charge in flight. FS-X2CMM §C R14, §E R25.
-func (s *Session) bookWorld() systems.BookWorld {
-	return systems.BookWorld{
+func (s *Session) bookGround() systems.BookGround {
+	return systems.BookGround{
 		Walkable:  s.pageGround,
 		Ground:    s.movementSystem,
 		EndCharge: s.combatSystem.EndCharge,

@@ -54,7 +54,7 @@ func TestCastSkill_BindingGlyphLaysARuneThatStunsAGhoulOnIt(t *testing.T) {
 	x := 500 + 6*cell
 
 	require.NoError(t, castBindingGlyph(s, mage, x, 500))
-	ticks(s, castTicks(2.5)+1)
+	ticks(s, castTicks(2.5))
 
 	require.Len(t, runes(s), 1, "the rune is laid")
 	assert.Equal(t, manaBefore-40, currentResource(body), "40 mana")
@@ -87,7 +87,7 @@ func TestRegenerateFloor_ClearsTheRunes(t *testing.T) {
 	gx, gy := groundNear(t, s, at.X, at.Y, 2)
 
 	require.NoError(t, castBindingGlyph(s, mage, gx, gy))
-	ticks(s, castTicks(2.5)+1)
+	ticks(s, castTicks(2.5))
 	require.Len(t, runes(s), 1, "the rune is laid")
 
 	require.NoError(t, s.regenerateFloor())

@@ -5,6 +5,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,6 +43,9 @@ func TestBookSystemCast_TheLongNightGivesTheWarriorItsStateFor6s(t *testing.T) {
 
 	book := bookOfT(t, warrior)
 	assert.Equal(t, 6.0, book.States[components.BookStateLongNight])
+	nc, ok := warrior.GetComponent(ecs.ComponentTypeLongNight)
+	require.True(t, ok, "the night's reach rides the warrior")
+	assert.Equal(t, 5*testCell, nc.(*components.LongNightComponent).Reach, "5 cells")
 	assert.Equal(t, 60, pool(warrior), "100 - 40 stamina")
 	assert.Equal(t, components.BookCooldown{Remaining: 120, Total: 120}, book.Cooldowns[components.PageLongNight])
 }
@@ -130,11 +134,55 @@ func TestMonsterAISystem_AfterTheLongNightMonstersPickTheirTargetsNormally(t *te
 		books.Update(tickSeconds, em.GetAllEntities())
 	}
 	require.NotContains(t, bookOfT(t, warrior).States, components.BookStateLongNight, "the night is over")
+	assert.False(t, warrior.HasComponent(ecs.ComponentTypeLongNight), "its reach goes with it")
 	g := chasing(em, 3*testCell, mate)
 
 	think(em)
 
 	assert.Equal(t, mate.ID, monster(g).Target)
+}
+
+// A monster the night held past its leash is let go when the night ends: it
+// picks its target as it normally does, and the warrior beyond its leash is
+// dropped. R31 "When it ends".
+func TestMonsterAISystem_AMonsterHeldPastItsLeashIsLetGoWhenTheLongNightEnds(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		retaliating bool
+	}{
+		{"turned from no target", false},
+		// a leash shorter than the night's 5 cells: turned outside it
+		{"turned from a retaliation on the teammate", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			em, books, warrior, mate := nightField(t)
+			g := hunter(em, 4*testCell, 0)
+			if tt.retaliating {
+				monster(g).Target, monster(g).Retaliating = mate.ID, true
+				monster(g).LeashRadius = 300
+			}
+			heldPastTheNight(t, em, books, warrior, g)
+		})
+	}
+}
+
+// heldPastTheNight turns the monster on the warrior, drags it past its leash,
+// lets the night run out, and asserts the warrior is dropped.
+func heldPastTheNight(t *testing.T, em *ecs.EntityManager, books *BookSystem, warrior, g *ecs.Entity) {
+	t.Helper()
+	think(em)
+	require.Equal(t, warrior.ID, monster(g).Target, "turned")
+	moveTo(t, g, 0, 700) // past its leash of the warrior, 761 px from the teammate
+	think(em)
+	require.Equal(t, warrior.ID, monster(g).Target, "held while the night runs")
+
+	for range ticks(6) {
+		books.Update(tickSeconds, em.GetAllEntities())
+	}
+	require.NotContains(t, bookOfT(t, warrior).States, components.BookStateLongNight, "the night is over")
+	think(em)
+
+	assert.Equal(t, uuid.Nil, monster(g).Target, "dropped at the leash")
 }
 
 // Every hit on a warrior under the Long Night deals 30 % less: the troll's 30

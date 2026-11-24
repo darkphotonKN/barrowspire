@@ -40,7 +40,7 @@ func brewedDraught(t *testing.T, em *ecs.EntityManager) (archer, draught *ecs.En
 	books := NewBookSystem(em)
 	require.NoError(t, books.Cast(selfCast(archer, components.PageBrew)))
 	for range 91 { // the cast's 3 s, and the tick it completes on
-		books.AdvanceCasts(draughtTick, em.GetAllEntities(), nil, BookWorld{})
+		books.AdvanceCasts(draughtTick, em.GetAllEntities(), nil, BookGround{})
 	}
 	set := draughtsIn(em)
 	require.Len(t, set, before+1, "the draught is set down")
@@ -103,12 +103,14 @@ func TestBookSystemDrinkDraught_HealsThirtyPercentOverSixSeconds(t *testing.T) {
 	}
 	assert.Equal(t, 80, healthT(t, mate).CurrentHealth, "half of 60 in 3 s")
 	assert.Contains(t, bookOfT(t, mate).States, components.BookStateDraught)
+	assert.True(t, mate.HasComponent(ecs.ComponentTypeDraughtHeal), "the heal rides the drinker")
 
 	for range 90 {
 		books.Update(draughtTick, em.GetAllEntities())
 	}
 	assert.Equal(t, 110, healthT(t, mate).CurrentHealth, "50 + 30 % of 200")
 	assert.NotContains(t, bookOfT(t, mate).States, components.BookStateDraught, "healed, the state goes")
+	assert.False(t, mate.HasComponent(ecs.ComponentTypeDraughtHeal), "and the heal with it")
 
 	books.Update(draughtTick, em.GetAllEntities())
 	assert.Equal(t, 110, healthT(t, mate).CurrentHealth, "nothing after the 6 s")

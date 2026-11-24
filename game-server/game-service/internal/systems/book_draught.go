@@ -15,8 +15,9 @@ import (
 * of their max health over 6 s, an even part each tick, never above max; a
 * second draught drunk during a heal restarts it at the new full amount.
 *
-* The heal is the drinker's book: the draught state times it, and the book's
-* Draught counts what it has given. The BookSystem's Update gives each part.
+* The heal is the drinker's: the book's draught state times it, and their
+* DraughtHealComponent counts what it has given. The BookSystem's Update gives
+* each part (healDraughts).
 * Not a health potion (carried, key 1).
 **/
 
@@ -75,21 +76,34 @@ func (s *BookSystem) DrinkDraught(drinker, draught *ecs.Entity) error {
 	}
 
 	hc, _ := drinker.GetComponent(ecs.ComponentTypeHealth)
-	book.Draught = &components.DraughtHeal{Amount: whole(float64(hc.(*components.HealthComponent).MaxHealth) * draughtShare)}
+	drinker.AddComponent(&components.DraughtHealComponent{Amount: whole(float64(hc.(*components.HealthComponent).MaxHealth) * draughtShare)})
 	book.States[components.BookStateDraught] = draughtSeconds
 	s.em.RemoveEntity(draught.ID)
 	return nil
 }
 
+// healDraughts gives every drinker this tick's part of their draught's heal.
+// It runs before the books' states count down.
+func (s *BookSystem) healDraughts(deltaTime float64, entities []*ecs.Entity) {
+	for _, entity := range entities {
+		if dc, ok := entity.GetComponent(ecs.ComponentTypeDraughtHeal); ok {
+			healDraught(entity, dc.(*components.DraughtHealComponent), deltaTime)
+		}
+	}
+}
+
 // healDraught gives the delver this tick's part of a draught's heal: what is
 // due by the time run so far, less what it has given, never above max. The
 // last part ends the heal and its state, so the whole amount is given in its
-// 6 s. It runs before the book's states count down.
-func healDraught(entity *ecs.Entity, book *components.BookComponent, deltaTime float64) {
-	heal := book.Draught
-	left, on := book.States[components.BookStateDraught]
+// 6 s.
+func healDraught(entity *ecs.Entity, heal *components.DraughtHealComponent, deltaTime float64) {
+	book, ok := bookOf(entity)
+	left, on := 0.0, false
+	if ok {
+		left, on = book.States[components.BookStateDraught]
+	}
 	if !on {
-		book.Draught = nil
+		entity.RemoveComponent(ecs.ComponentTypeDraughtHeal)
 		return
 	}
 
@@ -97,7 +111,7 @@ func healDraught(entity *ecs.Entity, book *components.BookComponent, deltaTime f
 	if left -= deltaTime; left > castEpsilon {
 		due = whole(float64(heal.Amount) * (draughtSeconds - left) / draughtSeconds)
 	} else {
-		book.Draught = nil
+		entity.RemoveComponent(ecs.ComponentTypeDraughtHeal)
 		delete(book.States, components.BookStateDraught)
 	}
 

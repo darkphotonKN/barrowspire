@@ -1,6 +1,8 @@
 package components
 
 import (
+	"slices"
+
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/google/uuid"
 )
@@ -47,10 +49,11 @@ const (
 	BookStateTrackersEye BookStateName = "trackers_eye"
 	// BookStateLongNight is the Scar of the Long Night's 6 s self state:
 	// monsters within 5 cells turn on the warrior, who takes 30 % less from
-	// every hit (R31). Never last_stand.
+	// every hit (R31). Never last_stand. Its reach is the warrior's
+	// LongNightComponent.
 	BookStateLongNight BookStateName = "long_night"
 	// BookStateDraught is on a delver for the 6 s a drunk draught heals them
-	// (R27); its heal is the book's Draught.
+	// (R27); its heal is the delver's DraughtHealComponent.
 	BookStateDraught BookStateName = "draught"
 )
 
@@ -76,19 +79,6 @@ type BookComponent struct {
 	States map[BookStateName]float64
 	// Casting is the page being cast, nil when none: one at a time (§D R19).
 	Casting *BookCasting
-	// LongNightReach is how far, in px, the warrior's Long Night turns
-	// monsters: its 5 cells in the cell of the floor it was cast on (R31).
-	LongNightReach float64
-	// Draught is the heal a drunk draught is giving, nil when none (R27).
-	Draught *DraughtHeal
-}
-
-// DraughtHeal is a drunk draught's heal over time: Amount the whole health it
-// gives, fixed at the drink, and Given what it has given so far. The time
-// left is the book's draught state. FS-X2CMM §E R27.
-type DraughtHeal struct {
-	Amount int
-	Given  int
 }
 
 // BookCasting is a page cast in progress: accepted, not yet paid for, its
@@ -97,8 +87,8 @@ type DraughtHeal struct {
 // against, as a timed open's are (FS-MQYEX D3–D4). FS-X2CMM §D R16–R18.
 type BookCasting struct {
 	Page PageID
-	// Elapsed is the simulation seconds counted so far, 0 on the cast's tick;
-	// Total the page's cast time.
+	// Elapsed is the simulation seconds counted so far, 0 when taken, the
+	// cast's own tick counted; Total the page's cast time.
 	Elapsed, Total float64
 	// FromX, FromY is where the caster stood when the cast was taken.
 	FromX, FromY float64
@@ -117,9 +107,11 @@ func (b *BookComponent) Type() ecs.ComponentType {
 	return ecs.ComponentTypeBook
 }
 
+// NewBookComponent is a fresh book of the pages given, its own copy of them:
+// no world shares a book's pages with another.
 func NewBookComponent(pages []PageID) *BookComponent {
 	return &BookComponent{
-		Pages:     pages,
+		Pages:     slices.Clone(pages),
 		Cooldowns: make(map[PageID]BookCooldown),
 		Spent:     make(map[PageID]bool),
 		States:    make(map[BookStateName]float64),

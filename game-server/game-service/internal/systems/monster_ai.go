@@ -71,7 +71,8 @@ func NewMonsterAISystem(roll func() float64, grid NavGrid) *MonsterAISystem {
 	return &MonsterAISystem{roll: roll, grid: grid}
 }
 
-// quarry is an in-play delver a monster may chase: what it is and where it stands.
+// quarry is a body a monster may chase, an in-play delver or a standing hound:
+// what it is and where it stands.
 type quarry struct {
 	id uuid.UUID
 	at *components.TransformComponent
@@ -79,7 +80,7 @@ type quarry struct {
 
 // NOTE: this runs every game tick, before MovementSystem.
 func (s *MonsterAISystem) Update(deltaTime float64, entities []*ecs.Entity) {
-	delvers := quarries(entities)
+	targets := quarries(entities)
 	s.nights = longNights(s.nights[:0], entities)
 
 	for _, entity := range entities {
@@ -97,7 +98,7 @@ func (s *MonsterAISystem) Update(deltaTime float64, entities []*ecs.Entity) {
 		at := tc.(*components.TransformComponent)
 		velocity := vc.(*components.VelocityComponent)
 
-		s.think(deltaTime, entity, monster, at, velocity, delvers)
+		s.think(deltaTime, entity, monster, at, velocity, targets)
 	}
 	s.runHounds(deltaTime, entities) // the archers' hounds, after them (book_hound.go)
 }
@@ -110,7 +111,7 @@ func (s *MonsterAISystem) think(
 	monster *components.MonsterComponent,
 	at *components.TransformComponent,
 	velocity *components.VelocityComponent,
-	delvers []quarry,
+	targets []quarry,
 ) {
 	monster.AttackCooldown = max(monster.AttackCooldown-deltaTime, 0)
 	// the slam cools whatever it does: wandering, chasing, leashing home
@@ -123,7 +124,7 @@ func (s *MonsterAISystem) think(
 
 	// the Long Night turns it on the warrior first (FS-X2CMM §E R31)
 	s.taunt(monster, at)
-	target, hunting := s.target(monster, at, delvers)
+	target, hunting := s.target(monster, at, targets)
 
 	if monster.StunRemaining > stunEpsilon {
 		s.stunned(deltaTime, entity, monster, at, velocity)
@@ -261,24 +262,24 @@ func strike(entity *ecs.Entity, intent components.AttackIntent) {
 // leash until the monster has closed inside that radius of them once, so a
 // kiting archer gets no free kills. FS-77AB6 §Requirements 26 "Leash"
 // (user decision 2026-10-09).
-func (s *MonsterAISystem) target(monster *components.MonsterComponent, at *components.TransformComponent, delvers []quarry) (quarry, bool) {
+func (s *MonsterAISystem) target(monster *components.MonsterComponent, at *components.TransformComponent, targets []quarry) (quarry, bool) {
 	attacker := monster.LastAttacker
 	monster.LastAttacker = uuid.Nil
 
-	target, ok := find(monster.Target, delvers)
+	target, ok := find(monster.Target, targets)
 	if ok {
 		if distance(at, target.at) <= monster.LeashRadius {
 			monster.Retaliating = false
-		} else if !monster.Retaliating {
+		} else if !monster.Retaliating && !monster.Taunted {
 			ok = false
 		}
 	}
 	if !ok {
-		target, ok = find(attacker, delvers)
+		target, ok = find(attacker, targets)
 		monster.Retaliating = ok && distance(at, target.at) > monster.LeashRadius
 	}
 	if !ok {
-		target, ok = nearest(at, monster.AggroRadius, delvers)
+		target, ok = nearest(at, monster.AggroRadius, targets)
 	}
 
 	if !ok {
@@ -585,12 +586,12 @@ func quarries(entities []*ecs.Entity) []quarry {
 	return out
 }
 
-// find is the delver with this id among those in play.
-func find(id uuid.UUID, delvers []quarry) (quarry, bool) {
+// find is the quarry with this id among those in play.
+func find(id uuid.UUID, targets []quarry) (quarry, bool) {
 	if id == uuid.Nil {
 		return quarry{}, false
 	}
-	for _, d := range delvers {
+	for _, d := range targets {
 		if d.id == id {
 			return d, true
 		}
@@ -598,12 +599,12 @@ func find(id uuid.UUID, delvers []quarry) (quarry, bool) {
 	return quarry{}, false
 }
 
-// nearest is the closest delver within radius of at, by distance alone: no line
+// nearest is the closest quarry within radius of at, by distance alone: no line
 // of sight in v1.
-func nearest(at *components.TransformComponent, radius float64, delvers []quarry) (quarry, bool) {
+func nearest(at *components.TransformComponent, radius float64, targets []quarry) (quarry, bool) {
 	var best quarry
 	bestDistance := math.Inf(1)
-	for _, d := range delvers {
+	for _, d := range targets {
 		distance := math.Hypot(d.at.X-at.X, d.at.Y-at.Y)
 		if distance <= radius && distance < bestDistance {
 			best, bestDistance = d, distance

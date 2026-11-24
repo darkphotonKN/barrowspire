@@ -73,7 +73,7 @@ func TestCastSkill_RecallPullsTwoTeammatesFromOtherRooms(t *testing.T) {
 	manaBefore := currentResource(mageBody)
 
 	require.NoError(t, castPageSkill(s, mage, "recall"))
-	ticks(s, castTicks(3)+1)
+	ticks(s, castTicks(3))
 
 	for i, mate := range mates {
 		at := transformOf(t, mate)
@@ -113,7 +113,7 @@ func TestCastSkill_RecallWithNoOneToPullIsRefused(t *testing.T) {
 
 			require.NoError(t, castPageSkill(s, mage, "recall"))
 			assert.Nil(t, bookOf(t, body).Casting, "refused at the cast")
-			ticks(s, castTicks(3)+1)
+			ticks(s, castTicks(3))
 
 			assert.Equal(t, manaBefore, currentResource(body), "no mana")
 			assert.Equal(t, false, pageOnWire(t, s, mage, components.PageRecall)["spent"], "not spent")

@@ -61,10 +61,11 @@ func castingState(casting *components.BookCasting) *types.BookCastingState {
 }
 
 // bookEffectState is a book effect as every recipient of the run is told it;
-// false for anything else, or an effect with no place.
+// false for anything else, an effect with no place, or one whose time is up
+// (gone from the world this tick, though still among its entities).
 func bookEffectState(entity *ecs.Entity) (*types.BookEffectState, bool) {
 	ec, ok := entity.GetComponent(ecs.ComponentTypeBookEffect)
-	if !ok {
+	if !ok || systems.BookEffectExpired(entity) {
 		return nil, false
 	}
 	tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)

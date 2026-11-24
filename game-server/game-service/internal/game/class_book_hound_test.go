@@ -33,7 +33,7 @@ func hounds(s *Session) []*ecs.Entity {
 func callTheHound(t *testing.T, s *Session, archer uuid.UUID, x, y float64) *ecs.Entity {
 	t.Helper()
 	require.NoError(t, castCallTheHound(s, archer, x, y))
-	ticks(s, castTicks(2)+1)
+	ticks(s, castTicks(2))
 	set := hounds(s)
 	require.Len(t, set, 1, "the hound is called")
 	return set[0]

@@ -19,7 +19,7 @@ import (
 // cell is the cell edge a run with no floor entity measures pages in.
 var cell = levelgen.DungeonFloor1Params.CellSize
 
-// castTicks is the ticks a page's cast time takes after the cast's own tick.
+// castTicks is the ticks a page's cast time takes, the cast's own tick counted.
 func castTicks(seconds float64) int {
 	return int(math.Round(seconds * float64(constants.GameFrameRate)))
 }
@@ -55,7 +55,7 @@ func witchlightMage(t *testing.T) (s *Session, mage uuid.UUID, body *ecs.Entity)
 func assertNothingSpent(t *testing.T, s *Session, body *ecs.Entity, manaBefore int) {
 	t.Helper()
 	assert.Nil(t, bookOf(t, body).Casting, "the cast is broken")
-	ticks(s, castTicks(1)+1)
+	ticks(s, castTicks(1))
 	assert.Empty(t, bookOf(t, body).Cooldowns, "no cooldown")
 	assert.Empty(t, witchlights(s), "no light")
 	assert.GreaterOrEqual(t, currentResource(body), manaBefore, "no mana spent")
@@ -72,7 +72,7 @@ func TestCastSkill_WitchlightCastsForASecondThenLightsThePointFor20Seconds(t *te
 	manaBefore := currentResource(body)
 
 	require.NoError(t, castWitchlight(s, mage, 500+5*cell, 500))
-	ticks(s, castTicks(1))
+	ticks(s, castTicks(1)-1)
 
 	casting := frameOf(t, s, types.WorldTypeRun, mage)["current_player"].(map[string]any)["book"].(map[string]any)["casting"]
 	require.NotNil(t, casting, "casting through the cast time")
@@ -177,7 +177,7 @@ func TestCastSkill_WitchlightRefusedWithNothingSpent(t *testing.T) {
 
 		assert.Equal(t, started, *bookOf(t, body).Casting, "the first cast runs on")
 		// to the first cast's completing tick
-		ticks(s, castTicks(1)+1-10)
+		ticks(s, castTicks(1)-10)
 		assert.Len(t, witchlights(s), 1, "one light, the first cast's")
 		assert.Equal(t, manaBefore-20, currentResource(body), "paid once")
 	})
@@ -240,7 +240,7 @@ func TestRegenerateFloor_BreaksTheCastAndClearsTheWitchlights(t *testing.T) {
 	at := transformOf(t, body)
 	gx, gy := groundNear(t, s, at.X, at.Y, 2)
 	require.NoError(t, castWitchlight(s, mage, gx, gy))
-	ticks(s, castTicks(1)+1)
+	ticks(s, castTicks(1))
 	require.Len(t, witchlights(s), 1, "the first cast lit its point")
 
 	bookOf(t, body).Cooldowns = map[components.PageID]components.BookCooldown{}
@@ -252,7 +252,7 @@ func TestRegenerateFloor_BreaksTheCastAndClearsTheWitchlights(t *testing.T) {
 
 	assert.Empty(t, witchlights(s), "the old floor's light went with it")
 	assert.Nil(t, bookOf(t, body).Casting, "the floor change broke the cast")
-	ticks(s, castTicks(1)+1)
+	ticks(s, castTicks(1))
 	assert.Empty(t, witchlights(s), "no light on the new floor")
 	assert.Empty(t, bookOf(t, body).Cooldowns, "no cooldown")
 	assert.GreaterOrEqual(t, currentResource(body), manaBefore, "no mana spent")

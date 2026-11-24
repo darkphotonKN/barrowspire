@@ -163,7 +163,7 @@ func TestGateTarget_JudgesTheTargetByKindAndRange(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cast := BookCast{Caster: caster, Page: tt.page, TargetX: tt.x, Target: tt.target, CellSize: testCell, BookWorld: BookWorld{Walkable: anyGround}}
+			cast := BookCast{Caster: caster, Page: tt.page, TargetX: tt.x, Target: tt.target, CellSize: testCell, BookGround: BookGround{Walkable: anyGround}}
 			err := gateTarget(cast, nil)
 			if tt.fits {
 				assert.NoError(t, err)
@@ -182,4 +182,17 @@ func TestPageOffered_OnlyPagesWithAResolver(t *testing.T) {
 	for _, id := range AllPageIDs() {
 		assert.Equal(t, slices.Contains(offered, id), PageOffered(id), id)
 	}
+}
+
+// Every book holds its own copy of its pages: a class's page table is never
+// shared between the worlds that seat it. CLAUDE.md "No mutable state shared
+// across worlds". I-X2CMM-22.
+func TestNewBookComponent_HoldsItsOwnCopyOfThePages(t *testing.T) {
+	table := []components.PageID{components.PageHeave, components.PageHardened}
+	one, other := components.NewBookComponent(table), components.NewBookComponent(table)
+
+	one.Pages[0] = components.PageLongNight
+
+	assert.Equal(t, components.PageHeave, table[0], "the table untouched")
+	assert.Equal(t, components.PageHeave, other.Pages[0], "another world's book untouched")
 }

@@ -69,7 +69,7 @@ func TestCastSkill_LevitateLiftsATeammateWhoCannotSlashFor8Seconds(t *testing.T)
 	manaBefore := currentResource(mageBody)
 
 	require.NoError(t, castLevitate(s, mage, mate.String()))
-	ticks(s, castTicks(1.5))
+	ticks(s, castTicks(1.5)-1)
 	assert.False(t, afloatOn(t, mateBody), "not before the cast completes")
 	assert.Equal(t, manaBefore, currentResource(mageBody), "nothing paid yet")
 	tick(s)
@@ -161,13 +161,13 @@ func TestCastSkill_LevitateTargets(t *testing.T) {
 
 			if tt.lifted == nil {
 				assert.Nil(t, bookOf(t, mageBody).Casting, "refused")
-				ticks(s, castTicks(1.5)+1)
+				ticks(s, castTicks(1.5))
 				assert.Equal(t, manaBefore, currentResource(mageBody), "no mana")
 				assert.Empty(t, bookOf(t, mageBody).Cooldowns, "no cooldown")
 				assert.False(t, afloatOn(t, mageBody) || afloatOn(t, mateBody), "nobody afloat")
 				return
 			}
-			ticks(s, castTicks(1.5)+1)
+			ticks(s, castTicks(1.5))
 			assert.True(t, afloatOn(t, tt.lifted(mageBody, mateBody)))
 			assert.Equal(t, manaBefore-35, currentResource(mageBody))
 		})
@@ -193,7 +193,7 @@ func TestCastSkill_LevitateOnATeammateWhoWalksOff(t *testing.T) {
 			ticks(s, 15)
 
 			transformOf(t, mateBody).X += tt.cells * cell
-			ticks(s, castTicks(1.5)+1-15)
+			ticks(s, castTicks(1.5)-15)
 
 			if tt.lifts {
 				assert.True(t, afloatOn(t, mateBody))

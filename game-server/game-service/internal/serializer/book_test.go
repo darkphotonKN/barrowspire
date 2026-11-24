@@ -226,3 +226,20 @@ func TestFormatStateToClientState_AHoundCarriesItsOwnerHealthAndAction(t *testin
 		}
 	}
 }
+
+// A book effect whose time is up is taken from the world on the tick, and the
+// tick's state, cut from the tick's own entities, does not send it again with
+// no time left; a draught, which has no time of its own, is sent. FS-X2CMM
+// §E R21, R27–R28, §F R34. I-X2CMM-22.
+func TestFormatStateToClientState_ABookEffectWhoseTimeIsUpIsNotSent(t *testing.T) {
+	w := newPartyWorld()
+	addBookEffect(w.em, components.BookEffectHound, 300, 400, 0)
+	addBookEffect(w.em, components.BookEffectWitchlight, 310, 400, -0.01)
+	draught := addBookEffect(w.em, components.BookEffectDraught, 320, 400, 0)
+
+	_, frame := wireFor(t, w.em, types.WorldTypeRun, w.wren)
+
+	effects := frame["book_effects"].([]any)
+	require.Len(t, effects, 1)
+	assert.Equal(t, draught.ID.String(), effects[0].(map[string]any)["id"])
+}

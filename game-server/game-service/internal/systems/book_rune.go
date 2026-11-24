@@ -1,7 +1,6 @@
 package systems
 
 import (
-	"cmp"
 	"math"
 	"slices"
 
@@ -102,7 +101,7 @@ func uncaughtInside(ring *components.RuneComponent, at *components.TransformComp
 		}
 	}
 	slices.SortFunc(inside, func(a, b runeCandidate) int {
-		return cmp.Or(cmp.Compare(a.dist, b.dist), cmp.Compare(a.entity.ID.String(), b.entity.ID.String()))
+		return nearerFirst(a.dist, a.entity.ID, b.dist, b.entity.ID)
 	})
 	return inside
 }

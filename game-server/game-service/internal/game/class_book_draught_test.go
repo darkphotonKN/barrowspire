@@ -29,7 +29,7 @@ func draughts(s *Session) []*ecs.Entity {
 func brew(t *testing.T, s *Session, archer uuid.UUID) *ecs.Entity {
 	t.Helper()
 	require.NoError(t, castPageSkill(s, archer, "brew"))
-	ticks(s, castTicks(3)+1)
+	ticks(s, castTicks(3))
 	set := draughts(s)
 	require.Len(t, set, 1, "the draught is set down")
 	return set[0]

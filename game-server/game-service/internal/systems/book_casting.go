@@ -81,12 +81,13 @@ func (s *BookSystem) MarkHealth(entities []*ecs.Entity) {
 }
 
 // AdvanceCasts is the tick on every cast in progress, after the tick's
-// movement and combat: a broken one ends with nothing, one whose cast time
-// has run out completes (R17), the rest count the tick. attackers is the
-// bodies whose attack or cast went off in the tick's combat
-// (CombatSystem.Attackers); world is the floor a completed page has its
+// movement and combat: a broken one ends with nothing, the rest count the
+// tick, and one whose cast time runs out on it completes (R17): a 1 s page
+// cast on a tick completes on the 60th at 60 Hz, its own counted. attackers is
+// the bodies whose attack or cast went off in the tick's combat
+// (CombatSystem.Attackers); ground is the floor a completed page has its
 // effect on, a ground page's point judged again on it.
-func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID, world BookWorld) {
+func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID, ground BookGround) {
 	for _, entity := range entities {
 		book, ok := bookOf(entity)
 		if !ok || book.Casting == nil {
@@ -97,12 +98,10 @@ func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, att
 			book.Casting = nil
 			continue
 		}
-		if casting.Elapsed >= casting.Total-castEpsilon {
+		if casting.Elapsed += deltaTime; casting.Elapsed >= casting.Total-castEpsilon {
 			book.Casting = nil
-			s.complete(entity, book, casting, world)
-			continue
+			s.complete(entity, book, casting, ground)
 		}
-		casting.Elapsed += deltaTime
 	}
 }
 
@@ -129,19 +128,19 @@ func (s *BookSystem) castBroken(caster *ecs.Entity, casting *components.BookCast
 // complete judges the page's cost and target once more, the target within
 // range plus one cell, and the page's own conditions, and, if they hold, pays
 // for the page and has its effect; if not, the cast ends with nothing (R17).
-func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent, casting *components.BookCasting, world BookWorld) {
+func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent, casting *components.BookCasting, ground BookGround) {
 	page, ok := classBooks[casting.Page]
 	if !ok {
 		return
 	}
 	cast := BookCast{
-		Caster:    caster,
-		Page:      page,
-		TargetX:   casting.TargetX,
-		TargetY:   casting.TargetY,
-		Target:    s.castTarget(casting.TargetID),
-		CellSize:  casting.CellSize,
-		BookWorld: world,
+		Caster:     caster,
+		Page:       page,
+		TargetX:    casting.TargetX,
+		TargetY:    casting.TargetY,
+		Target:     s.castTarget(casting.TargetID),
+		CellSize:   casting.CellSize,
+		BookGround: ground,
 	}
 	recheck := cast
 	recheck.Page.RangeCells += castRangeSlackCells

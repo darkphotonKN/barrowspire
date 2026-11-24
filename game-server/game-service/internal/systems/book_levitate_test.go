@@ -94,11 +94,11 @@ func TestCombatSystem_AfloatOverTheDelverAttacksAgain(t *testing.T) {
 func levitateCast(em *ecs.EntityManager, target func(mage *ecs.Entity) *ecs.Entity) (*ecs.Entity, BookCast) {
 	mage := bookDelver(em, "mage", 9, 0, 0, components.PageLevitate)
 	page, _ := BookPageOf(string(components.PageLevitate))
-	return mage, BookCast{Caster: mage, Page: page, Target: target(mage), CellSize: testCell, BookWorld: BookWorld{Walkable: anyGround}}
+	return mage, BookCast{Caster: mage, Page: page, Target: target(mage), CellSize: testCell, BookGround: BookGround{Walkable: anyGround}}
 }
 
 // A completed Levitate makes its target afloat for 8 s, then it runs out; the
-// cast is 1.5 s, 45 ticks after its own. R23.
+// cast is 1.5 s, 45 ticks with its own. R23.
 func TestBookSystemCast_LevitateLiftsItsTargetFor8Seconds(t *testing.T) {
 	em := ecs.NewEntityManager()
 	ally := bookDelver(em, "warrior", 1, 4*testCell, 0)
@@ -106,7 +106,7 @@ func TestBookSystemCast_LevitateLiftsItsTargetFor8Seconds(t *testing.T) {
 	books := NewBookSystem(em)
 	require.NoError(t, books.Cast(cast))
 
-	castTicks(books, em, 45)
+	castTicks(books, em, 44)
 	assert.NotContains(t, bookOfT(t, ally).States, components.BookStateAfloat, "not before the cast completes")
 	castTicks(books, em, 1)
 
@@ -129,7 +129,7 @@ func TestBookSystemCast_ASecondLevitateRestartsAfloat(t *testing.T) {
 	books := NewBookSystem(em)
 	require.NoError(t, books.Cast(cast))
 
-	castTicks(books, em, 46)
+	castTicks(books, em, 45)
 
 	assert.Equal(t, 8.0, bookOfT(t, mage).States[components.BookStateAfloat], "restarted at 8 s")
 }

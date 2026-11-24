@@ -14,12 +14,12 @@ import (
 
 // FS-X2CMM §A R8, §D R17, §E R25. I-X2CMM-5.
 
-// recallTicks is Recall's 3 s cast at castTick, after the cast's own tick.
+// recallTicks is Recall's 3 s cast at castTick, the cast's own tick counted.
 const recallTicks = 90
 
-// recallWorld is the world a Recall reads past its entities: open ground with
+// recallGround is the ground a Recall reads past its entities: open ground with
 // the walk's own walls and edge.
-var recallWorld = BookWorld{Walkable: anyGround, Ground: NewMovementSystem()}
+var recallGround = BookGround{Walkable: anyGround, Ground: NewMovementSystem()}
 
 // recallBody is a delver who walks, so a body others land clear of.
 func recallBody(em *ecs.EntityManager, class string, level int, x, y float64, pages ...components.PageID) *ecs.Entity {
@@ -32,14 +32,14 @@ func recallBody(em *ecs.EntityManager, class string, level int, x, y float64, pa
 func recallCast(em *ecs.EntityManager) (*ecs.Entity, BookCast) {
 	mage := recallBody(em, "mage", 17, 500, 500, components.PageRecall)
 	page, _ := BookPageOf(string(components.PageRecall))
-	return mage, BookCast{Caster: mage, Page: page, CellSize: testCell, BookWorld: recallWorld}
+	return mage, BookCast{Caster: mage, Page: page, CellSize: testCell, BookGround: recallGround}
 }
 
 // recallThrough counts a Recall's whole cast, nothing else in the world moving.
-func recallThrough(s *BookSystem, em *ecs.EntityManager, world BookWorld) {
-	for range recallTicks + 1 {
+func recallThrough(s *BookSystem, em *ecs.EntityManager, ground BookGround) {
+	for range recallTicks {
 		s.Update(castTick, em.GetAllEntities())
-		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, world)
+		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground)
 	}
 }
 
@@ -74,7 +74,7 @@ func TestBookSystemCast_RecallPullsEveryTeammateToTheMage(t *testing.T) {
 	books := NewBookSystem(em)
 
 	require.NoError(t, books.Cast(cast))
-	recallThrough(books, em, recallWorld)
+	recallThrough(books, em, recallGround)
 
 	for _, mate := range []*ecs.Entity{near, far} {
 		assert.InDelta(t, 2*constants.PlayerRadius, apart(t, mage, mate), 1e-6, "on the nearest ring, touching the mage")
@@ -138,7 +138,7 @@ func TestBookSystemCast_RecallWhoseTeammateFellMidCastEndsWithNothing(t *testing
 
 	hc, _ := mate.GetComponent(ecs.ComponentTypeHealth)
 	hc.(*components.HealthComponent).CurrentHealth = 0
-	recallThrough(books, em, recallWorld)
+	recallThrough(books, em, recallGround)
 
 	book := bookOfT(t, mage)
 	assert.Nil(t, book.Casting, "the cast ended")
@@ -159,22 +159,22 @@ func TestBookSystemCast_RecallBreaksWhatTheTeammateWasDoing(t *testing.T) {
 	mate.AddComponent(&components.TimedOpenComponent{ContainerID: uuid.New(), Duration: 1.5, FromX: 1000, FromY: 500, HealthBeforeCombat: 100})
 	mate.AddComponent(&components.DashComponent{DirX: 1, Speed: 600, Remaining: 100})
 	var endedAt [2]float64
-	world := recallWorld
-	world.EndCharge = func(e *ecs.Entity) {
+	ground := recallGround
+	ground.EndCharge = func(e *ecs.Entity) {
 		endedAt[0], endedAt[1] = at(t, e)
 		e.RemoveComponent(ecs.ComponentTypeDash)
 	}
-	cast.BookWorld = world
+	cast.BookGround = ground
 	books := NewBookSystem(em)
 	require.NoError(t, books.Cast(cast))
 
 	// the teammate starts a cast of their own on the recall's last tick
 	for range recallTicks {
 		books.Update(castTick, em.GetAllEntities())
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, world)
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground)
 	}
 	bookOfT(t, mate).Casting = &components.BookCasting{Page: components.PageHardened, Total: 1, FromX: 1000, FromY: 500, HealthBeforeCombat: 100}
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, world)
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground)
 
 	require.InDelta(t, 2*constants.PlayerRadius, apart(t, mage, mate), 1e-6, "recalled")
 	assert.False(t, mate.HasComponent(ecs.ComponentTypeTimedOpen), "the timed open broke")
@@ -203,7 +203,7 @@ func TestBookSystemCast_RecallLandsClearOfWallsAndBodies(t *testing.T) {
 	}
 	books := NewBookSystem(em)
 	require.NoError(t, books.Cast(cast))
-	recallThrough(books, em, recallWorld)
+	recallThrough(books, em, recallGround)
 
 	for i, mate := range mates {
 		x, _ := at(t, mate)
@@ -224,12 +224,12 @@ func TestBookSystemCast_RecallWithNowhereToLandLeavesTheTeammate(t *testing.T) {
 	mage, cast := recallCast(em)
 	mate := recallBody(em, "warrior", 1, 1300, 500)
 	mate.AddComponent(&components.TimedOpenComponent{ContainerID: uuid.New(), Duration: 1.5, FromX: 1300, FromY: 500})
-	world := recallWorld
-	world.Ground = groundNowhere{}
-	cast.BookWorld = world
+	ground := recallGround
+	ground.Ground = groundNowhere{}
+	cast.BookGround = ground
 	books := NewBookSystem(em)
 	require.NoError(t, books.Cast(cast))
-	recallThrough(books, em, world)
+	recallThrough(books, em, ground)
 
 	x, y := at(t, mate)
 	assert.Equal(t, [2]float64{1300, 500}, [2]float64{x, y})

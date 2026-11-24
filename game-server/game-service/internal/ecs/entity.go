@@ -105,6 +105,10 @@ const (
 	ComponentTypeRune ComponentType = "Rune"
 	// a hound's bite and heel, on the hound's book effect (FS-X2CMM §E R28)
 	ComponentTypeHound ComponentType = "Hound"
+	// the warrior's Long Night while it runs, on the warrior (FS-X2CMM §E R31)
+	ComponentTypeLongNight ComponentType = "LongNight"
+	// a drunk draught's heal while it runs, on the drinker (FS-X2CMM §E R27)
+	ComponentTypeDraughtHeal ComponentType = "DraughtHeal"
 )
 
 type Entity struct {
