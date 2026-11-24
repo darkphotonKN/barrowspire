@@ -16,6 +16,7 @@ spec:
           image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/wallet:6fcd619c
           ports:
             - { containerPort: 7128, name: grpc }
+            - { containerPort: 8203, name: metrics }
           envFrom:
             - configMapRef: { name: wallet }
             - secretRef: { name: wallet }
@@ -26,10 +27,14 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: wallet }
+metadata:
+  name: wallet
+  labels: { app: wallet }
 spec:
   selector: { app: wallet }
-  ports: [{ port: 7128, targetPort: grpc }]
+  ports:
+    - { name: grpc, port: 7128, targetPort: grpc }
+    - { name: metrics, port: 8203, targetPort: 8203 }
 ---
 apiVersion: v1
 kind: Service

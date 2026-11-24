@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log"
 	"log/slog"
@@ -62,6 +63,8 @@ func main() {
 
 	// --- grpc ---
 	grpcServer := grpc.NewServer(commontracing.ServerHandler(), grpc.ChainUnaryInterceptor(commoninterceptor.Metrics()))
+
+	commontelemetry.ServeMetrics(commonhelpers.GetEnvString("METRICS_PORT", "8202"))
 
 	listener, err := net.Listen("tcp", ":"+grpcAddr)
 	if err != nil {

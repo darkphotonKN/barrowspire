@@ -14,6 +14,7 @@ spec:
           image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/ledger:6fcd619c
           ports:
             - { containerPort: 7129, name: grpc }
+            - { containerPort: 8200, name: metrics }
           envFrom:
             - configMapRef: { name: ledger }
             - secretRef: { name: ledger }
@@ -24,10 +25,14 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: ledger }
+metadata:
+  name: ledger
+  labels: { app: ledger }
 spec:
   selector: { app: ledger }
-  ports: [{ port: 7129, targetPort: grpc }]
+  ports:
+    - { name: grpc, port: 7129, targetPort: grpc }
+    - { name: metrics, port: 8200, targetPort: 8200 }
 ---
 apiVersion: v1
 kind: Service

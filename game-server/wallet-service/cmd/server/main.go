@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log"
 	"log/slog"
@@ -80,6 +81,8 @@ func main() {
 			commonauth.Auth(validate),
 		),
 	)
+
+	commontelemetry.ServeMetrics(commonhelpers.GetEnvString("METRICS_PORT", "8203"))
 
 	pb.RegisterWalletServiceServer(grpcServer, services.AccHandler)
 	reflection.Register(grpcServer)

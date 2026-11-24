@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"log"
 	"log/slog"
@@ -107,6 +108,8 @@ func main() {
 			commoninterceptor.Status(slog.Default()),
 		),
 	)
+
+	commontelemetry.ServeMetrics(commonhelpers.GetEnvString("METRICS_PORT", "8198"))
 
 	// create a network listener to this service
 	listener, err := net.Listen("tcp", ":"+grpcAddr)

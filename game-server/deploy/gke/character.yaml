@@ -13,6 +13,7 @@ spec:
           image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/character:6fcd619c
           ports:
             - { containerPort: 7123, name: grpc }
+            - { containerPort: 8198, name: metrics }
           envFrom:
             - configMapRef: { name: character }
             - secretRef: { name: character }
@@ -23,10 +24,14 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: character }
+metadata:
+  name: character
+  labels: { app: character }
 spec:
   selector: { app: character }
-  ports: [{ port: 7123, targetPort: grpc }]
+  ports:
+    - { name: grpc, port: 7123, targetPort: grpc }
+    - { name: metrics, port: 8198, targetPort: 8198 }
 ---
 apiVersion: v1
 kind: Service

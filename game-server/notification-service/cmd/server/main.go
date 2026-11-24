@@ -9,6 +9,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/notification-service/config"
@@ -100,6 +101,8 @@ func main() {
 
 	// Use the new config setup to initialize all services
 	grpcServer = config.SetupServices(db, ch, itemsConn, walletConn, redisClient, jwtSecret)
+
+	commontelemetry.ServeMetrics(commonhelpers.GetEnvString("METRICS_PORT", "8201"))
 
 	log.Printf("Notification Server started on PORT: %s\n", grpcAddr)
 

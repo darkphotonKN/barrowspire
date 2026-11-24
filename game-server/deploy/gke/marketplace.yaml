@@ -16,6 +16,7 @@ spec:
           image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/marketplace:6fcd619c
           ports:
             - { containerPort: 7127, name: grpc }
+            - { containerPort: 8199, name: metrics }
           envFrom:
             - configMapRef: { name: marketplace }
             - secretRef: { name: marketplace }
@@ -26,10 +27,14 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: marketplace }
+metadata:
+  name: marketplace
+  labels: { app: marketplace }
 spec:
   selector: { app: marketplace }
-  ports: [{ port: 7127, targetPort: grpc }]
+  ports:
+    - { name: grpc, port: 7127, targetPort: grpc }
+    - { name: metrics, port: 8199, targetPort: 8199 }
 ---
 apiVersion: v1
 kind: Service
