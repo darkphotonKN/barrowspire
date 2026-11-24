@@ -36,7 +36,13 @@ func TestSoloRun_RefreshReturnsToTheRun(t *testing.T) {
 	newConn := &websocket.Conn{}
 	_, mapped := server.MapConnToPlayer(newConn, player.ID, msgChan)
 	require.True(t, mapped)
-	close(msgChan)
+	// The run is live and broadcasts to this mapped channel on its own
+	// goroutines, so the channel is closed the way the server closes a writer:
+	// under the write lock, and forgotten in the same step. A bare close here
+	// raced a broadcast into "send on closed channel".
+	server.mu.Lock()
+	server.stopClientWriterLocked(newConn)
+	server.mu.Unlock()
 
 	var worldEntered *types.Message
 	for raw := range msgChan {
