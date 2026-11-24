@@ -748,6 +748,10 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   ground for 30 s; the first three monsters to cross it are held as by a **stun**. Write "rune"
   for the thing on the floor, "Binding Glyph" for the page; game-client's *line glyph* is an icon
   term and unrelated.
+- **Book effect** (FS-X2CMM) — a thing a page leaves standing in the run for every delver to see:
+  a witchlight, a rune, a draught, a hound. Its own entity (`BookEffectComponent`, kind, time
+  left, caster), never a delver or a monster; gone at its time or on a floor change. On the wire,
+  `book_effects`. FS-X2CMM R34 calls them "world effects"; in code and here, *book effect*.
 - **Witchlight** (FS-X2CMM) — the drifting light the page of that name sets down for 20 s; lifts
   fog within 3 cells of it for the party.
 - **Draught** (FS-X2CMM, Brew) — the drink the Brew page sets down; any delver drinks it by
