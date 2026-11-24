@@ -136,7 +136,11 @@ developer force a tome.
 ### §D. Monsters, traps and poison (game-service)
 
 21. **Fewer monsters** (owner; numbers are the proposal): a sealed dungeon floor holds **15–25**
-    monsters besides a boss (`DungeonMonstersMin`/`Max`, from 30–45), by today's top-up and trim.
+    monsters besides a boss (`DungeonMonstersMin`/`Max`, from 30–45), by today's top-up and trim,
+    **extended** (promotion default, 2026-11-25: hall packs and treasure guards alone reach 8–40, so
+    today's trim cannot hold 25): once ordinary rooms and corridors are trimmed, a floor still over
+    the max trims hall-pack fodder (never a pack's brute), then treasure-guard packs down to one
+    elite each, farthest from the start first. A guarded chest keeps at least one guard.
     A respite's room (the fountain's, §G; the merchant's, FS-9JV5K) holds none. Ambushes (R14) are
     on top. "The Spire stirs" (patrols down the stairs) is not v1.
 22. **Monster paths respect barriers** (ADR-0062): a shut gate, a shut secret door, a pit and a
