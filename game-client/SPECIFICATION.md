@@ -169,6 +169,7 @@ server state and sends intents. ✅
 - [x] The Warden as storyteller, not the queue → FS-0XMCP
 - [x] Town building interiors → FS-B0H2D
 - [ ] Town minimap → FS-P0HSP
+- [x] The chapel and its graveyard → FS-R4MYX
 
 ### Mailbox
 

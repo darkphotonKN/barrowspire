@@ -130,7 +130,9 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     before FS-B0H2D, and what a bare "resident" still means.
   - **Fixed resident** (FS-B0H2D) — an ambient NPC placed at one point and never moving: no
     quarter, no velocity, function `""`. Map data like a function NPC's place, but opens nothing
-    and gets no FS-MRZH7 marker. The innkeeper, the patrons and the smith. Not a new NPC kind on
+    and gets no FS-MRZH7 marker. The innkeeper, the patrons and the smith; the Confessor and the
+    worshippers in the chapel; the mourners in the graveyard, the only ones standing outdoors
+    (FS-R4MYX). Not a new NPC kind on
     the wire: it is the ambient NPC with its wander region left off. Do not call one a "pinned
     NPC" or a "static NPC" in code; **fixed resident** is the term.
   - **Innkeeper** — the fixed resident behind the Inn's counter. Talkable, the longest talk in
@@ -139,23 +141,36 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
     lore line. Never wanders, never leaves, never sits (no sitting pose). Three of them; not a
     crowd system.
   - **Smith** — the fixed resident at the smithy's forge. A lore line; no repairs, no trading.
+  - **Confessor** (FS-R4MYX) — the fixed resident in front of the chapel's dais, at the head of
+    its aisle facing the door, in his own look (`appearance` `confessor`, a bespoke sheet, not a
+    `<palette>_<build>`). Talkable, lore only, no marker. A later FS makes him a function NPC
+    (talent reset); until then he is ambient.
+  - **Worshipper** — a fixed resident standing at a chapel pew, facing the altar. Four of them.
+  - **Mourner** — a fixed resident standing at a grave in the graveyard, facing its stone. Three
+    of them, outdoors: each kept more than talk range from every building wall, out of the lanes
+    and clear of every function NPC, so an outdoor fixed resident is safe where it stands.
 
 ### Town buildings (FS-B0H2D)
 
 - **Town building** — one of the hub's buildings (`hubBuildings`). Since FS-B0H2D every one is an
-  **enterable town building**: walls with a **door gap** in the south wall, and a room inside a
+  **enterable town building**: walls with a **door gap** in its **door face**, and a room inside a
   player can walk into. Before it they were closed scenery (four walls, FS-29KSH); a closed
   building is no longer a thing the hub has. Server code says **building**; game-client says
   **house** for the same footprint (its `House`, `housesFrom`).
-- **Door gap** — the opening cut in a town building's south wall. Just a gap: **no door entity**,
-  nothing to open, lock or sync. Unlike a run's house (`AddBuilding`), which hangs a door in its
-  gap. South, so the iso view shows it from the town side.
+- **Door gap** — the opening cut in a town building's door face, a run door wide. Just a gap:
+  **no door entity**, nothing to open, lock or sync. Unlike a run's house (`AddBuilding`), which
+  hangs a door in its gap.
+- **Door face** (FS-R4MYX) — the outer wall a town building's street door is cut in: **south**
+  (the default; the store, the Inn, the smithy) or **east** (the chapel). Both face the camera in
+  the iso view. Not the Inn's `DoorOnEastFace`, which says where along its south wall the Inn's
+  door stands (against its partition's east face, ADR-0073).
 - **Interior** — the inside of an enterable town building, **in the same world**: same session,
   same tick, same broadcast, entered by walking through the door gap. Not a separate world, scene,
   instance or load step, and no world switch. The server keeps no "inside" state; whether a player
   is inside is a client presentation test (the roof lifts). Never call it an "interior world".
 - **Furnishing** — a keep-out inside a town building that the furniture stands on: the Inn's
-  long table, hall hearth, counter and tables, the smithy's forge. A server wall carrying its
+  long table, hall hearth, counter and tables, the smithy's forge, the chapel's pews and altar.
+  A server wall carrying its
   building's `house_id`, so it collides like any wall and stays inside its building's footprint.
   Told from the building's own walls by geometry alone: a furnishing touches none of its
   building's four outer edges. It keeps 50 px clear of every wall and furnishing, except the hall
@@ -175,6 +190,11 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   name, not a function: nothing is bought or sold there.
 - **Smithy** — the town building with the forge, where the smith stands. Nothing is repaired,
   made or sold.
+- **The chapel** (FS-R4MYX) — the stone town building south-west of the spawn, its door on its
+  east face: a centre aisle between three **pews** a side, and the **altar** on the dais at the
+  west end, the Confessor in front of it. Pews and altar are furnishings. Nothing is offered there yet.
+- **Graveyard** — the ground west of the chapel, behind a low broken wall. Client dressing only:
+  the server holds nothing of it but where the mourners stand. Not a field, not a building.
 - **Lane** (FS-B0H2D) — a straight walkable corridor, at least 240 px wide, from the hub spawn to
   a gate (the Spire's door, the Forest gate, the Meadows gate) that no wall crosses. Map data's
   promise that nothing blocks the way out of town; tested, not eyeballed. A lane is not the

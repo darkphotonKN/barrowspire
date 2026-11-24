@@ -412,3 +412,5 @@ place; any server, proto, gateway, OpenAPI or database change.
 ## Change: Map mode icon → FS-56CKV
 
 ## Change: Map name → FS-56CKV
+
+## Change: The chapel and the graveyard → FS-R4MYX
