@@ -294,13 +294,26 @@ describe("the book slot's pointer (FS-X2CMM R39)", () => {
     expect(t.built[0].log).toEqual(["move 10,20", "down 10,20", "move -1,-1"]);
   });
 
-  it("should take a page's press and do nothing more with it yet: slice 11 arms it", () => {
+  // FS-X2CMM §H R40, R44a (I-X2CMM-11): the book asks, the world arms or casts
+  it("should ask the run for a ready page pressed, the book kept open", () => {
     const t = onSlot();
     const run = t.inRun();
     t.slot.toggle();
-    const page = { id: "witchlight", state: "ready" } as PageView;
-    t.built[0].wiring.pick(page);
-    expect(run.asked).toEqual([]);
+    t.built[0].wiring.pick({ id: "witchlight", state: "ready" } as PageView);
+    t.built[0].wiring.pick({ id: "hardened", state: "ready" } as PageView);
+    expect(run.asked).toEqual([
+      { kind: "page", page: "witchlight" },
+      { kind: "page", page: "hardened" },
+    ]);
     expect(t.slot.isOpen()).toBe(true);
+  });
+
+  it("should ask nothing for a locked, recovering, spent or dim page (R40)", () => {
+    const t = onSlot();
+    const run = t.inRun();
+    t.slot.toggle();
+    for (const state of ["locked", "recovering", "dim"] as const) t.built[0].wiring.pick({ id: "witchlight", state } as PageView);
+    t.built[0].wiring.pick({ id: "recall", state: "dim", spent: true } as PageView);
+    expect(run.asked).toEqual([]);
   });
 });

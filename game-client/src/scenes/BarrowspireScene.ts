@@ -141,6 +141,10 @@ import { SpecLooks, withOwnLook, type LookBodies } from "@/render/art/specLooks"
 import { FloorPoolArt } from "@/render/art/floorArt";
 import { drawTorchBar } from "@/ui/torchBar";
 import { drawOpenBar, openBarFraction } from "@/ui/openBar";
+import { CastBar } from "@/ui/castBar";
+import { PAGE_ROUNDEL_SIZE, PageRoundel } from "@/ui/pageRoundel";
+import { PAGE_ICONS, type PageId } from "@/ui/pageIcons";
+import type { AimBody, AimScene } from "./pageAim";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { FOG_FLOOR_AMBIENT, HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -495,6 +499,12 @@ interface ArcherPalette {
 
 /** How a projectile is drawn in flight, shared with the field scene (FS-JTNPR req 20, 23). */
 export { projectileFlightOf };
+
+/**
+ * A floor's cell edge, world px, where no dungeon grid stands: the server's own fallback for a page's range
+ * (`bookCellSize`, FS-X2CMM §B R12).
+ */
+const BOOK_CELL = 80;
 
 export class BarrowspireScene extends Phaser.Scene {
   /** The local player's sprite, drawn at the projection of `playerPos`. */
@@ -860,6 +870,18 @@ export class BarrowspireScene extends Phaser.Scene {
    * the bar only shows what the server counts, and never opens anything.
    */
   private timedOpen?: { open: TimedOpenState; seenAt: number; bar: Phaser.GameObjects.Graphics };
+  /**
+   * The cast bar under the player's feet while their own `book.casting` is present (FS-X2CMM R43), with the
+   * page's roundel on its left: screen-fixed, set each frame once the camera is (`stopCastBar`), so the
+   * roundel and the bar stand together on the feet. It follows the player, so it is the world's (ADR-0086 2.1).
+   */
+  private readonly castBar = new CastBar({
+    graphics: () => this.add.graphics().setScrollFactor(0).setDepth(MARKER_DEPTH.bar).setName("cast-bar"),
+    roundel: (page) =>
+      new PageRoundel({ scene: this, depth: MARKER_DEPTH.bar + 1, icon: PAGE_ICONS[page], size: PAGE_ROUNDEL_SIZE.castBar, name: page }),
+  });
+  /** Stops the cast bar hearing the main camera's frames. */
+  private stopCastBar?: () => void;
 
   /** The player's strike and casts, shared with the field scene (FS-X2F2H §Requirements 56). */
   private readonly combat = new PlayerCombat(
@@ -894,6 +916,9 @@ export class BarrowspireScene extends Phaser.Scene {
       // key 3's Arrow Rain aim circle, a world effect the run draws (FS-04EEA R38; ADR-0086 2.2)
       rainAim: (centre) => this.kit.rainAim(centre),
       endRainAim: () => this.kit.endRainAim(),
+      // the armed class book page's reticle, a world effect the run draws (FS-X2CMM R41; ADR-0086 2.2)
+      reticle: (reticle) => this.kit.reticle(reticle),
+      endReticle: () => this.kit.endReticle(),
       // the tree abilities' looks, world effects the run draws, the caster's own (FS-04EEA §H R42–R46)
       earthbreaker: (from) => this.kit.earthbreaker(from),
       blink: (from) => this.kit.blink(from, this.time.now),
@@ -984,7 +1009,8 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.ui.pressClaimed(this.input?.activePointer)) return;
       if (this.strike(monster.entity_id, monster.position)) this.lastHit.aimed(monster, this.time.now);
     },
-    hover: (monster) => this.pointerLook?.base(monster ? "strike" : "hand"),
+    // an armed page's click never strikes (FS-X2CMM R41): no strike-mark over a monster while one is armed
+    hover: (monster) => this.pointerLook?.base(monster && !this.combat.armed ? "strike" : "hand"),
   };
   /**
    * What a monster's actions play on the world (FS-VHGE7 §D R32–33): a demon's fire claw; and a
@@ -1212,6 +1238,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
     this.kit.forget();
+    // the cast bar goes with the run, its roundel's view watch with it (FS-X2CMM R43)
+    this.stopCastBar?.();
+    this.stopCastBar = undefined;
+    this.castBar.clear();
     // a hold dies with its run: nothing is sent, nothing queued for later (FS-JTNPR req 15); the
     // combat's reset below drops the hold and the lockout
     this.game?.events.off(Phaser.Core.Events.BLUR, this.cancelAim, this);
@@ -1302,8 +1332,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // scene's yields as it hears the end
     this.takeDownResolvedView();
     this.ui.changed();
-    // the run is over: a Shadow Shot hold ends with nothing sent (FS-JTNPR req 15)
+    // the run is over: a Shadow Shot hold ends with nothing sent (FS-JTNPR req 15), an armed page disarms
+    // (FS-X2CMM R41)
     this.cancelAim();
+    this.combat.disarm();
     // a half-typed line went as the UI scene's chat heard the change above, and both keyboards were
     // handed back before this one is switched off here, so nothing turns it on again (FS-WJGFJ R27;
     // FS-TQZ5J § Change: Batch 6, R128)
@@ -3259,6 +3291,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // the UI scene comes up over this world, and sleeps when it stops; the player's actions reach
     // its interface sounds from here on (FS-TQZ5J R3, R9, R12)
     this.ui = reportWorld(this, "run", this.worldSide());
+    // the cast bar stands on the feet the frame draws (FS-X2CMM R43)
+    this.stopCastBar?.();
+    this.stopCastBar = afterFrameSetUp(this.cameras.main, (scroll) => this.drawCastBar(scroll));
     // Connect via SocketManager
     this.connectToServer();
     this.mountGameplaySounds();
@@ -3365,6 +3400,9 @@ export class BarrowspireScene extends Phaser.Scene {
       // resume one (FS-JTNPR req 15; FS-TQZ5J § Change: Phase 3, R53)
       heardUi: (ui, was) => {
         if ((ui.menuOpen && !was.menuOpen) || gearOpened(ui, was)) this.cancelAim();
+        // an armed page lives while the book is open and nothing opens over it: the book closing (by
+        // its ×, Esc, K, or stepping aside for another window) or the menu opening disarms (FS-X2CMM R41)
+        if (!ui.book || (ui.menuOpen && !was.menuOpen) || gearOpened(ui, was)) this.combat.disarm();
       },
       answer: answering({
         // the gear overlay's wear and take off, sent as the run has always sent them (§ Change: Phase 3, R54)
@@ -3392,6 +3430,10 @@ export class BarrowspireScene extends Phaser.Scene {
         fall: () => this.fallWhereYouStand(),
         // the OPTIONS Music row, applied to the tower's music at once (§ Change: The tower's music, W6)
         musicLevel: (level) => this.music?.setLevel(level),
+        // the class book asks, the run casts (FS-X2CMM R40, R44a; ADR-0085 Decision 1): a ready page arms
+        // or casts at once; Esc's first step while one is armed disarms it, nothing else
+        page: (page) => this.pressPage(page),
+        disarm: () => void this.combat.disarm(),
       }),
     };
   }
@@ -3407,6 +3449,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ended: this.runEnded,
       leavePending: this.leavePending,
       fallPending: this.fallPending,
+      armed: this.combat.armed,
     };
   }
 
@@ -3580,10 +3623,17 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
-
-      const currentClass = this.ownClass();
+      // an armed page (FS-X2CMM R41): the left-click is its cast on a valid target, or nothing; the right
+      // disarms; neither attacks nor casts the class ability
       const leftButton = pointer.leftButtonDown() || pointer.button === 0;
       const rightButton = pointer.rightButtonDown() || pointer.button === 2;
+      if (this.combat.armed) {
+        if (leftButton) this.combat.castArmed(this.aimScene(screenToWorld(pointer.worldX, pointer.worldY)));
+        else if (rightButton) this.combat.disarm();
+        return;
+      }
+
+      const currentClass = this.ownClass();
 
       // The pointer is over the projection; the server wants the world point under
       // it. `target` and `me` are world positions (FS-2325V §0.2, §A.5).
@@ -3703,6 +3753,57 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private cancelAim(): void {
     this.combat.cancelAim();
+  }
+
+  /**
+   * A ready page pressed in the class book (FS-X2CMM R40, R44a): armed, or cast at once, while this player is
+   * in play, the run not over and the menu shut; otherwise nothing.
+   */
+  private pressPage(page: PageId): void {
+    if (this.menuOpen || this.runEnded || !this.player || !this.playerPos) return;
+    if (resolved(this.lastGameState?.current_player)) return;
+    this.combat.pressPage(page, this.playerPos);
+  }
+
+  /**
+   * The run as an armed page reads it (FS-X2CMM R41): the player's drawn feet, the world point `cursor`, the
+   * floor's cell, the living, un-escaped delvers where they are drawn (the player among them, by the id the
+   * server knows them by, §C R15), and the walkable floor.
+   */
+  private aimScene(cursor: Point): AimScene {
+    const state = this.lastGameState;
+    const me = state?.current_player;
+    const from = this.playerPos ?? me?.position ?? cursor;
+    const grid = this.dungeon?.grid;
+    const allies: AimBody[] = [
+      ...(me ? [{ id: me.id, at: from, self: true }] : []),
+      ...(state?.other_players ?? [])
+        .filter((other) => !resolved(other))
+        .map((other) => ({ id: other.id, at: this.otherPlayersPos.get(other.id) ?? other.position })),
+    ];
+    return {
+      from,
+      cursor,
+      cell: grid?.cell ?? BOOK_CELL,
+      allies,
+      walkable: grid
+        ? (p) => {
+            const { cx, cy } = grid.cellOf(p);
+            return grid.walkable(cx, cy);
+          }
+        : undefined,
+    };
+  }
+
+  /**
+   * The cast bar this frame (FS-X2CMM R43), once the main camera is set up for it: under the player's drawn
+   * feet, in logical px (the camera is zoomed by the render scale from origin 0, so a world point stands at
+   * its projection less the scroll).
+   */
+  private drawCastBar(scroll: Point): void {
+    if (!this.playerPos) return;
+    const feet = worldToScreen(this.playerPos.x, this.playerPos.y);
+    this.castBar.frame({ x: feet.x - scroll.x, y: feet.y - scroll.y }, this.time.now);
   }
 
   /** No line left behind, and the archer's facing let go to its idle (FS-JTNPR req 15). */
@@ -3934,6 +4035,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.settleReach(state);
     // the player's own timed open, over the containers just drawn (FS-MQYEX R22)
     this.showTimedOpen(state);
+    // the player's own book cast, counted by the server (FS-X2CMM R43); never while watching a teammate
+    this.castBar.hear(this.watchedPlayerId === undefined ? state.current_player?.book?.casting : undefined, this.time.now);
 
     // Update escape doors from server
     this.updateEscapeDoors(state.escape_doors || []);
@@ -3967,7 +4070,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.yieldMenu(state);
     // out of the delve, a hold ends the moment the client sees it (FS-JTNPR req 15)
-    if (this.menuState(state).resolved) this.cancelAim();
+    if (this.menuState(state).resolved) {
+      this.cancelAim();
+      // and an armed page disarms (FS-X2CMM R41: death or leaving the run)
+      this.combat.disarm();
+    }
     this.syncResolvedView(state);
     this.showOwnHud();
     // the party frames are the UI scene's: this state's players, as plain data (FS-R82NV R34, R35;
@@ -4468,8 +4575,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * and escape door's memory goes too: the new floor's first broadcast is their baseline (FS-XWHZP R23).
    */
   private leaveFloor(): void {
-    // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
+    // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15), nor an armed page (FS-X2CMM R41)
     this.cancelAim();
+    this.combat.disarm();
     // a rain falls with its floor, and a Blink waiting to land lands nowhere (FS-04EEA R44, R45)
     this.kit.leaveFloor();
     // the old floor's lore lines go with it; the floor card speaks for the new one (FS-XWHZP R15)
@@ -6057,6 +6165,8 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     this.updateOtherPlayersSmooth(time, delta);
+    // an armed page's reticle, on the bodies just drawn and the cursor now (FS-X2CMM R41)
+    if (this.combat.armed && this.playerPos) this.combat.pageFrame(this.aimScene(this.cursorWorld()));
     // the map overlay on the figure just drawn (FS-1SEF0 §C.14)
     this.followMapOverlay();
 

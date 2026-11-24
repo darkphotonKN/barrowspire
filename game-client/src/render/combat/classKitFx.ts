@@ -19,6 +19,8 @@ import { ParryFx } from "@/render/effects/parry";
 import { RiposteFx, riposteArmed } from "@/render/effects/riposte";
 import { AimLine } from "@/render/effects/aimLine";
 import { AimCircle } from "@/render/effects/aimCircle";
+import { PageReticle } from "@/render/effects/pageReticle";
+import type { Reticle } from "@/scenes/pageAim";
 import type { EffectsRuntime, FxArt } from "@/render/effects/runtime";
 import { Staged } from "@/render/effects/staged";
 import { playEarthbreaker } from "@/render/effects/earthbreaker";
@@ -47,6 +49,8 @@ export class ClassKitFx {
   aimLine?: AimLine;
   /** Key 3's Arrow Rain aim circle (FS-04EEA R38); made on the aim's first draw. */
   aimCircle?: AimCircle;
+  /** The armed class book page's reticle (FS-X2CMM R41); made on its first draw. */
+  pageReticle?: PageReticle;
   /** The Arrow Rain volleys (FS-04EEA R45); made on the first rain. */
   private rain?: ArrowRain;
   /** The slam's rings and the flurry's cuts still to come (R43, R46); made on first use. */
@@ -184,6 +188,17 @@ export class ClassKitFx {
     this.aimCircle?.clear();
   }
 
+  /** The armed page's reticle this frame (FS-X2CMM R41), a world effect the run draws (ADR-0086 2.2). */
+  reticle(reticle: Reticle): void {
+    this.pageReticle ??= new PageReticle(() => this.scene.add.graphics());
+    this.pageReticle.draw(reticle);
+  }
+
+  /** The page was cast or disarmed: no reticle left behind. */
+  endReticle(): void {
+    this.pageReticle?.clear();
+  }
+
   /**
    * The world is torn down (a restart, which a reconnect is, or leaving a field): everything
    * drawn goes, and the next first state is a fresh baseline, so a reconnect flashes nothing.
@@ -201,6 +216,8 @@ export class ClassKitFx {
     this.aimLine = undefined;
     this.aimCircle?.forget();
     this.aimCircle = undefined;
+    this.pageReticle?.forget();
+    this.pageReticle = undefined;
     // the tree abilities' looks: a rain's volleys, the steps still to come, a Blink waiting to land
     this.rain?.stop();
     this.rain = undefined;

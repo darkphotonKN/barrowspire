@@ -717,6 +717,20 @@ describe("the gear's, the container's and the record's data, told to the UI scen
 
 // FS-TQZ5J § Change: Phase 3 (I-TQZ5J-13): the UI scene asks the world for the gear's sends, a take and
 // the record's close, as plain data; a world with no answer ignores them.
+describe("the class book's requests (FS-X2CMM R44a)", () => {
+  it("should hand a page pressed and a disarm to the world's answers, and ignore them where it has none", () => {
+    const done: string[] = [];
+    const answer = answering({ page: (page) => void done.push(`page ${page}`), disarm: () => void done.push("disarm") });
+
+    answer({ kind: "page", page: "witchlight" });
+    answer({ kind: "disarm" });
+    answering({})({ kind: "page", page: "recall" });
+    answering({})({ kind: "disarm" });
+
+    expect(done).toEqual(["page witchlight", "disarm"]);
+  });
+});
+
 describe("the gear's, the container's and the record's requests (FS-TQZ5J § Change: Phase 3, R54)", () => {
   it("should hand equip, unequip, take and close: record to the world's answers, and ignore one it has none for", () => {
     const done: string[] = [];

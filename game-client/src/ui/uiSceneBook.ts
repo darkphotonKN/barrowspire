@@ -14,9 +14,9 @@
  * `gearOpened` ends a world's aim as it opens and the interface sounds' window rule plays for it. The
  * game never pauses: the world goes on under it, and only a press on its own ground is its (R39).
  *
- * A press on a page is handed to `pick`, the hook slice 11 (I-X2CMM-11) fills: there the run arms the
- * page through a new `UiRequest` kind, or casts a none or self page at once (§H R40, R44a). In this
- * slice a page takes the press and nothing more happens.
+ * A press on a ready page asks the run through the bridge (`{ kind: "page" }`, §H R40, R44a): the run
+ * arms a ground, ally or interactable page and draws its reticle, or casts a none or self page at once;
+ * the book stays open, and its closing disarms (the run hears `book` go in the UI's state).
  *
  * Phaser-free: the UI scene hands it the builder (`mountClassBook` on itself), so the wiring is tested on
  * its own.
@@ -49,7 +49,7 @@ export interface BookPiece {
 export interface BookWiring {
   /** Its own × pressed: it closes through the UI scene's act, its state reported after. */
   dismiss: () => void;
-  /** A page pressed: slice 11's arming hook (`UiBookSlot.pick`). */
+  /** A page pressed: a ready one asks the run to arm or cast it (`UiBookSlot.pick`, R40). */
   pick: (page: PageView) => void;
 }
 
@@ -198,12 +198,14 @@ export class UiBookSlot {
   }
 
   /**
-   * A page pressed in the open book (§H R40): slice 11's hook. There a ready page of kind ground, ally or
-   * interactable asks the run to arm it (a new `UiRequest` kind through `this.bridge.request`), a ready
-   * none or self page asks for its cast at once, and a locked, recovering, spent or dim page does
-   * nothing. In this slice the press is the book's and nothing more happens.
+   * A page pressed in the open book (§H R40, R44a): a ready page asks the run for it, which arms it or
+   * casts it by its target kind (the world casts, the book asks: ADR-0085 Decision 1). A locked,
+   * recovering, spent or dim page does nothing.
    */
-  private pick(_page: PageView): void {}
+  private pick(page: PageView): void {
+    if (page.state !== "ready") return;
+    this.bridge.request({ kind: "page", page: page.id });
+  }
 
   private refused(): boolean {
     const report = this.bridge.world;

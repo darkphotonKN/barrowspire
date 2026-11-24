@@ -19,6 +19,8 @@ import { parryRefused } from "@/ui/abilityBarView";
 import { SHADOW_SHOT_COOLDOWN_MS, ShadowShotAim } from "@/scenes/shadowShotAim";
 import { ArrowRainAim, arrowRainCentre } from "@/scenes/arrowRainAim";
 import { wearsShadow } from "@/render/effects/heavyShot";
+import { PageAim, pageArms, type AimScene, type Reticle } from "@/scenes/pageAim";
+import type { PageId } from "@/ui/pageIcons";
 import { treeAbilityOf, treeAbilityReady } from "./treeAbility";
 
 /**
@@ -126,6 +128,13 @@ export interface CombatLook {
   rainAim?(centre: Point): void;
   /** The Arrow Rain aim ended, cast or cancelled: no circle left behind. */
   endRainAim?(): void;
+  /**
+   * The armed page's reticle, drawn once a frame (FS-X2CMM R41): its ring at the pointer or under the body
+   * it snapped to, faint while a click there would do nothing. Local only (R44, ADR-0030).
+   */
+  reticle?(reticle: Reticle): void;
+  /** The page was cast or disarmed: no reticle left behind. */
+  endReticle?(): void;
 }
 
 /**
@@ -150,6 +159,8 @@ export class PlayerCombat {
   private readonly hold = new ShadowShotAim();
   /** The archer's Arrow Rain aim on key 3 (FS-04EEA R38): client presentation only (ADR-0030). */
   private readonly rain = new ArrowRainAim();
+  /** The class book's armed page (FS-X2CMM R40, R41): client presentation only (R44, ADR-0030). */
+  private readonly page = new PageAim();
 
   constructor(
     private readonly port: CombatPort,
@@ -171,6 +182,14 @@ export class PlayerCombat {
   }
 
   /**
+   * Whether a class book page is armed (FS-X2CMM R41): a left-click is its cast, a right-click its disarm,
+   * and no attack, class ability or strike answers a click.
+   */
+  get armed(): boolean {
+    return this.page.armed !== null;
+  }
+
+  /**
    * Whether the client's own lockout after an ability runs (FS-8AY7S req 31): the right-click's,
    * or Shadow Shot's cooldown mirror from a fired shot (FS-JTNPR req 13).
    */
@@ -185,7 +204,7 @@ export class PlayerCombat {
    * pointer button that pressed. Whether it was sent.
    */
   strike(me: Point, entityId: string, them: Point, playerClass?: string, button?: number): boolean {
-    if (this.hold.aiming || this.rain.aiming) return false;
+    if (this.hold.aiming || this.rain.aiming || this.armed) return false;
     if (button === RIGHT_BUTTON && playerClass === "archer") return false;
     if (!this.canStrike || this.pinned()) return false;
     // world positions, never the sprites' screen positions
@@ -211,7 +230,7 @@ export class PlayerCombat {
    */
   cast(button: CastButton, playerClass: string, from: Point, target: Point): boolean {
     // one hold at a time: a click during an Arrow Rain aim is ignored (FS-04EEA R38, R39)
-    if (this.hold.aiming || this.rain.aiming) return false;
+    if (this.hold.aiming || this.rain.aiming || this.armed) return false;
     // a copy: the effects are handed where the player stood, never the drawn position itself
     const me = { x: from.x, y: from.y };
 
@@ -317,6 +336,59 @@ export class PlayerCombat {
   }
 
   /**
+   * A ready page pressed in the class book (FS-X2CMM R40): a ground, ally or interactable page arms, and
+   * its reticle is drawn from the next frame (`pageFrame`); a none or self page sends its one `cast_skill`
+   * at once, from `me`, where the player stands. A pinned caster's cast is refused (FS-JS7C8 R62), so a
+   * none or self page sends nothing while the pin runs. Nothing of the effect is played (R42). Whether it
+   * was armed or sent.
+   */
+  pressPage(page: PageId, me: Point): boolean {
+    // a none or self page held back by the pin changes nothing, an armed page included
+    if (!pageArms(page) && this.pinned()) return false;
+    const was = this.page.armed;
+    const outcome = this.page.press(page);
+    if (was !== null && was !== this.page.armed) this.look.endReticle?.();
+    if (outcome === "armed") return true;
+    this.port.sendMessage(ActionType.CastSkill, { skill_id: page, target_x: me.x, target_y: me.y });
+    return true;
+  }
+
+  /** The armed page's reticle, once a frame, in the run as it stands (FS-X2CMM R41). */
+  pageFrame(scene: AimScene): void {
+    const reticle = this.page.reticle(scene);
+    if (reticle) this.look.reticle?.(reticle);
+  }
+
+  /**
+   * A left-click while a page is armed (FS-X2CMM R41): on a valid target, one `cast_skill` with the page
+   * id, the point and, for an ally or interactable page, the target's id, and the page disarms; on none,
+   * or while the attack pin runs, nothing, the page kept armed. Whether it was sent.
+   */
+  castArmed(scene: AimScene): boolean {
+    if (this.pinned()) return false;
+    const target = this.page.click(scene);
+    if (!target) return false;
+    this.look.endReticle?.();
+    this.port.sendMessage(ActionType.CastSkill, {
+      skill_id: target.page,
+      target_x: target.at.x,
+      target_y: target.at.y,
+      ...(target.targetId === undefined ? {} : { target_id: target.targetId }),
+    });
+    return true;
+  }
+
+  /**
+   * The armed page disarms with nothing sent (FS-X2CMM R41): right-click, Esc, the book closing, another
+   * window, death, a floor change, the run ending. No reticle is left. Whether a page was armed.
+   */
+  disarm(): boolean {
+    if (!this.page.disarm()) return false;
+    this.look.endReticle?.();
+    return true;
+  }
+
+  /**
    * The right button let go (FS-JTNPR req 13, 14, 18): a ready, affordable hold sends exactly one
    * `shadow_shot` at the world point `target`, and plays the release and the attack clip on that
    * send; any other release, one during the attack pin included (FS-JS7C8 R63), ends the hold
@@ -377,6 +449,7 @@ export class PlayerCombat {
     this.pinnedUntil = -Infinity;
     this.hold.reset();
     this.rain.cancel();
+    this.disarm();
   }
 
   /** Whether the archer's right-click wears the shadow: a Shadow Ranger's alone (FS-1J1CB §F R39). */

@@ -372,6 +372,15 @@ export const palette = {
    */
   rainAimRing: BARROW_HEX.vellum,
   rainAimFill: BARROW_HEX.vellumDark,
+  /**
+   * The armed page's reticle (FS-X2CMM R41; `src/render/effects/pageReticle.ts`), by its target kind: a
+   * ground page's ring in plain vellum over the darker vellum's wash, as the Arrow Rain's; an ally page's in
+   * the ally channel, arcane green; an interactable page's in the interactable channel, amber.
+   */
+  reticleGround: BARROW_HEX.vellum,
+  reticleFill: BARROW_HEX.vellumDark,
+  reticleAlly: BARROW_HEX.arcane,
+  reticleInteractable: BARROW_HEX.amber,
 
   // -- Hostile wash (FS-77AB6 req 38): a multiply tint over a creature's
   //    baked sprite, from the oxblood family. Lifted toward vellum so they

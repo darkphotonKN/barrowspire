@@ -282,6 +282,20 @@ describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)",
     expect(t.heard()).toEqual(["settings_open"]);
   });
 
+  // FS-X2CMM R41, R44a: an armed page's disarm is Esc's first step, before the book and everything else
+  it("should ask the run to disarm an armed page first, closing nothing and opening no menu (FS-X2CMM R44a)", () => {
+    const t = onBridge();
+    const run = aWorld("run", { armed: true });
+    t.bridge.report(run.report);
+    t.book.open = true;
+
+    t.esc();
+    expect(run.asked).toEqual([{ kind: "disarm" }]);
+    expect(t.book.open).toBe(true);
+    expect(t.slot.isOpen()).toBe(false);
+    expect(t.heard()).toEqual([]);
+  });
+
   // FS-X2CMM R36: the class book is the one on top of the party panel, the tree and the gear
   it("should close the book before the party panel, opening no menu (FS-X2CMM R36)", () => {
     const t = onBridge();

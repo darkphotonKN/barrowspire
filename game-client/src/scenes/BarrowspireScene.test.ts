@@ -1239,6 +1239,106 @@ describe("BarrowspireScene a floor's pool art (FS-C8VM7 §G R42-R43, ADR-0081)",
   });
 });
 
+// FS-X2CMM §H R40–R44a (I-X2CMM-11): the book asks, the run arms, draws the reticle and sends the cast;
+// while armed a left-click never attacks and a right-click disarms without the class ability; Esc
+// disarms first; the book closing disarms.
+describe("BarrowspireScene class book pages (FS-X2CMM §H R40–R44a)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function bookStage() {
+    const stage = onStage();
+    const handlers: Record<string, (...args: unknown[]) => void> = {};
+    Object.assign(stage.run, {
+      input: {
+        setDefaultCursor: vi.fn(),
+        keyboard: { on: vi.fn() },
+        on: (event: string, fn: () => void) => (handlers[event] = fn),
+      },
+    });
+    (stage.run as unknown as { bindRunInput(): void }).bindRunInput();
+    const ui = uiSceneOn(stage.run, "run", { row: false });
+    /** A press at the world point `world`, with the left (0) or the right (2) button. */
+    const click = (world: { x: number; y: number }, button = 0) => {
+      const screen = await_iso.worldToScreen(world.x, world.y);
+      handlers.pointerdown({
+        x: 10,
+        y: 10,
+        button,
+        worldX: screen.x,
+        worldY: screen.y,
+        leftButtonDown: () => button === 0,
+        rightButtonDown: () => button === 2,
+      });
+    };
+    const casts = () => stage.sent.mock.calls.filter(([action]) => action === ActionType.CastSkill).map(([, payload]) => payload);
+    const mage = { ...player("me", "Aldric", 130), class: "mage" } as ReturnType<typeof player>;
+    stage.run.handleGameStateUpdate(partyState(mage));
+    // the book is open: arming happens in it
+    ui.bridge.reportUi({ book: true });
+    return { ...stage, ...ui, click, casts };
+  }
+
+  it("should arm Witchlight on the book's ask, and send cast_skill with the page and the point on a click 5 cells off", () => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "witchlight" });
+    expect(t.casts()).toEqual([]);
+    expect(t.bridge.world?.facts().armed).toBe(true);
+
+    t.click({ x: 130 + 5 * 80, y: 300 });
+    expect(t.casts()).toHaveLength(1);
+    const [cast] = t.casts() as { skill_id: string; target_x: number; target_y: number }[];
+    expect(cast.skill_id).toBe("witchlight");
+    expect(cast.target_x).toBeCloseTo(530);
+    expect(cast.target_y).toBeCloseTo(300);
+    expect(t.bridge.world?.facts().armed).toBe(false);
+  });
+
+  it("should send nothing, and attack nothing, on a click beyond the page's range: the page stays armed", () => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "witchlight" });
+    t.click({ x: 130 + 9 * 80, y: 300 });
+    expect(t.sent).not.toHaveBeenCalled();
+    expect(t.bridge.world?.facts().armed).toBe(true);
+  });
+
+  it("should disarm on a right-click with no class ability, and on Esc before anything else", () => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "witchlight" });
+    t.click({ x: 300, y: 300 }, 2);
+    expect(t.sent).not.toHaveBeenCalled();
+    expect(t.bridge.world?.facts().armed).toBe(false);
+
+    t.bridge.request({ kind: "page", page: "witchlight" });
+    t.menu.escape();
+    expect(t.bridge.world?.facts().armed).toBe(false);
+    expect(t.menu.isOpen()).toBe(false);
+    expect(t.sent).not.toHaveBeenCalled();
+  });
+
+  it("should cast Hardened at once on the ask", () => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "hardened" });
+    expect(t.casts()).toEqual([{ skill_id: "hardened", target_x: 130, target_y: 300 }]);
+    expect(t.bridge.world?.facts().armed).toBe(false);
+  });
+
+  it("should snap Levitate under the teammate in reach and send the teammate's id", () => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "levitate" });
+    t.click({ x: 165, y: 305 });
+    expect(t.casts()).toEqual([{ skill_id: "levitate", target_x: 160, target_y: 300, target_id: "ally" }]);
+  });
+
+  it("should disarm as the book closes", () => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "witchlight" });
+    t.bridge.reportUi({ book: false });
+    expect(t.bridge.world?.facts().armed).toBe(false);
+  });
+});
+
 describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
   afterEach(() => {
     vi.restoreAllMocks();

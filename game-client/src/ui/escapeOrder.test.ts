@@ -28,6 +28,8 @@ describe("escapeStep (FS-R82NV § Change C2: one press closes one thing)", () =>
     ["the book", { ...none, book: true }, "book"],
     ["the open menu, over the book", { ...none, menu: true, book: true }, "close-menu"],
     ["the controls panel, before the book", { ...none, book: true, controls: true }, "controls"],
+    // FS-X2CMM R44a: an armed page's disarm is the first step while a page is armed
+    ["an armed page, before the controls panel and the book", { ...none, armed: true, book: true, controls: true, menu: true }, "disarm"],
   ] as const)("should close %s", (_case, open, step) => {
     expect(escapeStep(open)).toBe(step);
   });

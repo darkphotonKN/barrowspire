@@ -8,8 +8,8 @@
  * which its Esc dismisses first. The menu opens only with no window open, so it opens over none (FS-3EBCA R17); the corner
  * row's Menu icon does not step through this order but opens the menu at once, closing them (R6).
  * The run's controls panel comes before the whole order (FS-84N1G R17): any other window opening
- * closes it (R16), so nothing it covers opened after it. An armed page's disarm will stand before the
- * whole order while a page is armed (FS-X2CMM R44a, slice 11).
+ * closes it (R16), so nothing it covers opened after it. An armed page's disarm stands before the
+ * whole order while a page is armed (FS-X2CMM R44a): the run's to answer, it closes nothing.
  */
 
 export interface EscapeOpen {
@@ -24,11 +24,14 @@ export interface EscapeOpen {
   controls?: boolean;
   /** The class book (FS-X2CMM R36); absent where none stands. */
   book?: boolean;
+  /** A class book page armed in the run (FS-X2CMM R41); absent elsewhere. */
+  armed?: boolean;
 }
 
-export type EscapeStep = "controls" | "letter" | "close-menu" | "book" | "gear" | "party" | "tree" | "open-menu";
+export type EscapeStep = "disarm" | "controls" | "letter" | "close-menu" | "book" | "gear" | "party" | "tree" | "open-menu";
 
 export function escapeStep(open: EscapeOpen): EscapeStep {
+  if (open.armed) return "disarm";
   if (open.controls) return "controls";
   if (open.letter) return "letter";
   if (open.menu) return "close-menu";

@@ -185,7 +185,7 @@ export class UiMenuSlot {
 
   /**
    * One Esc press (R17; FS-R82NV § Change C2, FS-HRH2J R5, FS-1GZGD R40): an open dialogue is
-   * dismissed first, then `escapeStep`'s order: the run's controls panel (FS-84N1G R17), the letter panel, this slot (its Back; OPTIONS's
+   * dismissed first, then `escapeStep`'s order: an armed page's disarm (FS-X2CMM R44a), the run's controls panel (FS-84N1G R17), the letter panel, this slot (its Back; OPTIONS's
    * reopens the menu), the party panel, the gear overlay (the UI scene's own, § Change: Phase 3, R55);
    * with nothing open the menu opens.
    */
@@ -199,6 +199,7 @@ export class UiMenuSlot {
     }
     const open = report.windows();
     const step = escapeStep({
+      armed: report.facts().armed ?? false,
       controls: this.deps.controls?.isOpen() ?? false,
       letter: open.letter,
       menu: this.isOpen(),
@@ -207,7 +208,9 @@ export class UiMenuSlot {
       tree: this.deps.tree?.isOpen() ?? false,
       book: this.deps.book?.isOpen() ?? false,
     });
-    if (step === "controls") this.deps.controls?.dismiss();
+    // an armed page disarms, silently, and nothing else happens (FS-X2CMM R41, R44a)
+    if (step === "disarm") this.ask({ kind: "disarm" });
+    else if (step === "controls") this.deps.controls?.dismiss();
     else if (step === "letter") this.ask({ kind: "close", window: "letter" });
     else if (step === "close-menu") this.filled?.panel.keys.dismiss();
     else if (step === "book") this.closeBook();

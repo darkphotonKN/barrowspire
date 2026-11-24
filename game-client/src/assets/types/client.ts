@@ -56,6 +56,11 @@ export interface CastSkillPayload {
   skill_id: string;
   target_x: number;
   target_y: number;
+  /**
+   * The entity a class book page names (FS-X2CMM §F R35): a teammate's `other_players[].id`, or this
+   * player's own `current_player.id`, for an ally page; an interactable's entity id for one of those.
+   */
+  target_id?: string;
 }
 
 // ====== 動作類型對應 Payload ======

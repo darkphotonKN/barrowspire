@@ -22,6 +22,7 @@
 
 import type { WorldType } from "@/assets/types/client";
 import type { ContainerKind, ItemState } from "@/types/gameState";
+import type { PageId } from "./pageIcons";
 import type { ActionEffect, UiAct, UiActWrapper, UiEffect, WindowState } from "@/audio/uiSounds";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import type { GameRegistry } from "./gameFullscreen";
@@ -138,6 +139,8 @@ export interface WorldFacts {
   readonly leaving: boolean;
   /** The run has ended: no menu opens, and the keys are the run's end's (its keyboard is off). */
   readonly ended: boolean;
+  /** A class book page is armed in the run (FS-X2CMM R41): Esc's first step is its disarm (R44a). */
+  readonly armed?: boolean;
   /** A Leave the barrow sent and unanswered: its row is dimmed. */
   readonly leavePending: boolean;
   /** A Fall sent and unanswered: the Fall confirm's Fall is dimmed. */
@@ -185,7 +188,14 @@ export type UiRequest =
    * A dread lore line started on the UI scene: the world's camera trembles, as it did when the run drew
    * the line (FS-XWHZP R10; FS-TQZ5J § Change: Merge with main, 2026-11-14).
    */
-  | { readonly kind: "tremor"; readonly durationMs: number; readonly intensity: number };
+  | { readonly kind: "tremor"; readonly durationMs: number; readonly intensity: number }
+  /**
+   * A ready page pressed in the class book (FS-X2CMM R40, R44a): the run arms a ground, ally or interactable
+   * page and draws its reticle, or casts a none or self page at once. A cast is world play (ADR-0085).
+   */
+  | { readonly kind: "page"; readonly page: PageId }
+  /** Esc's first step while a page is armed (FS-X2CMM R44a): the run disarms it, nothing else. */
+  | { readonly kind: "disarm" };
 
 /** World → UI: the world's report, whole (R9). */
 export interface WorldReport {
@@ -238,6 +248,8 @@ export type WorldAnswers = {
   readonly take?: (item: ItemState) => void;
   readonly burn?: (altar: string) => void;
   readonly tremor?: (durationMs: number, intensity: number) => void;
+  readonly page?: (page: PageId) => void;
+  readonly disarm?: () => void;
 };
 
 /** The world's `answer` from its answers: each request to its own, one with none ignored (R11). */
@@ -259,6 +271,8 @@ export function answering(answers: WorldAnswers): (request: UiRequest) => void {
         return answers.burn?.(request.altar);
       case "tremor":
         return answers.tremor?.(request.durationMs, request.intensity);
+      case "page":
+        return answers.page?.(request.page);
       default:
         return answers[request.kind]?.();
     }

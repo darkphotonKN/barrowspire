@@ -34,6 +34,7 @@ import { HitFeedback } from "@/render/effects/hit";
 import { LoreDust } from "@/render/effects/loreDust";
 import { addMist, prefersReducedMotion } from "@/render/effects/mist";
 import { AbilityTelegraphs, IMPACT_MS } from "@/render/effects/monsterAbility";
+import { PageReticle } from "@/render/effects/pageReticle";
 import { ParryFx } from "@/render/effects/parry";
 import { RiposteFx } from "@/render/effects/riposte";
 import type {
@@ -251,6 +252,20 @@ export const EFFECT_CARDS: EffectCard[] = [
       const circle = new AimCircle(() => s.scene.add.graphics());
       circle.draw(s.aim);
       s.later(HOLD_MS / 2, () => circle.clear());
+    },
+  },
+  {
+    module: "pageReticle",
+    name: "Armed page reticle: Witchlight's ring, then faint, then the hound's paw",
+    demo: (s) => {
+      // at the point the figure aims, as an armed page draws it each frame (FS-X2CMM R41): plain on a valid
+      // target, faint where a click would do nothing, and Call the Hound's paw mark
+      const reticle = new PageReticle(() => s.scene.add.graphics());
+      const ring = { page: "witchlight", kind: "ground", at: s.aim, radius: 3 * 80, valid: true } as const;
+      reticle.draw(ring);
+      s.later(HOLD_MS / 3, () => reticle.draw({ ...ring, valid: false }));
+      s.later((HOLD_MS * 2) / 3, () => reticle.draw({ ...ring, page: "call_the_hound", radius: 40 }));
+      s.later(HOLD_MS, () => reticle.clear());
     },
   },
   {
