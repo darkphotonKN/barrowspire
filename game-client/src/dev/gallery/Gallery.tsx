@@ -18,12 +18,19 @@ const TreeColoursPanel = dynamic(() => import("./TreeColoursPanel"), {
   loading: () => <p className="text-sm text-text-muted">Loading tree colours...</p>,
 });
 
+// The class book's page roundels, the art gate's contact sheet, on a canvas of their own (FS-X2CMM R46).
+const PageRoundelsPanel = dynamic(() => import("./PageRoundelsPanel"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-text-muted">Loading page roundels...</p>,
+});
+
 // One section per tracked family. Keyed by Family, so a family listed in families.ts with no
 // section here fails the typecheck.
 const SECTIONS: Record<Family, { title: string; Body: ComponentType }> = {
   effects: { title: "Effects", Body: EffectsPanel },
   "item-icons": { title: "Item icons", Body: ItemIconGrid },
   "tree-colours": { title: "Tree colours", Body: TreeColoursPanel },
+  "page-roundels": { title: "Page roundels", Body: PageRoundelsPanel },
 };
 
 export default function Gallery() {

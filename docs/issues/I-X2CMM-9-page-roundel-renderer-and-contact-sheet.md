@@ -1,6 +1,6 @@
 ---
 id: I-X2CMM-9
-status: open
+status: done
 implements: FS-X2CMM
 blocked_by: []
 labels: [ready-for-agent]
@@ -35,11 +35,11 @@ ADR-0094 in code. No wiring into the book (slice 10 does that after the sheet).
 
 ## Acceptance Criteria
 
-- [ ] The five tokens exist and are read only through `palette.bookPigment`; lint and the fence pass.
-- [ ] `pageRoundel` draws each state; unit tests cover the state→ink mapping and the fallback.
-- [ ] All 14 pictures exist, each with its R45 pigment.
-- [ ] The gallery card and a PNG contact sheet of all 14 in four states exist.
-- [ ] `npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` green.
+- [x] The five tokens exist and are read only through `palette.bookPigment`; lint and the fence pass.
+- [x] `pageRoundel` draws each state; unit tests cover the state→ink mapping and the fallback.
+- [x] All 14 pictures exist, each with its R45 pigment.
+- [x] The gallery card and a PNG contact sheet of all 14 in four states exist.
+- [x] `npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` green.
 
 ## Blocked By
 

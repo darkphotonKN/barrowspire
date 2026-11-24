@@ -138,6 +138,7 @@ and the two are not required to agree (ADR-0025).
 | **Parchment / UI** | vellum `#cdbf9a`, darkened `#8a7d5c`, ink `#1c1712` |
 | **Brass** | `#9c7b3f`, `#c9a14e` |
 | **Passive tree hues** (a lit tree picture only) | copper `#d49274`, steelBlue `#5f82b8`, teal `#3aa0b0`, frost `#8ac2e6`, verdigris `#5fa88a`, amethyst `#a088cc`, silver `#c2c8d0` |
+| **Book pigments** (a class book page roundel only) | pigmentVerdigris `#5b9a80`, pigmentOchre `#a88b52`, pigmentMadder `#8f5048`, pigmentLapis `#52699a`, pigmentBone `#ddd3bb` |
 
 **Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
 and its aim arrow) and the Shadow Ranger's gloom (*Auras*), and nothing else. *(Amended at the
@@ -162,6 +163,13 @@ draws, so they are narrow on purpose:
 - **Frost** is a pale cold sky tone of modest chroma, never the neon cyan the rules below forbid.
 - **Amethyst** marks crit in the tree and is not umbra, which stays the Shadow Shot's and the Shadow
   Ranger's gloom.
+
+**The book pigments are for a class book page's roundel only** (`palette.bookPigment`, FS-X2CMM R45,
+[ADR-0094](../../docs/adr/0094-class-book-page-icons-are-muted-pigment-glyphs-in-bronze-rimmed-roundels.md)):
+a page's picture wears one main pigment by what the page does (light and finding ochre, movement and
+air lapis, binding and blood madder, growth, beasts and cures verdigris), never by its class, with bone
+for its highlights. Muted mineral tones, none more saturated than verdigris `#5fa88a`; ochre stays clear
+of amber and madder of oxblood. Nothing else reads them.
 
 **Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
 interactable, which stays amber, and never stands in for a light source's colour. It may also be
@@ -1121,6 +1129,23 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   bronze; a second icon wanting its own hue needs its own ADR. *(Added by
   [ADR-0089](../../docs/adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md),
   2026-11-23.)*
+  **A second exception: the class book's page roundels** (`src/ui/pageRoundel.ts`, pictures in
+  `src/ui/pageIcons.ts`). Each is a muted pigment glyph in a bronze-rimmed disc, built from four layers
+  of the same renderer:
+  - a ground disc in `ink`, the only layer with the drop shadow;
+  - the glyph's body, flat in its page's book pigment, its cuts through to the ground;
+  - bone laid on the body for highlights and detail;
+  - the row's bronze rim, lit from above.
+
+  The disc is 44 px in the book and 28 px on the cast bar. **Ready** lifts the rim and goes to alpha 1
+  under the pointer. **Recovering** keeps its pigment under a dark sweep (`ink` at 0.55), inside the
+  rim. **Dim** (short of cost) sinks the glyph toward the ground. **Locked** is the body flat in
+  `hudFaint` at 0.6, its bone in `ink` so the detail reads as cuts, and the rim unlit. Only a ready page
+  lifts. Where no texture can be made, the glyph is drawn as 2.25 px lines in its pigment. Every other
+  HUD icon stays bronze, the book's own corner icon included. The contact sheet is the dev gallery's
+  Page roundels card. *(Added by
+  [ADR-0094](../../docs/adr/0094-class-book-page-icons-are-muted-pigment-glyphs-in-bronze-rimmed-roundels.md),
+  2026-11-25.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

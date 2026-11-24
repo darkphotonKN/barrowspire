@@ -165,6 +165,11 @@ export interface KnockoutDeps {
   lost?: () => void;
   /** Named in the warning when the texture cannot be made. */
   name?: string;
+  /**
+   * Whether it casts the drop shadow (default true). A page roundel's upper layers do not: only its
+   * ground does, so a layer laid over another casts nothing onto it (FS-X2CMM R45, ADR-0094).
+   */
+  shadow?: boolean;
 }
 
 /**
@@ -179,7 +184,7 @@ export class Knockout {
   private readonly span: { top: number; foot: number };
   private builtAt = 0;
   private failed = false;
-  private at?: { f: Rect; hovered: boolean };
+  private at?: { f: Rect; hovered: boolean; ink?: KnockoutInk };
   private readonly unwatch: () => void;
 
   constructor(private readonly deps: KnockoutDeps) {
@@ -188,14 +193,17 @@ export class Knockout {
     // the texture is drawn at the render scale, so a new one draws it again
     this.unwatch = viewport.onChange(() => {
       if (!this.image || !this.at || this.builtAt === viewport.renderScale) return;
-      if (!this.show(this.at.f, this.at.hovered)) this.deps.lost?.();
+      if (!this.show(this.at.f, this.at.hovered, this.at.ink)) this.deps.lost?.();
     });
   }
 
-  /** Shows it on the slot `f`, hovered or not; false where it cannot be drawn. */
-  show(f: Rect, hovered: boolean): boolean {
+  /**
+   * Shows it on the slot `f`, hovered or not, in `ink` where one is given (a page roundel's state,
+   * FS-X2CMM R45) and its own otherwise; false where it cannot be drawn.
+   */
+  show(f: Rect, hovered: boolean, ink?: KnockoutInk): boolean {
     if (this.failed || !this.possible()) return false;
-    this.at = { f, hovered };
+    this.at = { f, hovered, ink };
     if (!this.image || this.builtAt !== viewport.renderScale) {
       try {
         this.build(f, viewport.renderScale);
@@ -206,16 +214,17 @@ export class Knockout {
         return false;
       }
     }
-    const ink = hovered ? this.deps.ink.hover : this.deps.ink.idle;
+    const worn = ink ?? this.deps.ink;
+    const { tint, alpha } = hovered ? worn.hover : worn.idle;
     const [cx, cy] = [f.x + f.width / 2, f.y + f.height / 2];
-    const image = this.image!.setPosition(cx, cy).setAlpha(ink.alpha);
-    if (this.deps.ink.flat) image.setTint(ink.tint);
+    const image = this.image!.setPosition(cx, cy).setAlpha(alpha);
+    if (worn.flat) image.setTint(tint);
     else {
-      const { top, foot } = topLit(ink.tint, this.deps.ink.lift, this.span, f.height / 2);
+      const { top, foot } = topLit(tint, worn.lift, this.span, f.height / 2);
       image.setTint(top, top, foot, foot);
     }
     // the shadow never moves under the pointer (R3)
-    this.shadow!.setPosition(cx + SHADOW.dx, cy + SHADOW.dy);
+    this.shadow?.setPosition(cx + SHADOW.dx, cy + SHADOW.dy);
     return true;
   }
 
@@ -238,8 +247,7 @@ export class Knockout {
     return (
       typeof scene.make?.graphics === "function" &&
       typeof scene.add?.renderTexture === "function" &&
-      typeof scene.add?.image === "function" &&
-      typeof scene.children?.moveBelow === "function"
+      (this.deps.shadow === false || (typeof scene.add?.image === "function" && typeof scene.children?.moveBelow === "function"))
     );
   }
 
@@ -271,7 +279,8 @@ export class Knockout {
       eraseCuts(cuts, picture, k);
       image.draw(solid).erase(cuts).render();
       // the drop shadow: the same texture shown again, so nothing is drawn twice (FS-S8Z2Y R1)
-      this.shadow = scene.add
+      if (this.deps.shadow !== false)
+        this.shadow = scene.add
         .image(f.x + f.width / 2, f.y + f.height / 2, image.texture)
         .setScrollFactor(0)
         .setDepth(depth)
@@ -291,7 +300,7 @@ export class Knockout {
     this.builtAt = renderScale;
     this.deps.built?.(image);
     // just under the image, wherever its owner has placed it (R2)
-    scene.children.moveBelow(this.shadow as Phaser.GameObjects.GameObject, image as Phaser.GameObjects.GameObject);
+    if (this.shadow) scene.children.moveBelow(this.shadow as Phaser.GameObjects.GameObject, image as Phaser.GameObjects.GameObject);
   }
 }
 

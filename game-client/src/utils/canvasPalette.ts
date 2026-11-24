@@ -268,6 +268,20 @@ export const palette = {
     steel: BARROW_HEX.silver,
   },
 
+  /**
+   * The class book's pigments (FS-X2CMM R45, ADR-0094): a page roundel's picture wears one main
+   * pigment by what the page does (light and finding ochre, movement and air lapis, binding and blood
+   * madder, growth, beasts and cures verdigris), never by its class, with bone for its highlights and
+   * detail. Read by the page roundels alone (`src/ui/pageRoundel.ts`).
+   */
+  bookPigment: {
+    verdigris: BARROW_HEX.pigmentVerdigris,
+    ochre: BARROW_HEX.pigmentOchre,
+    madder: BARROW_HEX.pigmentMadder,
+    lapis: BARROW_HEX.pigmentLapis,
+    bone: BARROW_HEX.pigmentBone,
+  },
+
   // -- Light. The only warmth in the barrow.
   torch: BARROW_HEX.amber,
   torchCore: BARROW_HEX.amberBright,
@@ -437,6 +451,9 @@ export const palette = {
 
 /** One of the passive tree's hues (L4), by what a node gives: the key a node's copy names. */
 export type TreeHue = keyof typeof palette.treeHue;
+
+/** A page's main pigment (R45): bone is every page's highlight, never a main one (ADR-0094). */
+export type BookPigment = Exclude<keyof typeof palette.bookPigment, "bone">;
 
 // ── Typography ────────────────────────────────────────────────────────────
 

@@ -134,7 +134,7 @@ const angle = (o: Pt, p: Pt) => Math.atan2(p[1] - o[1], p[0] - o[0]);
  * A crescent: the disc (o, r) less the disc (bite, rb) that overlaps it, from one horn round the
  * back of the disc to the other and in along the bite's edge.
  */
-function crescent(o: Pt, r: number, bite: Pt, rb: number, steps = 28): Shape {
+export function crescent(o: Pt, r: number, bite: Pt, rb: number, steps = 28): Shape {
   const [p, q] = crossings(o, r, bite, rb);
   // the disc's edge away from the bite, p to q; the bite's edge inside the disc, q back to p
   let [a0, a1] = [angle(o, p), angle(o, q)];

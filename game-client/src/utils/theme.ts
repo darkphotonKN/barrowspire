@@ -92,6 +92,16 @@ export const BARROW = {
   amethyst: "#a088cc", //   crit
   silver: "#c2c8d0", //     the duel
 
+  // The class book's pigments (FS-X2CMM R45, ADR-0094): a page's picture is painted in one main
+  // pigment by what the page does, with bone for its highlights. Muted mineral tones, none past
+  // verdigris's chroma; ochre kept off amber (interactable), madder off oxblood (damage). Read only
+  // through `palette.bookPigment`, and only by the page roundels.
+  pigmentVerdigris: "#5b9a80", // growth, beasts and cures
+  pigmentOchre: "#a88b52", //     light and finding
+  pigmentMadder: "#8f5048", //    binding and blood
+  pigmentLapis: "#52699a", //     movement and air
+  pigmentBone: "#ddd3bb", //      every page's highlights, never a main pigment
+
   // Menu chrome: Bone & Soot, the canvas menus' own values (ADR-0087; see the header). The
   // comments name the web token each held until 2026-11-21, which is also the swap-back table.
   // Read only by the canvas menus, through `palette.menu` in canvasPalette.ts.
@@ -156,6 +166,11 @@ export const BARROW_HEX = {
   verdigris: 0x5fa88a,
   amethyst: 0xa088cc,
   silver: 0xc2c8d0,
+  pigmentVerdigris: 0x5b9a80,
+  pigmentOchre: 0xa88b52,
+  pigmentMadder: 0x8f5048,
+  pigmentLapis: 0x52699a,
+  pigmentBone: 0xddd3bb,
   menuBone: 0xe9dfc9,
   menuBoneBright: 0xf6efdf,
   menuAsh: 0x8c8c84,
