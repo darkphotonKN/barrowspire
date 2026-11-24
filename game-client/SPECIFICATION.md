@@ -77,6 +77,15 @@ server state and sends intents. ✅
 - [ ] Allocated pickup notices → FS-V780R
 - [x] Unsafe marking on run finds → FS-18Z5F
 - [ ] Other delvers' names over their heads → FS-CH21F
+- [ ] Class book → FS-X2CMM
+- [ ] Floor seals → FS-5FZ4J
+- [ ] Traps shown and sprung → FS-5FZ4J
+- [ ] Secret doors and hidden rooms → FS-5FZ4J
+- [ ] Healing fountains and the hallowed altar → FS-5FZ4J
+- [ ] Dungeon NPC encounters and hired allies → FS-4EC7Z
+- [ ] Contract mark heading and result → FS-4EC7Z
+- [ ] Buy from the wandering merchant → FS-9JV5K
+- [ ] Drink an antidote → FS-9JV5K
 
 ### Character
 
@@ -137,6 +146,7 @@ server state and sends intents. ✅
 - [ ] High-density canvas rendering → FS-ZAJMH
 - [ ] Canvas that resizes with the window → FS-ZAJMH
 - [ ] Fullscreen and windowed play → FS-ZAJMH
+- [ ] Class book page icons → FS-X2CMM
 
 ### Sound
 

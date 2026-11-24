@@ -719,3 +719,5 @@ themselves (this FS only avoids adding to them).
 ## Change: Wall shadow layer → FS-V8FT3
 
 ## Change: Tiered enemy roster and floor pools → FS-C8VM7
+
+## Change: Sealed floors → FS-5FZ4J

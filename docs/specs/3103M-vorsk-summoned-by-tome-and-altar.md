@@ -292,3 +292,5 @@ on FS-XWHZP's lore module.
   them as lore lines. Add: the burn flip plays the hell line as a `dread` lore line, not a HUD
   notice.
 - **Blocked by.** I-3103M-7 now also waits on FS-XWHZP's lore module and copy.
+
+## Change: Wandering merchant → FS-9JV5K

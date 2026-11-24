@@ -506,3 +506,5 @@ Check
 - Lifting the ambient on floors 2–3, in the hub or the fields; changing `TOWER_AMBIENT` or
   `AMBIENT.run`.
 - Any server, wire, golden or art change.
+
+## Change: Sealed floors → FS-5FZ4J

@@ -92,6 +92,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Drink an equipped health potion → FS-P9G8R
 - [ ] Timed container opening → FS-MQYEX
 - [ ] Attacking slows the attacker's movement → FS-JS7C8
+- [ ] Drink an antidote → FS-9JV5K
 
 ### Classes
 
@@ -100,6 +101,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Archer's Shadow Shot → FS-JTNPR
 - [ ] Class tree abilities → FS-04EEA
 - [ ] Ability cooldowns in the owner's state → FS-Q18Q3
+- [ ] Class book abilities unlocked by level → FS-X2CMM
 
 ### Enemies
 
@@ -118,6 +120,12 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Champion bosses → FS-C8VM7
 - [ ] Summoned demon boss → FS-3103M
 
+### Encounters
+
+- [ ] Dungeon NPC encounters → FS-4EC7Z
+- [ ] Hired NPC allies → FS-4EC7Z
+- [ ] Contract marks → FS-4EC7Z
+
 ### Progression
 
 - [x] Experience from kills → FS-BDA7X
@@ -133,6 +141,11 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Floor map sent once per floor → FS-KE075
 - [ ] Per-player interest in run snapshots → FS-KE075
 - [ ] Guarded chests → FS-KE075
+- [ ] Sealed stairs → FS-5FZ4J
+- [ ] Floor traps → FS-5FZ4J
+- [ ] Hidden rooms behind secret doors → FS-5FZ4J
+- [ ] Healing fountains and the hallowed altar → FS-5FZ4J
+- [ ] Wandering merchant → FS-9JV5K
 
 ### Hub world
 

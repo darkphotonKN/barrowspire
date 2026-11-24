@@ -593,3 +593,5 @@ Each **(charter default)** above, so the owner can revise it in play:
 7. The new families' experience bases (R33).
 8. The ogre's per-look aim (R34); no new ability clips (R37).
 9. Stand-ins on `creatures`, the dark warrior's as the ghoul (R44).
+
+## Change: Sealed floors → FS-5FZ4J

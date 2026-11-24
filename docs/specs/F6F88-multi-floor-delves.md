@@ -290,3 +290,5 @@ fields are the contract between the two halves:
 ## Change: Minimap look and the run HUD's layout → FS-56CKV
 
 ## Change: Minimap modes: enlarged and overlay → FS-1SEF0
+
+## Change: Sealed floors → FS-5FZ4J
