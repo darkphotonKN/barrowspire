@@ -648,6 +648,25 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   square goes **active** during a Shadow Shot hold or an open parry stance. The 3 square is
   **locked** (padlock, "Lv 10") while `tree_ability_cooldown` is absent. Not a **cell** (a
   level's grid square, or a bag slot).
+- **Class book** (FS-X2CMM): the per-class panel of **pages**, opened and closed by `K` or the
+  corner row's **book icon**, in a run only. Its title is the class's book: **Spellbook** (mage),
+  **Hunter's Journal** (archer), **The Ledger** (mercenary), **Scars** (warrior). A UI-scene
+  piece (ADR-0084–0086); the game never pauses and walking stays free while it is open. The book
+  and its pages are game-service's terms
+  ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities":
+  *class book*, *page*, *book ability*, *cast time*). Not the run's **controls badge** (also drawn
+  as a book) and not the **inventory**.
+- **Page roundel** (FS-X2CMM, ADR-0094): how a page is drawn in the book: a muted **pigment**
+  glyph (verdigris, ochre, madder, lapis, with bone highlights) in a bronze-rimmed disc. The one
+  coloured family on the canvas HUD; every other HUD icon stays a **knockout**. **Locked** (greyed,
+  "Lv N"), **ready**, or **recovering** (a cooldown sweep). Not a **line glyph**, which is only an
+  icon's fallback.
+- **Armed page** (FS-X2CMM): a ready page the player has clicked, waiting for its target: the
+  cursor is a **reticle** shaped by the page's **target kind** (ground, ally, interactable, self,
+  none). A click on a valid target sends the cast; right-click or Esc **disarms**. A page of
+  kind *none* is never armed: the click casts it. Client presentation only (ADR-0030).
+- **Cast bar** (FS-X2CMM): the small bar under the player that fills while the server counts a
+  page's **cast time**, from the owner's state; it clears when the cast completes or breaks.
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the
   top left of a run or a field world, under the level bar in a run, each labelled with its own
   name ("Health:", "Mana:",

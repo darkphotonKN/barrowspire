@@ -712,6 +712,55 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   resource, ADR-0030); a cast by a caster without the node is refused as an unaffordable one is.
   On the wire, `tree_ability_cooldown` and `resource.tree_ability_cost` (FS-Q18Q3). Not a monster
   ability.
+- **Class book** (FS-X2CMM) — a class's set of **pages**, by class id, held in the class config
+  beside the class ability and the tree ability: the mage's **Spellbook**, the archer's **Hunter's
+  Journal**, the mercenary's **The Ledger**, the warrior's **Scars**. The book names are display
+  (game-client draws them); the server knows a book only as its class's page table. Runs only:
+  a cast of a page in the hub or a field is refused.
+- **Page** (FS-X2CMM) — one entry of a class book: a **book ability** with the level it unlocks
+  at, its **target kind**, its **cast time**, its cost in the class resource and its cooldown.
+  Unlocked by character level alone (no tree points); the level is checked on every cast. The
+  14 pages by id: mage `witchlight`, `far_hand`, `levitate`, `binding_glyph`, `recall`; archer
+  `trackers_eye`, `brew`, `call_the_hound`; mercenary `pick_the_lock`, `strike_a_deal`,
+  `take_a_contract`; warrior `heave`, `hardened`, `long_night`. The warrior's pages are **scars**
+  and their screen names carry it ("Scar of the Gate (Heave)", "Scar of the Pit (Hardened)",
+  "Scar of the Long Night (Last Stand)"). **Collides**: *Last Stand* is already the Guardian's
+  saving rule (`LastStandSpentComponent`, FS-E1ZDG), so the page's id and its code are
+  `long_night`, never `last_stand`; write "the Long Night" for the page.
+- **Book ability** (FS-X2CMM) — what a page casts. Goes out as `cast_skill` with the page id as
+  the skill id, and resolves like every cast (ADR-0030): refused when locked, outside a run, on
+  cooldown, short of cost or out of range, with no effect, no cost and no cooldown. Parallel to
+  **tree ability**; never a bare "ability". Does not start the **pin** and is not shortened by
+  attack speed.
+- **Target kind** (FS-X2CMM) — what a page is aimed at: `ground` (a point within range), `ally`
+  (a living teammate, or the caster where the page allows self), `interactable` (a Spire entity
+  within range), `self`, `none` (casts on the click). The client arms its reticle by it; the
+  server checks the target against it.
+- **Cast time** (FS-X2CMM) — the wait, counted by the server, between a book ability's accepted
+  cast and its effect. The caster is **casting** while it runs. Moving or taking damage **breaks**
+  it: no effect, no cost, no cooldown (the FS-MQYEX rule). Cost and cooldown are taken when it
+  completes. One cast at a time: a second page cast while casting is refused. Not a wind-up (a
+  monster's) and not the pin.
+- **Book cooldown** (FS-X2CMM) — a page's own cooldown: per run, reset at run start, kept across
+  floors, sent to the owner beside the other cooldowns (FS-Q18Q3). **Once per floor** resets on
+  climbing; **once per delve** never resets inside the run.
+- **Rune** (FS-X2CMM, Binding Glyph) — the 1.5-cell mark the Binding Glyph page lays on the
+  ground for 30 s; the first three monsters to cross it are held as by a **stun**. Write "rune"
+  for the thing on the floor, "Binding Glyph" for the page; game-client's *line glyph* is an icon
+  term and unrelated.
+- **Witchlight** (FS-X2CMM) — the drifting light the page of that name sets down for 20 s; lifts
+  fog within 3 cells of it for the party.
+- **Draught** (FS-X2CMM, Brew) — the drink the Brew page sets down; any delver drinks it by
+  interacting. Heals over time; lasts until drunk or the floor ends. Not a **health potion**
+  (carried, key 1).
+- **Hound** (FS-X2CMM, Call the Hound) — the archer's summoned beast: an ally entity for 40 s that
+  fights monsters. Not a monster and not a delver: monsters may strike it, it never counts toward
+  a floor's clear or a party's roster, and it leaves no body.
+- **Afloat** (FS-X2CMM, Levitate) — the 8 s state of a delver the Levitate page lifts: cannot
+  attack while it runs.
+- **Hardened** (FS-X2CMM) — the 10 s self state the Scar of the Pit sets on the warrior.
+- **Long Night** (FS-X2CMM) — the 6 s self state the Scar of the Long Night sets: monsters within
+  5 cells turn on the warrior, who takes 30% less damage.
 - **Stun** (FS-04EEA) — server state on a monster, applied only by Earthbreaker: while it runs the
   monster neither moves, strikes nor starts a wind-up, and a wind-up in progress ends with nothing
   landing; its cooldowns keep counting. A second stun takes the longer, never stacks. On the wire,
