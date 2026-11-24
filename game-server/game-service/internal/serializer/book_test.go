@@ -185,3 +185,44 @@ func TestFormatStateToClientState_ARuneCarriesItsCatchCount(t *testing.T) {
 		assert.Equal(t, float64(2), effects[0].(map[string]any)["caught"], recipient)
 	}
 }
+
+// A hound goes to every recipient as kind "hound", with its archer's player
+// id, its health and max and what it is doing; at no health it shows dead,
+// health 0. No other kind carries those fields. FS-X2CMM §E R28, §F R34.
+// I-X2CMM-8.
+func TestFormatStateToClientState_AHoundCarriesItsOwnerHealthAndAction(t *testing.T) {
+	w := newPartyWorld()
+	archer := uuid.New()
+	hound := addBookEffect(w.em, components.BookEffectHound, 300, 400, 25)
+	hound.AddComponent(components.NewHealthComponent(30, 40))
+	hound.AddComponent(&components.HoundComponent{OwnerMemberID: archer, Action: components.HoundActionBite})
+	addBookEffect(w.em, components.BookEffectWitchlight, 310, 400, 5)
+
+	want := map[string]any{
+		"id": hound.ID.String(), "kind": "hound", "x": float64(300), "y": float64(400), "remaining": float64(25),
+		"owner_id": archer.String(), "health": float64(30), "max_health": float64(40), "action": "bite",
+	}
+	for _, recipient := range []uuid.UUID{w.wren, w.mage, w.stranger} {
+		_, frame := wireFor(t, w.em, types.WorldTypeRun, recipient)
+		effects := frame["book_effects"].([]any)
+		require.Len(t, effects, 2, recipient)
+		assert.Contains(t, effects, want, recipient)
+		for _, e := range effects {
+			if e.(map[string]any)["kind"] == "witchlight" {
+				assert.NotContains(t, e, "owner_id")
+				assert.NotContains(t, e, "health")
+				assert.NotContains(t, e, "action")
+			}
+		}
+	}
+
+	hc, _ := hound.GetComponent(ecs.ComponentTypeHealth)
+	hc.(*components.HealthComponent).CurrentHealth = 0
+	_, frame := wireFor(t, w.em, types.WorldTypeRun, w.wren)
+	for _, e := range frame["book_effects"].([]any) {
+		if e.(map[string]any)["kind"] == "hound" {
+			assert.Equal(t, "dead", e.(map[string]any)["action"])
+			assert.Equal(t, float64(0), e.(map[string]any)["health"])
+		}
+	}
+}

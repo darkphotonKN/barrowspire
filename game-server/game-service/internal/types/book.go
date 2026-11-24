@@ -20,7 +20,7 @@ type BookCastingState struct {
 }
 
 // BookEffectState is a book effect on the floor as every recipient of the run
-// is told it: its entity id, its kind (witchlight, rune, draught), where it
+// is told it: its entity id, its kind (witchlight, rune, draught, hound), where it
 // stands in px and its seconds left. A draught has no time of its own (it
 // stands until drunk), so its remaining is always 0; its id is what an
 // interact names to drink it. A kind that shows more (a rune's catches, a
@@ -35,6 +35,13 @@ type BookEffectState struct {
 	// Caught is how many monsters a rune has held so far, absent while none,
 	// so a client can flash it as the count climbs (R24, R47).
 	Caught int `json:"caught,omitempty"`
+	// OwnerID, Health, MaxHealth and Action are a hound's, absent on every
+	// other kind: its archer's player id, its health (0 on its one state as
+	// dead), its max, and idle, run, bite or dead (R28).
+	OwnerID   *uuid.UUID `json:"owner_id,omitempty"`
+	Health    *int       `json:"health,omitempty"`
+	MaxHealth int        `json:"max_health,omitempty"`
+	Action    string     `json:"action,omitempty"`
 }
 
 // BookPageState is one offered page as its owner is told it: Cost its whole

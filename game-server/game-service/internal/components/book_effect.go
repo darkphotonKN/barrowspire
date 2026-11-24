@@ -18,7 +18,10 @@ const (
 	// BookEffectDraught is the Brew page's draught (R27): it has no time of
 	// its own, and stands until a delver drinks it or the floor ends.
 	BookEffectDraught BookEffectKind = "draught"
-	// hound joins here as its page is built.
+	// BookEffectHound is the Call the Hound page's hound (R28): a body on the
+	// floor with health of its own, its bite and heel a HoundComponent on the
+	// same entity. It goes at its time or at no health.
+	BookEffectHound BookEffectKind = "hound"
 )
 
 // BookEffectComponent is a book effect: an entity of its own on the floor, at

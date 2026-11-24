@@ -78,6 +78,7 @@ type pageResolver func(world *ecs.EntityManager, cast BookCast)
 var pageResolvers = map[components.PageID]pageResolver{
 	components.PageBindingGlyph: resolveBindingGlyph,
 	components.PageBrew:         resolveBrew,
+	components.PageCallTheHound: resolveCallTheHound,
 	components.PageHardened:     resolveHardened,
 	components.PageLevitate:     resolveLevitate,
 	components.PageLongNight:    resolveLongNight,
@@ -178,7 +179,8 @@ func (s *BookSystem) resolve(cast BookCast, book *components.BookComponent) {
 
 // Update runs every book down by the tick: its book cooldowns and its timed
 // states, each gone once its time is up, and a drunk draught's heal; and the
-// floor's book effects, each taken from the world once its time is up. A rune
+// floor's book effects, each taken from the world once its time is up (a hound
+// too at no health). A rune
 // first catches what stands on it, and goes on its third catch. It runs
 // before the monsters think, so a monster caught stands from this tick. Simulation time; a book's across
 // floors. FS-X2CMM §A R8, §E R21, R24, R27.

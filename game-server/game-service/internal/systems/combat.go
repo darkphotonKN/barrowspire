@@ -458,6 +458,9 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		}
 	}
 
+	// the archers' hounds bite (FS-X2CMM §E R28, book_hound.go)
+	s.houndsBite(deltaTime, entities)
+
 	// after the burn, so a trail a charge lays as it ends first burns next tick
 	for _, entity := range entities {
 		s.settleCharge(entity)
@@ -1478,6 +1481,9 @@ func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage P
 	}
 	fromDelver := attack.AttackerMemberID != uuid.Nil
 	if fromDelver && targetIsDelver && playerDamage == PlayerDamageOff {
+		return false
+	}
+	if sparesHound(attack, target) { // no delver's hit lands on a hound (FS-X2CMM R28)
 		return false
 	}
 

@@ -103,6 +103,8 @@ const (
 	ComponentTypeBookEffect ComponentType = "BookEffect"
 	// a rune's catch, on the rune's book effect (FS-X2CMM §E R24)
 	ComponentTypeRune ComponentType = "Rune"
+	// a hound's bite and heel, on the hound's book effect (FS-X2CMM §E R28)
+	ComponentTypeHound ComponentType = "Hound"
 )
 
 type Entity struct {

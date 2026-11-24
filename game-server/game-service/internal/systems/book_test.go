@@ -175,9 +175,10 @@ func TestGateTarget_JudgesTheTargetByKindAndRange(t *testing.T) {
 }
 
 // Only pages with a resolver are offered: Hardened, Witchlight, Levitate,
-// Binding Glyph, Recall, Tracker's Eye, the Long Night and Brew so far. §K R59.
+// Binding Glyph, Recall, Tracker's Eye, the Long Night, Brew and Call the
+// Hound so far. §K R59.
 func TestPageOffered_OnlyPagesWithAResolver(t *testing.T) {
-	offered := []components.PageID{components.PageHardened, components.PageWitchlight, components.PageLevitate, components.PageBindingGlyph, components.PageRecall, components.PageTrackersEye, components.PageLongNight, components.PageBrew}
+	offered := []components.PageID{components.PageHardened, components.PageWitchlight, components.PageLevitate, components.PageBindingGlyph, components.PageRecall, components.PageTrackersEye, components.PageLongNight, components.PageBrew, components.PageCallTheHound}
 	for _, id := range AllPageIDs() {
 		assert.Equal(t, slices.Contains(offered, id), PageOffered(id), id)
 	}

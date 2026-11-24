@@ -99,6 +99,7 @@ func (s *MonsterAISystem) Update(deltaTime float64, entities []*ecs.Entity) {
 
 		s.think(deltaTime, entity, monster, at, velocity, delvers)
 	}
+	s.runHounds(deltaTime, entities) // the archers' hounds, after them (book_hound.go)
 }
 
 // think runs one monster's tick: keep, drop or acquire a target, then stand
@@ -446,6 +447,12 @@ path used up it holds on its own cell's centre. A search that finds nothing
 leaves it steering straight at (x, y) until its next search (R27).
 */
 func (s *MonsterAISystem) towards(monster *components.MonsterComponent, at *components.TransformComponent, x, y float64) (float64, float64) {
+	return s.along(&monster.Route, at, x, y)
+}
+
+// along is towards for any body walking by a route of its own: a monster's,
+// or a hound's (book_hound.go).
+func (s *MonsterAISystem) along(route *components.Route, at *components.TransformComponent, x, y float64) (float64, float64) {
 	if s.grid == nil {
 		return x, y
 	}
@@ -455,7 +462,6 @@ func (s *MonsterAISystem) towards(monster *components.MonsterComponent, at *comp
 		return x, y
 	}
 
-	route := &monster.Route
 	if (route.Goal != goal || route.Next >= len(route.Cells)) && route.SearchIn <= 0 {
 		s.search(route, from, goal)
 	}
@@ -561,12 +567,13 @@ func distance(a, b *components.TransformComponent) float64 {
 	return math.Hypot(b.X-a.X, b.Y-a.Y)
 }
 
-// quarries is every delver in play: alive, not escaped, not left behind. Nobody
-// else can be acquired, and a target who drops out of this is dropped.
+// quarries is every delver in play: alive, not escaped, not left behind, and
+// every hound standing (FS-X2CMM R28). Nobody else can be acquired, and a
+// target who drops out of this is dropped.
 func quarries(entities []*ecs.Entity) []quarry {
 	var out []quarry
 	for _, entity := range entities {
-		if !InPlay(entity) {
+		if !InPlay(entity) && !standingHound(entity) { // a hound is a body too (book_hound.go)
 			continue
 		}
 		tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)

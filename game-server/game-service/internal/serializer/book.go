@@ -12,7 +12,7 @@ import (
 
 // setBook puts the delver's class book on their state: the book itself on the
 // owner's part, in a run only, and the timed book states on the public part
-// everyone is sent. A run's book effects (witchlights, runes, draughts) are
+// everyone is sent. A run's book effects (witchlights, runes, draughts, hounds) are
 // book effects beside the players (bookEffectState), not here. FS-X2CMM §F R32–R34.
 func setBook(state *types.PlayerState, entity *ecs.Entity, worldType types.WorldType) {
 	bc, ok := entity.GetComponent(ecs.ComponentTypeBook)
@@ -72,14 +72,37 @@ func bookEffectState(entity *ecs.Entity) (*types.BookEffectState, bool) {
 		return nil, false
 	}
 	effect, at := ec.(*components.BookEffectComponent), tc.(*components.TransformComponent)
-	return &types.BookEffectState{
+	state := &types.BookEffectState{
 		ID:        entity.ID,
 		Kind:      string(effect.Kind),
 		X:         at.X,
 		Y:         at.Y,
 		Remaining: effect.Remaining,
 		Caught:    caughtOn(entity),
-	}, true
+	}
+	setHound(state, entity)
+	return state, true
+}
+
+// setHound puts a hound's own fields on its state: its archer, its health and
+// max, and what it is doing, dead at no health whatever it last did. Anything
+// else is left as it is. FS-X2CMM §E R28, §F R34.
+func setHound(state *types.BookEffectState, entity *ecs.Entity) {
+	hound, ok := systems.HoundOf(entity)
+	if !ok {
+		return
+	}
+	owner := hound.OwnerMemberID
+	state.OwnerID = &owner
+	state.Action = string(hound.Action)
+	if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok {
+		health := hc.(*components.HealthComponent)
+		current := health.CurrentHealth
+		state.Health, state.MaxHealth = &current, health.MaxHealth
+		if current <= 0 {
+			state.Action = string(components.HoundActionDead)
+		}
+	}
 }
 
 // caughtOn is how many monsters the book effect has caught: a rune's count,
