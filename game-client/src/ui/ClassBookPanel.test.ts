@@ -64,6 +64,7 @@ const page = (id: string, unlock_level: number, cost: number, over: Partial<Book
   cooldown: { remaining: 0, total: 0 },
   spent: false,
   cooldown_length: 0,
+  cast_time: 0,
   ...over,
 });
 const mage = (pages: BookPageState[], level = 20, current = 100): BookSource => ({
@@ -150,14 +151,14 @@ describe("the open tome's right page (§Change: the open tome C5)", () => {
 
   it("should show the first ready page with no hover, and the hovered page in full under the pointer", () => {
     const env = opened(mage([page("witchlight", 2, 20, { cooldown: { remaining: 5, total: 45 }, cooldown_length: 45 }), page("levitate", 9, 35, { cooldown_length: 90 })]));
-    expect(env.words()).toEqual(expect.arrayContaining(["35 mana · 90 s cooldown", "Click to arm, then pick an ally or yourself."]));
+    expect(env.words()).toEqual(expect.arrayContaining(["35 mana · instant · 90 s cooldown", "Click to arm, then pick an ally or yourself."]));
     env.panel.pointerMove(env.middle(0).x, env.middle(0).y);
     expect(env.words()).toEqual(
-      expect.arrayContaining(["A pale flame hung where you point. The dark gives back what it hid.", "20 mana · 45 s cooldown", "Recovering."]),
+      expect.arrayContaining(["A pale flame hung where you point. The dark gives back what it hid.", "20 mana · instant · 45 s cooldown", "Recovering."]),
     );
-    expect(env.words()).not.toContain("35 mana · 90 s cooldown");
+    expect(env.words()).not.toContain("35 mana · instant · 90 s cooldown");
     env.panel.pointerMove(env.layout.panel.x + 4, env.layout.panel.y + 4);
-    expect(env.words()).toContain("35 mana · 90 s cooldown");
+    expect(env.words()).toContain("35 mana · instant · 90 s cooldown");
   });
 
   it("should give a Scar its scar and where it was earned", () => {

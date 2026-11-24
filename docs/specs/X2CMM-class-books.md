@@ -92,6 +92,11 @@ Where the build settled what this FS left loose. Each is [derived] and overridab
 - **The book is drawn in the client's book order** whatever order the pages arrive in.
 - **The hound's atlas is resident** (loaded at boot, ADR-0059's default for a group no scene table
   names): naming it in the run's row would change FS-C4JWH R4's table. A follow-up for FS-C4JWH.
+- **A rune goes with its third catch**: the rune is not sent on the tick it is used up, so the
+  client flashes it on the first two catches only; the third shows as the monster stunned and
+  the rune gone (R24 over R47's flash).
+- **Each page entry also carries `cast_time`** (seconds, 0 for an instant page) for the open
+  tome's "cost · cast time · cooldown" line (§Change C5).
 
 ## Requirements
 

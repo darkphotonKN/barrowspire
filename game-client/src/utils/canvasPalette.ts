@@ -76,7 +76,7 @@ const BOOK_PIGMENT = {
   lockedGround: BARROW_HEX.pigmentLockedGround,
   /** The rim under the pointer (ADR-0095): the HUD's bright brass. */
   rimLit: BARROW_HEX.brassBright,
-};
+} as const;
 
 export const palette = {
   // -- Ground and structure. Barrow earth and cold stone; the world is
@@ -512,7 +512,7 @@ export const palette = {
     faint: BARROW_HEX.menuTextFaint,
     danger: BARROW_HEX.menuDangerText,
   },
-};
+} as const;
 
 /** One of the passive tree's hues (L4), by what a node gives: the key a node's copy names. */
 export type TreeHue = keyof typeof palette.treeHue;
@@ -553,7 +553,7 @@ export const CANVAS_FONT = {
   get body(): string {
     return cssFont("--font-body", "Georgia, serif");
   },
-};
+} as const;
 
 /** The floor below which blackletter may not be used, in px. */
 export const BLACKLETTER_MIN_PX = 28;

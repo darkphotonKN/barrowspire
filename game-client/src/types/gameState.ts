@@ -100,7 +100,8 @@ export interface BookState {
  * ready, FS-Q18Q3 R1), and whether a once-per-floor or once-per-delve use is spent. Its own terms come
  * with it, so the tip words them and a retune needs no client change (Reconciled at review):
  * `cooldown_length` its cooldown's seconds (0 for a limited page) and `limit` how often a limited page
- * may be cast, absent for a timed one. Mirrors Go types.BookPageState.
+ * may be cast, absent for a timed one; `cast_time` its cast time's seconds, 0 for an instant page
+ * (§Change: Illuminated pages and the open tome, C5). Mirrors Go types.BookPageState.
  */
 export interface BookPageState {
   id: string;
@@ -110,6 +111,7 @@ export interface BookPageState {
   spent: boolean;
   cooldown_length: number;
   limit?: BookPageLimit;
+  cast_time: number;
 }
 
 /** How often a page without a cooldown may be cast: once a floor, or once a delve (FS-X2CMM §A R8). */

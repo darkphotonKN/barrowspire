@@ -36,11 +36,11 @@ func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 	assert.Equal(t, map[string]any{"pages": []any{map[string]any{
 		"id": "hardened", "unlock_level": float64(9), "cost": float64(30),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
-		"cooldown_length": float64(90),
+		"cooldown_length": float64(90), "cast_time": float64(0),
 	}, map[string]any{
 		"id": "long_night", "unlock_level": float64(15), "cost": float64(40),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
-		"cooldown_length": float64(120),
+		"cooldown_length": float64(120), "cast_time": float64(0),
 	}}}, me["book"], "ready, {0, 0}; Heave (wave 2) never sent")
 
 	book.Cooldowns[components.PageHardened] = components.BookCooldown{Remaining: 45, Total: 90}
@@ -145,6 +145,25 @@ func TestFormatStateToClientState_EachPageCarriesItsCooldownLengthAndLimit(t *te
 	assert.NotContains(t, witchlight, "limit", "a timed page has no limit")
 	assert.Equal(t, float64(0), recall["cooldown_length"])
 	assert.Equal(t, "floor", recall["limit"])
+}
+
+// Each page entry carries its cast time in seconds, 0 for an instant page, so
+// the book shows it without a client copy of the table. FS-X2CMM §Change:
+// Illuminated pages and the open tome, C5. I-X2CMM-25.
+func TestFormatStateToClientState_EachPageCarriesItsCastTime(t *testing.T) {
+	em := ecs.NewEntityManager()
+	mage := uuid.New()
+	seatBook(seatWithResource(em, mage, "mage", mana(150, 150), components.AttackTripleFireball),
+		components.PageWitchlight, components.PageRecall)
+	warrior := uuid.New()
+	seatBook(seatWithResource(em, warrior, "warrior", mana(150, 150), components.AttackDash),
+		components.PageHardened)
+
+	pages := ownFrame(t, em, types.WorldTypeRun, mage)["book"].(map[string]any)["pages"].([]any)
+	assert.Equal(t, float64(1), pages[0].(map[string]any)["cast_time"])
+	assert.Equal(t, float64(3), pages[1].(map[string]any)["cast_time"])
+	hardened := ownFrame(t, em, types.WorldTypeRun, warrior)["book"].(map[string]any)["pages"].([]any)[0].(map[string]any)
+	assert.Equal(t, float64(0), hardened["cast_time"], "an instant page sends 0")
 }
 
 // The wire's limit words: "floor", "delve", absent for a timed page.

@@ -25,7 +25,7 @@ export interface BookSource {
 
 /**
  * The right page's words for one page (§Change: Illuminated pages and the open tome, C5): its name, a
- * Scar's scar and where it was earned, its one line, "cost · cooldown" from the wire, and the hint: how
+ * Scar's scar and where it was earned, its one line, "cost · cast time · cooldown" from the wire, and the hint: how
  * to cast it, or why it waits.
  */
 export interface PageLeaf {
@@ -119,7 +119,7 @@ function pageView(id: PageId, wire: BookPageState, source: BookSource | undefine
       scar: copy.scar,
       line: copy.line,
       earned: copy.earned,
-      terms: `${capitalised(cost)} · ${cooldownWords(wire)}`,
+      terms: `${capitalised(cost)} · ${castWords(wire)} · ${cooldownWords(wire)}`,
       hint,
     },
   };
@@ -130,6 +130,11 @@ function readyHint(copy: PageCopy): string {
   const aim = AIM_WORDS[copy.target];
   if (!aim) return "Click to cast.";
   return `Click to arm, then pick ${copy.allowsSelf ? `${aim} or yourself` : aim}.`;
+}
+
+/** A page's cast time in the right page's words, from the wire: its seconds, or "instant" (C5). */
+function castWords(wire: BookPageState): string {
+  return wire.cast_time > 0 ? `${wire.cast_time} s cast` : "instant";
 }
 
 /** A page's cooldown in the right page's words, from the wire: its seconds, or its limit ("once a floor"). */

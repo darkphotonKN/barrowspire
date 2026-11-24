@@ -39,7 +39,7 @@ const mage = (level = 10): CharacterSource =>
     class: "mage",
     level,
     resource: { kind: "mana", current: 80, max: 100, ability_cost: 10 },
-    book: { pages: [{ id: "witchlight", unlock_level: 2, cost: 20, cooldown: { remaining: 0, total: 0 }, spent: false, cooldown_length: 45 }] },
+    book: { pages: [{ id: "witchlight", unlock_level: 2, cost: 20, cooldown: { remaining: 0, total: 0 }, spent: false, cooldown_length: 45, cast_time: 1 }] },
   }) as CharacterSource;
 
 function onSlot() {

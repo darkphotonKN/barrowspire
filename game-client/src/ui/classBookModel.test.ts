@@ -14,6 +14,7 @@ const page = (id: string, unlock_level: number, cost: number, over: Partial<Book
   cooldown: { remaining: 0, total: 0 },
   spent: false,
   cooldown_length: 0,
+  cast_time: 0,
   ...over,
 });
 const mana = (current: number): ResourceState => ({ kind: "mana", current, max: 100, ability_cost: 10 });
@@ -107,7 +108,7 @@ describe("a page's right page (FS-X2CMM §Change: the open tome, C5)", () => {
       scar: undefined,
       line: "A pale flame hung where you point. The dark gives back what it hid.",
       earned: undefined,
-      terms: "20 mana · 45 s cooldown",
+      terms: "20 mana · instant · 45 s cooldown",
       hint: "Click to arm, then pick the ground.",
     });
   });
@@ -117,19 +118,25 @@ describe("a page's right page (FS-X2CMM §Change: the open tome, C5)", () => {
     expect(leaf.name).toBe("Hardened");
     expect(leaf.scar).toBe("Scar of the Pit");
     expect(leaf.earned).toBe("Got in the stake pit under Low Cairn. The stakes broke first.");
-    expect(leaf.terms).toBe("30 stamina · no cooldown");
+    expect(leaf.terms).toBe("30 stamina · instant · no cooldown");
   });
 
   it("should say a page costs nothing where it does, and a once-a-floor or once-a-delve page's limit", () => {
     const contract = { class: "mercenary", level: 20, book: { pages: [page("take_a_contract", 15, 0, { limit: "delve" as const })] } };
-    expect(leafOf(contract).terms).toBe("No cost · once a delve");
+    expect(leafOf(contract).terms).toBe("No cost · instant · once a delve");
     expect(bookView(contract).pages[0].mark).toBe("no cost");
-    expect(leafOf(mage([page("recall", 17, 50, { limit: "floor" })])).terms).toBe("50 mana · once a floor");
+    expect(leafOf(mage([page("recall", 17, 50, { limit: "floor" })])).terms).toBe("50 mana · instant · once a floor");
   });
 
   it("should word the cooldown from the wire, so a retune needs no client change (Reconciled at review)", () => {
-    expect(leafOf(mage([page("witchlight", 2, 20, { cooldown_length: 50 })])).terms).toBe("20 mana · 50 s cooldown");
-    expect(leafOf(mage([page("levitate", 9, 35, { cooldown_length: 90 })])).terms).toBe("35 mana · 90 s cooldown");
+    expect(leafOf(mage([page("witchlight", 2, 20, { cooldown_length: 50 })])).terms).toBe("20 mana · instant · 50 s cooldown");
+    expect(leafOf(mage([page("levitate", 9, 35, { cooldown_length: 90 })])).terms).toBe("35 mana · instant · 90 s cooldown");
+  });
+
+  it("should give the cast time from the wire between the cost and the cooldown (C5)", () => {
+    expect(leafOf(mage([page("witchlight", 2, 20, { cooldown_length: 45, cast_time: 1 })])).terms).toBe("20 mana · 1 s cast · 45 s cooldown");
+    expect(leafOf(mage([page("levitate", 9, 35, { cooldown_length: 90, cast_time: 1.5 })])).terms).toBe("35 mana · 1.5 s cast · 90 s cooldown");
+    expect(leafOf(mage([page("recall", 17, 50, { limit: "floor", cast_time: 3 })])).terms).toBe("50 mana · 3 s cast · once a floor");
   });
 
   it("should hint how a ready page is cast, by its target kind", () => {

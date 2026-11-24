@@ -33,6 +33,7 @@ const page = (id: string, unlock_level: number, cost: number, over: Partial<Book
   cooldown: { remaining: 0, total: 0 },
   spent: false,
   cooldown_length: 0,
+  cast_time: 0,
   ...over,
 });
 
@@ -46,11 +47,11 @@ export const SAMPLE_BOOK: BookSource = {
   resource: { kind: "mana", current: 30, max: 100, ability_cost: 10 },
   book: {
     pages: [
-      page("witchlight", 2, 20, { cooldown_length: 45 }),
-      page("far_hand", 5, 15, { cooldown_length: 30, cooldown: { remaining: 18, total: 30 } }),
-      page("levitate", 9, 35, { cooldown_length: 90 }),
-      page("binding_glyph", 13, 40, { cooldown_length: 60 }),
-      page("recall", 17, 50, { limit: "floor" }),
+      page("witchlight", 2, 20, { cooldown_length: 45, cast_time: 1 }),
+      page("far_hand", 5, 15, { cooldown_length: 30, cast_time: 1, cooldown: { remaining: 18, total: 30 } }),
+      page("levitate", 9, 35, { cooldown_length: 90, cast_time: 1.5 }),
+      page("binding_glyph", 13, 40, { cooldown_length: 60, cast_time: 2.5 }),
+      page("recall", 17, 50, { limit: "floor", cast_time: 3 }),
     ],
   },
 };

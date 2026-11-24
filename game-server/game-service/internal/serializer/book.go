@@ -45,6 +45,7 @@ func bookState(book *components.BookComponent) *types.BookState {
 			Spent:          book.Spent[id],
 			CooldownLength: page.Cooldown,
 			Limit:          pageLimitWord(page.Limit),
+			CastTime:       page.CastTime,
 		})
 	}
 	return &types.BookState{Pages: pages, Casting: castingState(book.Casting)}
