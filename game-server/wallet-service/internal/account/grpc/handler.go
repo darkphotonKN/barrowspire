@@ -35,6 +35,7 @@ type Handler struct {
 	depositGoldUC   GoldDepositor
 	withdrawGoldUC  GoldWithdrawer
 	creditUC        Creditor
+	debitUC         Debitor
 }
 
 // The handler declares what it needs from each use case rather than naming the
@@ -77,6 +78,12 @@ type Creditor interface {
 	Handle(ctx context.Context, cmd *usecase.CreditCommand) (bool, error)
 }
 
+// Debitor reports whether the debit was applied by this call; false means the
+// key was already debited.
+type Debitor interface {
+	Handle(ctx context.Context, cmd *usecase.DebitCommand) (bool, error)
+}
+
 // Deps names every dependency the handler needs. A struct rather than positional
 // parameters on purpose: CommitHold shipped panicking because its use case was
 // declared on Handler but silently omitted from the constructor's argument list,
@@ -89,6 +96,7 @@ type Deps struct {
 	DepositGoldUC    GoldDepositor
 	WithdrawGoldUC   GoldWithdrawer
 	CreditUC         Creditor
+	DebitUC          Debitor
 	AccountReader    AccountReader
 	StaleHoldsReader StaleHoldsReader
 }
@@ -101,6 +109,7 @@ func NewHandler(deps Deps) *Handler {
 		depositGoldUC:    deps.DepositGoldUC,
 		withdrawGoldUC:   deps.WithdrawGoldUC,
 		creditUC:         deps.CreditUC,
+		debitUC:          deps.DebitUC,
 		accountReader:    deps.AccountReader,
 		staleHoldsReader: deps.StaleHoldsReader,
 	}
@@ -291,6 +300,31 @@ func (h *Handler) Credit(ctx context.Context, req *pb.CreditRequest) (*pb.Credit
 	return &pb.CreditResponse{Applied: applied}, nil
 }
 
+// Debit takes gold from the caller's own account once per idempotency key
+// (FS-9JV5K §C R13-R15, ADR-0093), bounded by available gold. The member is the
+// forwarded token's: the request names no account, so nobody can debit another's.
+// A key already debited answers success with applied = false.
+func (h *Handler) Debit(ctx context.Context, req *pb.DebitRequest) (*pb.DebitResponse, error) {
+	memberID, ok := commonauth.MemberIDFromCtx(ctx)
+
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing identity")
+	}
+
+	applied, err := h.debitUC.Handle(ctx, &usecase.DebitCommand{
+		MemberID:       memberID,
+		Amount:         int(req.GetAmount()),
+		IdempotencyKey: req.GetIdempotencyKey(),
+		Now:            time.Now(),
+	})
+
+	if err != nil {
+		return nil, mapError(ctx, err)
+	}
+
+	return &pb.DebitResponse{Applied: applied}, nil
+}
+
 // ========================= READ PATHS  =========================
 
 func (h *Handler) GetAccount(ctx context.Context, req *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
@@ -371,7 +405,8 @@ func mapError(ctx context.Context, err error) error {
 	case errors.Is(err, account.ErrInvalidAmount) ||
 		errors.Is(err, account.ErrInvalidGold) ||
 		errors.Is(err, account.ErrInvalidHoldExpiry) ||
-		errors.Is(err, usecase.ErrMissingCreditKey):
+		errors.Is(err, usecase.ErrMissingCreditKey) ||
+		errors.Is(err, usecase.ErrMissingDebitKey):
 		code = codes.InvalidArgument
 		msg = "invalid argument"
 
