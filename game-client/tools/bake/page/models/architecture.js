@@ -254,12 +254,15 @@ function shingleMaterial() {
 
 const FACING_YAW = { s: 0, e: Math.PI / 2, n: Math.PI, w: -Math.PI / 2 };
 
-/** One tile of roof slope, descending toward `facing`. */
-export function roofSlope(facing) {
+/**
+ * One tile of roof slope, descending toward `facing`. `material` covers it: the town's shingles,
+ * or another roof set's own (models/chapelBuilding.js, the chapel's slate), on the same slab.
+ */
+export function roofSlope(facing, material = shingleMaterial()) {
   const pitch = Math.atan2(ROOF_RISE, 1);
   const len = Math.hypot(1, ROOF_RISE) + 0.04;
   const g = new THREE.Group();
-  const slab = part(new THREE.BoxGeometry(LENGTH, ROOF_THICK, len), shingleMaterial(), {
+  const slab = part(new THREE.BoxGeometry(LENGTH, ROOF_THICK, len), material, {
     y: ROOF_RISE / 2 + ROOF_THICK / 2,
     rx: pitch,
   });

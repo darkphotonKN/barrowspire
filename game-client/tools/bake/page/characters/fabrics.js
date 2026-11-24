@@ -315,6 +315,11 @@ export const GEAR = {
   felt: mix("barrowDeep", "slate", 0.5),
   apron: mix("barrowBrown", "brass", 0.4),
   hairGrey: mix("slateLight", "vellumDark", 0.45),
+  // the Confessor (FS-R4MYX §H R37): a robe dyed near black with a cold stone cast, kept off the
+  // wizard's gown and the Spirewarden's teal-grey mantle, and a stole in the palest parchment the
+  // palette has, the one pale mark on him that reads across the chapel
+  confessorRobe: mix(mix("charcoal", "pitch", 0.3), "slate", 0.3),
+  stole: mix("vellum", "vellumDark", 0.08),
   // the Mercenary (FS-MAMHR §H): a quilted arming coat in faded madder, a madder sash. Burnt
   // sienna, kept off the knight's crimson and the archer's green.
   coat: mix(mix("ember", "oxblood", 0.5), "barrowDeep", 0.7),
@@ -494,6 +499,8 @@ export function fabrics() {
     felt: mat(wool(GEAR.felt, { seed: 47, dirt: 0.3 }), { side: D }),
     apron: mat(leather(GEAR.apron, { seed: 49, dirt: 0.5 }), { rough: 0.75, side: D }),
     hairGrey: mat(hair(GEAR.hairGrey, { seed: 51 }), { rough: 0.9 }),
+    confessorRobe: mat(wool(GEAR.confessorRobe, { seed: 411, dirt: 0.45 }), { side: D }),
+    stole: mat(linen(GEAR.stole, { seed: 413, dirt: 0.12 }), { side: D }),
     coat: mat(quilted(GEAR.coat), { rough: 0.85, normal: 1.2, side: D }),
     sash: mat(wool(GEAR.sash, { seed: 79, dirt: 0.35 }), { side: D }),
     hairDark: mat(hair(GEAR.hairDark, { seed: 67 }), { rough: 0.9 }),

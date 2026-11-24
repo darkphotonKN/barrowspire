@@ -30,7 +30,7 @@ import { WALL_FOOT } from "../shadow.js";
 import { masonry, PX, roughBox, stoneMat, towerMaterials } from "./tower.js";
 
 /** A piece is one tile along its axis plus the hair of overlap the timber pieces use. */
-const LENGTH = 1.024;
+export const LENGTH = 1.024;
 /** Timber wall thickness, as architecture.js; the masonry partition's, as tower.js (../shadow.js). */
 const THICK = WALL_FOOT.timber;
 const P_THICK = WALL_FOOT.masonry;
@@ -42,7 +42,7 @@ const OPEN_H = 2.4;
 /** A door gap: the run door's width (80 world px of a 40 px tile), the door sheets' own. */
 const GAP_W = DOOR_GAP;
 /** The top of the run door's lintel (interactables.js: DOOR_H 2.4, its lintel 0.14 at +0.12). */
-const LINTEL_TOP = 2.4 + 0.19;
+export const LINTEL_TOP = 2.4 + 0.19;
 
 // ── Palette (BARROW blends only). The timber tones are architecture.js's, the stone tower.js's,
 // so a type's exterior and interior pieces read as one building. ─────────────────────────
@@ -281,7 +281,44 @@ export function timberExterior(variant, axis, seed) {
 // ── Timber: the gable that closes a roof's end ─────────────────────────────────────────────
 
 /** How far a gable's top edge reaches up into the roof slab over it, so no light shows between. */
-const GABLE_TUCK = 0.05;
+export const GABLE_TUCK = 0.05;
+
+/**
+ * A gable piece's raking top edge (see timberGable for `axis` and `half`): `highAt` is the local
+ * end that climbs toward the ridge (+1 or -1), `topAt(x)` the top edge's height over the piece's
+ * foot at local x, and `height` its height at the high end.
+ */
+export function gableRake(axis, half) {
+  // which local end is high: the ridge side. A y-axis piece is turned a quarter, so local +x
+  // is world -y (north): an x ridge's south half climbs toward it. Unturned, local x is world
+  // x: a y ridge's east half climbs toward the west, local -x.
+  const highAt = (axis === "x" ? half === "s" : half === "w") ? 1 : -1;
+  const topAt = (x) => WALL_BACK + GABLE_TUCK + ROOF_RISE * (0.5 + highAt * x);
+  return { highAt, topAt, height: topAt(highAt * (LENGTH / 2)) };
+}
+
+/**
+ * A gable piece's slab, unturned: the end wall from its foot up to the raking edge, `thick` deep
+ * about its centreline, `face` on both faces and `edge` round its edges. The faces' texture spans
+ * the piece: u across its length, v from its foot to its high end.
+ */
+export function gableSlab(axis, half, thick, face, edge) {
+  const L = LENGTH;
+  const { topAt, height } = gableRake(axis, half);
+  const shape = new THREE.Shape();
+  shape.moveTo(-L / 2, 0);
+  shape.lineTo(L / 2, 0);
+  shape.lineTo(L / 2, topAt(L / 2));
+  shape.lineTo(-L / 2, topAt(-L / 2));
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: false });
+  geo.translate(0, 0, -thick / 2);
+  const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
+  const caps = geo.groups[0];
+  for (let i = caps.start; i < caps.start + caps.count; i++) uv.setXY(i, (pos.getX(i) + L / 2) / L, pos.getY(i) / height);
+  return new THREE.Mesh(geo, [face, edge]);
+}
 
 /**
  * One tile of timber gable (FS-9PN7X, ADR-0036): the end wall carried up from the walls' tops to
@@ -304,12 +341,7 @@ const GABLE_TUCK = 0.05;
 export function timberGable(axis, half) {
   const M = materials();
   const L = LENGTH;
-  // which local end is high: the ridge side. A y-axis piece is turned a quarter, so local +x
-  // is world -y (north): an x ridge's south half climbs toward it. Unturned, local x is world
-  // x: a y ridge's east half climbs toward the west, local -x.
-  const highAt = (axis === "x" ? half === "s" : half === "w") ? 1 : -1;
-  const topAt = (x) => WALL_BACK + GABLE_TUCK + ROOF_RISE * (0.5 + highAt * x);
-  const height = topAt(highAt * (L / 2));
+  const { highAt, topAt, height } = gableRake(axis, half);
   const W = 128;
   const Hp = Math.round(128 * height);
   // the top edge's texture row at the face's left and right ends (row 0 is the high end's top)
@@ -331,21 +363,8 @@ export function timberGable(axis, half) {
     ],
   });
   const face = new THREE.MeshStandardMaterial({ map, bumpMap: map, bumpScale: 0.6, roughness: 0.92 });
-  const shape = new THREE.Shape();
-  shape.moveTo(-L / 2, 0);
-  shape.lineTo(L / 2, 0);
-  shape.lineTo(L / 2, topAt(L / 2));
-  shape.lineTo(-L / 2, topAt(-L / 2));
-  shape.closePath();
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: THICK, bevelEnabled: false });
-  geo.translate(0, 0, -THICK / 2);
-  // the faces' texture spans the piece: u across its length, v from its foot to its high end
-  const pos = geo.attributes.position;
-  const uv = geo.attributes.uv;
-  const caps = geo.groups[0];
-  for (let i = caps.start; i < caps.start + caps.count; i++) uv.setXY(i, (pos.getX(i) + L / 2) / L, pos.getY(i) / height);
   const g = new THREE.Group();
-  g.add(new THREE.Mesh(geo, [face, M.beam]));
+  g.add(gableSlab(axis, half, THICK, face, M.beam));
   if (axis === "x") g.rotation.y = Math.PI / 2;
   return g;
 }

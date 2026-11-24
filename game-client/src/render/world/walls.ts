@@ -174,6 +174,32 @@ export const MASONRY_WALLS: WallSheets = {
   lit: ["sconce"],
 };
 
+/**
+ * The chapel's own walls (FS-R4MYX R23, R42): whitewashed limestone, aged in the bake, as thick as
+ * the masonry and cut as the masonry pieces they stand in for. Inside, plain or pillared; the
+ * outward face (south and east) plain, a gothic lancet of dark glass, or a stepped buttress, about
+ * a third each so the long walls read as bays. No kind carries a light (the two candelabra are the
+ * only light, R15) and there is no stone cap: the chapel wears a pitched roof.
+ */
+export const CHAPEL_WALLS: WallSheets = {
+  prefix: "chapel_",
+  thickness: BAKE.WALL_FOOT.masonry,
+  back: [
+    [70, "plain"],
+    [100, "pillar"],
+  ],
+  front: [
+    [70, "plain"],
+    [100, "pillar"],
+  ],
+  outward: [
+    [40, "plain"],
+    [72, "lancet"],
+    [100, "buttress"],
+  ],
+  lit: [],
+};
+
 /** A material's wall thickness in world px: 9.6 for the tower's masonry, 7.2 for timber. */
 export const thicknessPx = (sheets: WallSheets): number => sheets.thickness * T;
 

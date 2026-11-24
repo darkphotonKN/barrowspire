@@ -37,6 +37,9 @@ export interface Made {
   resolution?: number;
 }
 
+/** The kinds made with Phaser's Tint component mixed in. */
+const TINTED = ["sprite", "image"];
+
 /**
  * The stage. `textWidth` measures a text's words as the game's font would (its `width`); without
  * it every object is 160 by 32.
@@ -91,6 +94,11 @@ export function recordingStage({
         return proxy;
       };
     const proxy: unknown = new Proxy(self, {
+      // a sprite or an image carries Phaser's Tint component, a graphics or a container does not:
+      // `"setTint" in part` tells them apart as it does in the game
+      has(target, prop) {
+        return prop in target || (prop === "setTint" && TINTED.includes(target.kind));
+      },
       get(target, prop) {
         if (prop in target) return target[prop as string];
         // a text measures as Phaser measures it, in the game's font where the suite gives one

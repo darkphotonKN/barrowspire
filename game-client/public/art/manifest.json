@@ -117,6 +117,12 @@
       "height": 4060,
       "sha256": "94876964edb368ab82394a3aaf3caa4fc2351928eff12ac3104f5610613a5622"
     },
+    "chapel-0": {
+      "image": "chapel-0.png",
+      "width": 2020,
+      "height": 460,
+      "sha256": "8232e92200c0b812b77ddd37096f3b8217e298e8be80c2808dbf51386aeef67f"
+    },
     "containers-0": {
       "image": "containers-0.png",
       "width": 144,
@@ -179,9 +185,9 @@
     },
     "folk-0": {
       "image": "folk-0.png",
-      "width": 2036,
-      "height": 2840,
-      "sha256": "296880ba25b8c5da234e1af2ee11db2ec460f84c9fd4fed905288056918c7630"
+      "width": 2052,
+      "height": 3360,
+      "sha256": "02c9ebb5877c657be7592d012fd69738dc8bb529a89fdcb11d3942c1af509b1e"
     },
     "forest-0": {
       "image": "forest-0.png",
@@ -515,6 +521,32 @@
       "source": "procedural: tools/bake/page/models/props.js#barrel",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "belfry": {
+      "atlas": "chapel-0",
+      "frameWidth": 155,
+      "frameHeight": 222,
+      "anchor": {
+        "x": 0.23225806451612904,
+        "y": 0.9054054054054054
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 442,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#belfry",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "bone_pile": {
       "atlas": "tower-0",
       "frameWidth": 54,
@@ -791,6 +823,748 @@
         }
       },
       "source": "procedural: tools/bake/page/models/props.js#chair",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_altar": {
+      "atlas": "chapel-0",
+      "frameWidth": 130,
+      "frameHeight": 112,
+      "anchor": {
+        "x": 0.3769230769230769,
+        "y": 0.75
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 381,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#chapelAltar",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_door_head_x": {
+      "atlas": "chapel-0",
+      "frameWidth": 84,
+      "frameHeight": 193,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.8756476683937824
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 599,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelDoorHead",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_door_head_y": {
+      "atlas": "chapel-0",
+      "frameWidth": 84,
+      "frameHeight": 193,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.8756476683937824
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 685,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelDoorHead",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_post_back": {
+      "atlas": "chapel-0",
+      "frameWidth": 32,
+      "frameHeight": 170,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9411764705882353
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1851,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelPost",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_post_front": {
+      "atlas": "chapel-0",
+      "frameWidth": 32,
+      "frameHeight": 72,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.8611111111111112
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1495,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelPost",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_roof_gable_x": {
+      "atlas": "chapel-0",
+      "frameWidth": 53,
+      "frameHeight": 257,
+      "anchor": {
+        "x": 0.49056603773584906,
+        "y": 0.9377431906614786
+      },
+      "directions": 1,
+      "animations": {
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              },
+              {
+                "x": 57,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "n": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 112,
+                "y": 2
+              },
+              {
+                "x": 167,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelGable",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_roof_gable_y": {
+      "atlas": "chapel-0",
+      "frameWidth": 53,
+      "frameHeight": 257,
+      "anchor": {
+        "x": 0.5094339622641509,
+        "y": 0.9377431906614786
+      },
+      "directions": 1,
+      "animations": {
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 222,
+                "y": 2
+              },
+              {
+                "x": 277,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "w": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 332,
+                "y": 2
+              },
+              {
+                "x": 387,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelGable",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_roof_ridge": {
+      "atlas": "chapel-0",
+      "frameWidth": 56,
+      "frameHeight": 40,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.6
+      },
+      "directions": 1,
+      "animations": {
+        "x": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 258,
+                "y": 401
+              }
+            ]
+          ]
+        },
+        "y": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 316,
+                "y": 401
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelRoofRidge",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_roof_slope": {
+      "atlas": "chapel-0",
+      "frameWidth": 80,
+      "frameHeight": 75,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.7066666666666667
+      },
+      "directions": 1,
+      "animations": {
+        "s": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1167,
+                "y": 261
+              }
+            ]
+          ]
+        },
+        "e": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1249,
+                "y": 261
+              }
+            ]
+          ]
+        },
+        "n": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1331,
+                "y": 261
+              }
+            ]
+          ]
+        },
+        "w": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1413,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelRoofSlope",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_back_pillar_x": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 771,
+                "y": 2
+              },
+              {
+                "x": 825,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelWall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_back_pillar_y": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 879,
+                "y": 2
+              },
+              {
+                "x": 933,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelWall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_back_plain_x": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 987,
+                "y": 2
+              },
+              {
+                "x": 1041,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelWall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_back_plain_y": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1095,
+                "y": 2
+              },
+              {
+                "x": 1149,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelWall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_exterior_buttress_x": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1203,
+                "y": 2
+              },
+              {
+                "x": 1257,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelExterior",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_exterior_buttress_y": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1311,
+                "y": 2
+              },
+              {
+                "x": 1365,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelExterior",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_exterior_lancet_x": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1419,
+                "y": 2
+              },
+              {
+                "x": 1473,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelExterior",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_exterior_lancet_y": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1527,
+                "y": 2
+              },
+              {
+                "x": 1581,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelExterior",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_exterior_plain_x": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1635,
+                "y": 2
+              },
+              {
+                "x": 1689,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelExterior",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_exterior_plain_y": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 177,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.9096045197740112
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1743,
+                "y": 2
+              },
+              {
+                "x": 1797,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelExterior",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_front_pillar_x": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 735,
+                "y": 261
+              },
+              {
+                "x": 789,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelWall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_front_pillar_y": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 843,
+                "y": 261
+              },
+              {
+                "x": 897,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelWall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_front_plain_x": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 951,
+                "y": 261
+              },
+              {
+                "x": 1005,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelWall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "chapel_wall_front_plain_y": {
+      "atlas": "chapel-0",
+      "frameWidth": 52,
+      "frameHeight": 79,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.7974683544303798
+      },
+      "directions": 1,
+      "animations": {
+        "variants": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1059,
+                "y": 261
+              },
+              {
+                "x": 1113,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapelBuilding.js#chapelWall",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "char_archer_base": {
@@ -74184,6 +74958,32 @@
       "source": "authored: tools/bake/page/models/cursors.js#strikeMark",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "dais": {
+      "atlas": "chapel-0",
+      "frameWidth": 266,
+      "frameHeight": 138,
+      "anchor": {
+        "x": 0.49624060150375937,
+        "y": 0.5072463768115942
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#dais",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "decal_grass_tuft": {
       "atlas": "nature-0",
       "frameWidth": 31,
@@ -74708,6 +75508,449 @@
       "source": "authored: tools/bake/page/models/town.js#flowerBox",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "folk_confessor": {
+      "atlas": "folk-0",
+      "frameWidth": 91,
+      "frameHeight": 102,
+      "anchor": {
+        "x": 0.3626373626373626,
+        "y": 0.8235294117647058
+      },
+      "directions": 8,
+      "animations": {
+        "idle": {
+          "fps": 3,
+          "loop": true,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2464
+              },
+              {
+                "x": 95,
+                "y": 2464
+              },
+              {
+                "x": 188,
+                "y": 2464
+              },
+              {
+                "x": 281,
+                "y": 2464
+              }
+            ],
+            [
+              {
+                "x": 374,
+                "y": 2464
+              },
+              {
+                "x": 467,
+                "y": 2464
+              },
+              {
+                "x": 560,
+                "y": 2464
+              },
+              {
+                "x": 653,
+                "y": 2464
+              }
+            ],
+            [
+              {
+                "x": 746,
+                "y": 2464
+              },
+              {
+                "x": 839,
+                "y": 2464
+              },
+              {
+                "x": 932,
+                "y": 2464
+              },
+              {
+                "x": 1025,
+                "y": 2464
+              }
+            ],
+            [
+              {
+                "x": 1118,
+                "y": 2464
+              },
+              {
+                "x": 1211,
+                "y": 2464
+              },
+              {
+                "x": 1304,
+                "y": 2464
+              },
+              {
+                "x": 1397,
+                "y": 2464
+              }
+            ],
+            [
+              {
+                "x": 1490,
+                "y": 2464
+              },
+              {
+                "x": 1583,
+                "y": 2464
+              },
+              {
+                "x": 1676,
+                "y": 2464
+              },
+              {
+                "x": 1769,
+                "y": 2464
+              }
+            ],
+            [
+              {
+                "x": 1862,
+                "y": 2464
+              },
+              {
+                "x": 1955,
+                "y": 2464
+              },
+              {
+                "x": 2,
+                "y": 2568
+              },
+              {
+                "x": 95,
+                "y": 2568
+              }
+            ],
+            [
+              {
+                "x": 188,
+                "y": 2568
+              },
+              {
+                "x": 281,
+                "y": 2568
+              },
+              {
+                "x": 374,
+                "y": 2568
+              },
+              {
+                "x": 467,
+                "y": 2568
+              }
+            ],
+            [
+              {
+                "x": 560,
+                "y": 2568
+              },
+              {
+                "x": 653,
+                "y": 2568
+              },
+              {
+                "x": 746,
+                "y": 2568
+              },
+              {
+                "x": 839,
+                "y": 2568
+              }
+            ]
+          ]
+        },
+        "walk": {
+          "fps": 10,
+          "loop": true,
+          "frames": [
+            [
+              {
+                "x": 932,
+                "y": 2568
+              },
+              {
+                "x": 1025,
+                "y": 2568
+              },
+              {
+                "x": 1118,
+                "y": 2568
+              },
+              {
+                "x": 1211,
+                "y": 2568
+              },
+              {
+                "x": 1304,
+                "y": 2568
+              },
+              {
+                "x": 1397,
+                "y": 2568
+              },
+              {
+                "x": 1490,
+                "y": 2568
+              },
+              {
+                "x": 1583,
+                "y": 2568
+              }
+            ],
+            [
+              {
+                "x": 1676,
+                "y": 2568
+              },
+              {
+                "x": 1769,
+                "y": 2568
+              },
+              {
+                "x": 1862,
+                "y": 2568
+              },
+              {
+                "x": 1955,
+                "y": 2568
+              },
+              {
+                "x": 2,
+                "y": 2672
+              },
+              {
+                "x": 95,
+                "y": 2672
+              },
+              {
+                "x": 188,
+                "y": 2672
+              },
+              {
+                "x": 281,
+                "y": 2672
+              }
+            ],
+            [
+              {
+                "x": 374,
+                "y": 2672
+              },
+              {
+                "x": 467,
+                "y": 2672
+              },
+              {
+                "x": 560,
+                "y": 2672
+              },
+              {
+                "x": 653,
+                "y": 2672
+              },
+              {
+                "x": 746,
+                "y": 2672
+              },
+              {
+                "x": 839,
+                "y": 2672
+              },
+              {
+                "x": 932,
+                "y": 2672
+              },
+              {
+                "x": 1025,
+                "y": 2672
+              }
+            ],
+            [
+              {
+                "x": 1118,
+                "y": 2672
+              },
+              {
+                "x": 1211,
+                "y": 2672
+              },
+              {
+                "x": 1304,
+                "y": 2672
+              },
+              {
+                "x": 1397,
+                "y": 2672
+              },
+              {
+                "x": 1490,
+                "y": 2672
+              },
+              {
+                "x": 1583,
+                "y": 2672
+              },
+              {
+                "x": 1676,
+                "y": 2672
+              },
+              {
+                "x": 1769,
+                "y": 2672
+              }
+            ],
+            [
+              {
+                "x": 1862,
+                "y": 2672
+              },
+              {
+                "x": 1955,
+                "y": 2672
+              },
+              {
+                "x": 2,
+                "y": 2776
+              },
+              {
+                "x": 95,
+                "y": 2776
+              },
+              {
+                "x": 188,
+                "y": 2776
+              },
+              {
+                "x": 281,
+                "y": 2776
+              },
+              {
+                "x": 374,
+                "y": 2776
+              },
+              {
+                "x": 467,
+                "y": 2776
+              }
+            ],
+            [
+              {
+                "x": 560,
+                "y": 2776
+              },
+              {
+                "x": 653,
+                "y": 2776
+              },
+              {
+                "x": 746,
+                "y": 2776
+              },
+              {
+                "x": 839,
+                "y": 2776
+              },
+              {
+                "x": 932,
+                "y": 2776
+              },
+              {
+                "x": 1025,
+                "y": 2776
+              },
+              {
+                "x": 1118,
+                "y": 2776
+              },
+              {
+                "x": 1211,
+                "y": 2776
+              }
+            ],
+            [
+              {
+                "x": 1304,
+                "y": 2776
+              },
+              {
+                "x": 1397,
+                "y": 2776
+              },
+              {
+                "x": 1490,
+                "y": 2776
+              },
+              {
+                "x": 1583,
+                "y": 2776
+              },
+              {
+                "x": 1676,
+                "y": 2776
+              },
+              {
+                "x": 1769,
+                "y": 2776
+              },
+              {
+                "x": 1862,
+                "y": 2776
+              },
+              {
+                "x": 1955,
+                "y": 2776
+              }
+            ],
+            [
+              {
+                "x": 2,
+                "y": 2880
+              },
+              {
+                "x": 95,
+                "y": 2880
+              },
+              {
+                "x": 188,
+                "y": 2880
+              },
+              {
+                "x": 281,
+                "y": 2880
+              },
+              {
+                "x": 374,
+                "y": 2880
+              },
+              {
+                "x": 467,
+                "y": 2880
+              },
+              {
+                "x": 560,
+                "y": 2880
+              },
+              {
+                "x": 653,
+                "y": 2880
+              }
+            ]
+          ]
+        }
+      },
+      "crown": 80,
+      "source": "authored: tools/bake/page/characters/folk.js#confessor",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "folk_quartermaster": {
       "atlas": "folk-0",
       "frameWidth": 77,
@@ -74725,145 +75968,145 @@
             [
               {
                 "x": 2,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 81,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 160,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 239,
-                "y": 2464
+                "y": 2984
               }
             ],
             [
               {
                 "x": 318,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 397,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 476,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 555,
-                "y": 2464
+                "y": 2984
               }
             ],
             [
               {
                 "x": 634,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 713,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 792,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 871,
-                "y": 2464
+                "y": 2984
               }
             ],
             [
               {
                 "x": 950,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 1029,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 1108,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 1187,
-                "y": 2464
+                "y": 2984
               }
             ],
             [
               {
                 "x": 1266,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 1345,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 1424,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 1503,
-                "y": 2464
+                "y": 2984
               }
             ],
             [
               {
                 "x": 1582,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 1661,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 1740,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 1819,
-                "y": 2464
+                "y": 2984
               }
             ],
             [
               {
                 "x": 1898,
-                "y": 2464
+                "y": 2984
               },
               {
                 "x": 2,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 81,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 160,
-                "y": 2557
+                "y": 3077
               }
             ],
             [
               {
                 "x": 239,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 318,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 397,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 476,
-                "y": 2557
+                "y": 3077
               }
             ]
           ]
@@ -74875,273 +76118,273 @@
             [
               {
                 "x": 555,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 634,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 713,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 792,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 871,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 950,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1029,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1108,
-                "y": 2557
+                "y": 3077
               }
             ],
             [
               {
                 "x": 1187,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1266,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1345,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1424,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1503,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1582,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1661,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1740,
-                "y": 2557
+                "y": 3077
               }
             ],
             [
               {
                 "x": 1819,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 1898,
-                "y": 2557
+                "y": 3077
               },
               {
                 "x": 2,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 81,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 160,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 239,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 318,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 397,
-                "y": 2650
+                "y": 3170
               }
             ],
             [
               {
                 "x": 476,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 555,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 634,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 713,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 792,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 871,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 950,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1029,
-                "y": 2650
+                "y": 3170
               }
             ],
             [
               {
                 "x": 1108,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1187,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1266,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1345,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1424,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1503,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1582,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1661,
-                "y": 2650
+                "y": 3170
               }
             ],
             [
               {
                 "x": 1740,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1819,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 1898,
-                "y": 2650
+                "y": 3170
               },
               {
                 "x": 2,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 81,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 160,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 239,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 318,
-                "y": 2743
+                "y": 3263
               }
             ],
             [
               {
                 "x": 397,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 476,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 555,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 634,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 713,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 792,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 871,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 950,
-                "y": 2743
+                "y": 3263
               }
             ],
             [
               {
                 "x": 1029,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 1108,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 1187,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 1266,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 1345,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 1424,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 1503,
-                "y": 2743
+                "y": 3263
               },
               {
                 "x": 1582,
-                "y": 2743
+                "y": 3263
               }
             ]
           ]
@@ -77707,6 +78950,116 @@
       "source": "authored: tools/bake/page/models/fx.js#smoke",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "grave_flowers": {
+      "atlas": "chapel-0",
+      "frameWidth": 22,
+      "frameHeight": 15,
+      "anchor": {
+        "x": 0.36363636363636365,
+        "y": 0.4666666666666667
+      },
+      "directions": 1,
+      "animations": {
+        "fresh": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 429,
+                "y": 401
+              }
+            ]
+          ]
+        },
+        "withered": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 453,
+                "y": 401
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#graveFlowers",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "grave_mound": {
+      "atlas": "chapel-0",
+      "frameWidth": 53,
+      "frameHeight": 34,
+      "anchor": {
+        "x": 0.4716981132075472,
+        "y": 0.5588235294117647
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 374,
+                "y": 401
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#graveMound",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "graveyard_wall": {
+      "atlas": "chapel-0",
+      "frameWidth": 62,
+      "frameHeight": 52,
+      "anchor": {
+        "x": 0.41935483870967744,
+        "y": 0.6730769230769231
+      },
+      "directions": 1,
+      "animations": {
+        "x": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 401
+              },
+              {
+                "x": 66,
+                "y": 401
+              }
+            ]
+          ]
+        },
+        "y": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 130,
+                "y": 401
+              },
+              {
+                "x": 194,
+                "y": 401
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#graveyardWall",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "ground_cobble": {
       "atlas": "ground-0",
       "frameWidth": 64,
@@ -78563,6 +79916,72 @@
         }
       },
       "source": "authored: tools/bake/page/models/town.js#hayCart",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "headstone": {
+      "atlas": "chapel-0",
+      "frameWidth": 50,
+      "frameHeight": 59,
+      "anchor": {
+        "x": 0.34,
+        "y": 0.8305084745762712
+      },
+      "directions": 1,
+      "animations": {
+        "intact": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1529,
+                "y": 261
+              },
+              {
+                "x": 1581,
+                "y": 261
+              }
+            ]
+          ]
+        },
+        "weathered": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1633,
+                "y": 261
+              },
+              {
+                "x": 1685,
+                "y": 261
+              },
+              {
+                "x": 1737,
+                "y": 261
+              }
+            ]
+          ]
+        },
+        "broken": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1789,
+                "y": 261
+              },
+              {
+                "x": 1841,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#headstone",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "icon_axe_t1": {
@@ -80338,6 +81757,32 @@
       "source": "authored: tools/bake/page/models/hall.js#lantern",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "lectern": {
+      "atlas": "chapel-0",
+      "frameWidth": 80,
+      "frameHeight": 93,
+      "anchor": {
+        "x": 0.25,
+        "y": 0.8709677419354839
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 653,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#lectern",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "long_table": {
       "atlas": "hall-0",
       "frameWidth": 270,
@@ -80462,6 +81907,32 @@
         }
       },
       "source": "authored: tools/bake/page/models/hall.js#painting",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "pew": {
+      "atlas": "chapel-0",
+      "frameWidth": 138,
+      "frameHeight": 111,
+      "anchor": {
+        "x": 0.38405797101449274,
+        "y": 0.7297297297297297
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 513,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#pew",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "post_back": {
@@ -81054,6 +82525,32 @@
         "flicker": 0.35
       },
       "source": "authored: tools/bake/page/models/tower.js#spiralStairs",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "stone_cross": {
+      "atlas": "chapel-0",
+      "frameWidth": 109,
+      "frameHeight": 138,
+      "anchor": {
+        "x": 0.29357798165137616,
+        "y": 0.8623188405797102
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 270,
+                "y": 261
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#stoneCross",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "stool": {
@@ -83204,6 +84701,32 @@
         }
       },
       "source": "authored: tools/bake/page/models/town.js#waterTrough",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "wayside_cross": {
+      "atlas": "chapel-0",
+      "frameWidth": 130,
+      "frameHeight": 170,
+      "anchor": {
+        "x": 0.2692307692307692,
+        "y": 0.8764705882352941
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1885,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/chapel.js#waysideCross",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "well": {

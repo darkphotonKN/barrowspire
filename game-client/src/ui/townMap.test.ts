@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { HUB_TOWN_GOLDEN } from "@/render/world/hubTownGolden";
 import { townOutline } from "@/render/world/hubTown.fixture";
+import { HUB_SIZE } from "@/render/world/hubKeepOut";
 import type { WallState } from "@/types/gameState";
 import { HUB_STASH_CHEST } from "@/render/world/hubStash";
+import { EAST_DOOR_WALLS } from "@/render/world/eastDoor.fixture";
 import { notchDepth } from "./worldMap";
 import { TownPlan, townMap } from "./townMap";
 
 // FS-P0HSP §B (I-P0HSP-1): the town's map from a hub state's walls and gates, and the town's size.
 
-const TOWN = { width: 2000, height: 1000 };
+/** The town's size, the scene's one hub size (FS-R4MYX R22). */
+const TOWN = HUB_SIZE;
 /** The town's buildings walled as hub_map.go walls them, each wall with its house's id; partitions and furnishings too. */
 const WALLS: WallState[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) => {
   const house = `house-${i}`;
@@ -40,8 +43,8 @@ describe("townMap (FS-P0HSP §B, I-P0HSP-1)", () => {
       [
         { x: 0, y: 0 },
         { x: 2000, y: 0 },
-        { x: 2000, y: 1000 },
-        { x: 0, y: 1000 },
+        { x: 2000, y: TOWN.height },
+        { x: 0, y: TOWN.height },
       ],
     ]);
   });
@@ -61,28 +64,45 @@ describe("townMap (FS-P0HSP §B, I-P0HSP-1)", () => {
     );
     expect(ends).toHaveLength(6);
     // the south edge unbroken, its corners joined
-    expect(lines.some((r) => r.points.some((p) => p.x === 2000 && p.y === 1000) && r.points.some((p) => p.x === 0 && p.y === 1000))).toBe(true);
+    expect(lines.some((r) => r.points.some((p) => p.x === 2000 && p.y === TOWN.height) && r.points.some((p) => p.x === 0 && p.y === TOWN.height))).toBe(true);
   });
 
-  it("should fill each building's footprint solid, its door cut as one notch, its interior never drawn (§B.8, §B.9)", () => {
+  it("should fill each building's footprint solid, its door cut as one notch on its door face, its interior never drawn (§B.8, §B.9; FS-R4MYX R11)", () => {
     const solids = townMap({ walls: WALLS, gates: GATES }, TOWN).solids!(NORMAL);
     expect(solids).toHaveLength(HUB_TOWN_GOLDEN.buildings.length);
     const d = notchDepth(20, NORMAL);
     HUB_TOWN_GOLDEN.buildings.forEach((b, i) => {
-      const { x: x0, w } = b.doorGap;
-      const south = b.y + b.h;
+      const [east, south] = [b.x + b.w, b.y + b.h];
+      const g = b.doorGap;
       // the rect and one notch: 8 corners, nothing of a partition or a furnishing
-      expect(solids[i]).toEqual([
+      const notch =
+        b.doorFace === "east"
+          ? [
+              { x: east, y: g.y },
+              { x: east - d, y: g.y },
+              { x: east - d, y: g.y + g.h },
+              { x: east, y: g.y + g.h },
+            ]
+          : [];
+      const southNotch =
+        b.doorFace === "south"
+          ? [
+              { x: g.x + g.w, y: south },
+              { x: g.x + g.w, y: south - d },
+              { x: g.x, y: south - d },
+              { x: g.x, y: south },
+            ]
+          : [];
+      expect(solids[i], b.name).toEqual([
         { x: b.x, y: b.y },
-        { x: b.x + b.w, y: b.y },
-        { x: b.x + b.w, y: south },
-        { x: x0 + w, y: south },
-        { x: x0 + w, y: south - d },
-        { x: x0, y: south - d },
-        { x: x0, y: south },
+        { x: east, y: b.y },
+        ...notch,
+        { x: east, y: south },
+        ...southNotch,
         { x: b.x, y: south },
       ]);
     });
+    expect(HUB_TOWN_GOLDEN.buildings.map((b) => b.doorFace)).toContain("east");
   });
 
   it("should change its key only with what it draws: the same state twice, one key", () => {
@@ -92,6 +112,27 @@ describe("townMap (FS-P0HSP §B, I-P0HSP-1)", () => {
     expect(townMap({ walls: WALLS.slice(1), gates: GATES }, TOWN).key).not.toBe(a.key);
     expect(townMap({ walls: WALLS, gates: GATES.slice(1) }, TOWN).key).not.toBe(a.key);
   });
+});
+
+describe("townMap with the door in the east wall (FS-R4MYX §B R11)", () => {
+  it.each([[NORMAL], [1.5 / 12], [0.125]])(
+    "should fill an east-door building solid, its door notched into its east side notchDepth deep, at scale %f",
+    (k) => {
+      const [solid, ...rest] = townMap({ walls: EAST_DOOR_WALLS }, HUB_SIZE).solids!(k);
+      expect(rest).toEqual([]);
+      const d = notchDepth(20, k);
+      expect(solid).toEqual([
+        { x: 660, y: 1040 },
+        { x: 1140, y: 1040 },
+        { x: 1140, y: 1170 },
+        { x: 1140 - d, y: 1170 },
+        { x: 1140 - d, y: 1250 },
+        { x: 1140, y: 1250 },
+        { x: 1140, y: 1380 },
+        { x: 660, y: 1380 },
+      ]);
+    },
+  );
 });
 
 // FS-P0HSP §C (I-P0HSP-2): the town's map marks.

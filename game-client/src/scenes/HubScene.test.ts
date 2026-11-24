@@ -55,6 +55,7 @@ const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
 const { townOutline } = await import("@/render/world/hubTown.fixture");
 const interiors = await import("@/render/world/hubInteriors");
 const walls_ = await import("@/render/world/walls");
+const roofs_ = await import("@/render/world/roofs");
 const { sceneSystems } = await import("./sceneEnd.standin");
 const { recordingStage } = await import("./recordingStage.standin");
 type Made = import("./recordingStage.standin").Made;
@@ -2907,10 +2908,10 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
   const BARE = ArtLibrary.empty(quiet);
 
   /**
-   * The town as hub_map.go walls it (FS-B0H2D R1–R3, R9, R12), from its golden: the Inn, the
-   * store, the smithy, the Inn's partition across it and every furnishing.
+   * The town as hub_map.go walls it (FS-B0H2D R1–R3, R9, R12; FS-R4MYX R2, R6), from its golden:
+   * the Inn, the store, the smithy, the chapel, the Inn's partition across it and every furnishing.
    */
-  const IDS = ["inn", "store", "smithy"];
+  const IDS = ["inn", "store", "smithy", "chapel"];
   type Rect5 = [string, number, number, number, number];
   const BUILDINGS: Rect5[] = HUB_TOWN_GOLDEN.buildings.map((b, i) => [IDS[i], b.x, b.y, b.w, b.h]);
   const PARTITIONS: Rect5[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
@@ -2926,9 +2927,10 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     width,
     height,
   });
-  const SIDES = ["n", "w", "e", "sw", "se"];
+  /** townOutline's walls by door face: the face's two segments last. */
+  const SIDES = { south: ["n", "w", "e", "sw", "se"], east: ["n", "w", "s", "en", "es"] };
   const BUILDING_WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
-    townOutline(b).map(([x, y, w, h], k) => wall(`${IDS[i]}-${SIDES[k]}`, IDS[i], x, y, w, h)),
+    townOutline(b).map(([x, y, w, h], k) => wall(`${IDS[i]}-${SIDES[b.doorFace][k]}`, IDS[i], x, y, w, h)),
   );
   const PARTITION_WALLS = PARTITIONS.map(([house, x, y, w, h], i) => wall(`p${i}`, house, x, y, w, h));
   const FURNISHING_WALLS = FURNISHINGS.map(([house, x, y, w, h], i) => wall(`f${i}`, house, x, y, w, h));
@@ -3033,20 +3035,28 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     for (const call of calls) expect(call[4]).toMatchObject({ doors: world.doorGaps });
   });
 
-  it("should build each house's walls in the sheets its look names: the Inn's with no torch or lit window, every other house's in plain timber", () => {
+  it("should build each house's walls in the sheets its look names: the Inn's with no torch or lit window, the chapel's in its own unlit capless material, every other house's in plain timber", () => {
     const { hub } = town(BAKED);
     const calls = vi.mocked(world.addBuildings).mock.calls;
-    const innCall = calls.find((call) => (call[2] as readonly { house_id?: string }[]).some((w) => w.house_id === "inn"))!;
+    const callFor = (id: string) => calls.find((call) => (call[2] as readonly { house_id?: string }[]).some((w) => w.house_id === id))!;
+    const innCall = callFor("inn");
     const sheets = (innCall[4] as { sheets?: { lit?: string[]; back: [number, string][] } }).sheets!;
     expect(sheets.lit).toEqual([]);
     expect(sheets.back.map(([, kind]) => kind)).not.toEqual(expect.arrayContaining(["torch"]));
     expect((innCall[2] as readonly { house_id?: string }[]).every((w) => w.house_id === "inn")).toBe(true);
-    for (const call of calls.filter((c) => c !== innCall)) {
+    // the chapel's walls alone, in its own material: no light, no stone cap (FS-R4MYX R23, R42)
+    const chapelCall = callFor("chapel");
+    expect((chapelCall[2] as readonly { house_id?: string }[]).every((w) => w.house_id === "chapel")).toBe(true);
+    const chapel = (chapelCall[4] as { sheets: import("@/render/world/walls").WallSheets }).sheets;
+    expect(chapel.prefix).toBe(walls_.CHAPEL_WALLS.prefix);
+    expect(chapel.lit).toEqual([]);
+    expect(chapel.cap).toBeUndefined();
+    for (const call of calls.filter((c) => c !== innCall && c !== chapelCall)) {
       expect((call[4] as { sheets?: unknown }).sheets).toBe(walls_.TIMBER_WALLS);
-      expect((call[2] as readonly { house_id?: string }[]).some((w) => w.house_id === "inn")).toBe(false);
+      expect((call[2] as readonly { house_id?: string }[]).some((w) => w.house_id === "inn" || w.house_id === "chapel")).toBe(false);
     }
-    const inn = (hub as unknown as { buildingLights: { house: { id: string } }[] }).buildingLights;
-    expect(inn.filter((l) => l.house.id === "inn")).toEqual([]);
+    const lights = (hub as unknown as { buildingLights: { house: { id: string } }[] }).buildingLights;
+    expect(lights.filter((l) => l.house.id === "inn" || l.house.id === "chapel")).toEqual([]);
   });
 
   it("should draw the Inn's partition as low interior masonry inside the room, hidden with it under the roof", () => {
@@ -3156,7 +3166,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
 
   it("should hide every room, and whoever is in one, while its roof is on", () => {
     const { hub, rival, room } = town(BAKED);
-    for (const id of ["inn", "store", "smithy"]) {
+    for (const id of ["inn", "store", "smithy", "chapel"]) {
       expect(room(id).parts.length, id).toBeGreaterThan(0);
       expect(room(id).parts.every((p) => !p.visible), id).toBe(true);
     }
@@ -3356,7 +3366,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     const lit = (sheet: string) => BAKED.has(sheet) && !!BAKED.sheet(sheet)?.light;
     const innLit = [
       ...interiors.HUB_INDOOR_DRESSING.filter((s) => s.at.x < 870 && s.at.y < 490).map((s) => s.sheet),
-      ...interiors.HUB_FURNISHINGS.filter((f) => f.rect.x < 870).map((f) => f.sheet),
+      ...interiors.HUB_FURNISHINGS.filter((f) => f.rect.x < 870 && f.rect.y < 490).map((f) => f.sheet),
     ].filter(lit);
     expect(inn).toHaveLength(innLit.length);
     expect(forge[0].source.intensity).toBe(0);
@@ -3375,6 +3385,180 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
     standIn(OUTDOORS);
     expect(forge[0].source.intensity).toBe(0);
     expect(gate()).toBe(false);
+  });
+
+  describe("the chapel (FS-R4MYX §C R14–R15, §E R23–R25)", () => {
+    /** In the chapel's aisle, between the pew rows. */
+    const IN_CHAPEL = { x: 1450, y: 1320 };
+    const chapelRect = (sheet: string) => interiors.HUB_FURNISHINGS.filter((f) => f.sheet === sheet).map((f) => f.rect);
+
+    /** The shipped art, with the chapel's own sheets (I-R4MYX-8's bake) baked or taken away. */
+    const withChapelArt = (baked: boolean) => {
+      const manifest = JSON.parse(readFileSync(new URL("../../public/art/manifest.json", import.meta.url), "utf8")) as {
+        sheets: Record<string, unknown>;
+      };
+      for (const sheet of ["pew", "chapel_altar", "lectern", "dais"])
+        if (baked) manifest.sheets[sheet] = manifest.sheets.crate;
+        else delete manifest.sheets[sheet];
+      return new ArtLibrary(manifest as ConstructorParameters<typeof ArtLibrary>[0], quiet);
+    };
+
+    it("should stand the pews and the altar as their props, `chapel_altar` never the run's `altar`, once baked (R24)", () => {
+      town(withChapelArt(true));
+      const props = vi.mocked(world.addProp).mock.calls.map(([, , sheet, at]) => ({ sheet, at }));
+      const centre = (r: { x: number; y: number; width: number; height: number }) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+      const pews = chapelRect("pew");
+      expect(pews).toHaveLength(6);
+      for (const r of pews) expect(props).toContainEqual({ sheet: "pew", at: centre(r) });
+      const [altar] = chapelRect("chapel_altar");
+      expect(props).toContainEqual({ sheet: "chapel_altar", at: centre(altar) });
+      expect(props.map((p) => p.sheet)).not.toContain("altar");
+      const blocks = vi.mocked(iso.addUprightBlock).mock.calls;
+      for (const r of [...pews, altar]) expect(blocks.filter((c) => sameRect(c, ["", r.x, r.y, r.width, r.height]))).toHaveLength(0);
+    });
+
+    it("should stand a low placeholder block on each pew and the altar until their sheets are baked (B0H2D R19)", () => {
+      town(withChapelArt(false));
+      const blocks = vi.mocked(iso.addUprightBlock).mock.calls;
+      for (const r of [...chapelRect("pew"), ...chapelRect("chapel_altar")]) {
+        const mine = blocks.filter((c) => sameRect(c, ["", r.x, r.y, r.width, r.height]));
+        expect(mine, `${r.x}, ${r.y}`).toHaveLength(1);
+        expect(mine[0][6]).toBeLessThan(WALL_HEIGHT);
+      }
+      const sheets = vi.mocked(world.addProp).mock.calls.map(([, , sheet]) => sheet);
+      expect(sheets).not.toEqual(expect.arrayContaining(["pew", "chapel_altar", "dais", "lectern"]));
+    });
+
+    it("should lay the dais on the floor decal layer, under the altar, and stand the lectern and candelabra on it (R14)", () => {
+      const { room } = town(withChapelArt(true));
+      const chapel = { id: "", ...interiors.HUB_CHAPEL };
+      const calls = vi.mocked(world.addProp).mock.calls;
+      const at = (sheet: string) =>
+        vi.mocked(world.addProp).mock.results[calls.findIndex(([, , s, p]) => s === sheet && world.insideHouse(p, chapel))];
+      const dais = at("dais").value.sprite as Made;
+      expect(dais.depth).toBe(1);
+      const altar = at("chapel_altar").value.sprite as Made;
+      expect(altar.depth).toBeGreaterThan(dais.depth!);
+      for (const sheet of ["dais", "lectern", "candelabra", "pew", "chapel_altar"])
+        expect(room("chapel").parts, sheet).toContain(at(sheet).value.sprite);
+    });
+
+    it("should light its two candelabra only while its roof is lifted, its walls carrying no light (R15)", () => {
+      const { hub, room, standIn } = town(BAKED);
+      const lights = room("chapel").lights;
+      expect(lights).toHaveLength(2);
+      const gates = lights.map(({ source }) => hub.lightMap!.add.mock.calls.find(([s]) => s === source)?.[1] as () => boolean);
+      expect(lights.every((l) => l.source.intensity === 0)).toBe(true);
+      expect(gates.map((g) => g())).toEqual([false, false]);
+
+      standIn(IN_CHAPEL);
+      expect(lights.every((l) => l.source.intensity > 0)).toBe(true);
+      expect(gates.map((g) => g())).toEqual([true, true]);
+      expect(room("chapel").parts.every((p) => p.visible)).toBe(true);
+      expect(room("inn").lights.every((l) => l.source.intensity === 0)).toBe(true);
+
+      standIn(OUTDOORS);
+      expect(lights.every((l) => l.source.intensity === 0)).toBe(true);
+      expect(room("chapel").parts.every((p) => !p.visible)).toBe(true);
+    });
+
+    /** The chapel's and each house's drawn parts: its walls in both looks and its roof's. */
+    interface DrawnHub {
+      roofs: { house: { id: string }; baked: boolean; parts: Made[] }[];
+      drawScenery(walls: unknown[]): void;
+    }
+    const roofsOf = (hub: unknown) => (hub as DrawnHub).roofs;
+    const partsOf = (hub: unknown, id: string) => {
+      const built = vi.mocked(world.addBuildings).mock.results.flatMap((r) => r.value as import("@/render/world").BuiltBuilding[]);
+      const b = built.find((x) => x.house.id === id)!;
+      return [...b.shared, ...b.interior, ...b.exterior, ...roofsOf(hub).find((r) => r.house.id === id)!.parts] as unknown as Made[];
+    };
+    const sheetOf = (m: Made) => String(m.args[3] ?? "").split("/")[0];
+    const sprites = (parts: readonly Made[]) => parts.filter((p) => p.kind === "sprite");
+    /** The shipped manifest with every one of the chapel's own building sheets taken away (older art). */
+    const withoutChapelSheets = () => {
+      const manifest = JSON.parse(readFileSync(new URL("../../public/art/manifest.json", import.meta.url), "utf8")) as {
+        sheets: Record<string, unknown>;
+      };
+      for (const sheet of Object.keys(manifest.sheets)) if (/^chapel_(wall|post|door_head|roof)_/.test(sheet)) delete manifest.sheets[sheet];
+      return new ArtLibrary(manifest as ConstructorParameters<typeof ArtLibrary>[0], quiet);
+    };
+
+    it("should build the chapel's walls in its own material, CHAPEL_WALLS, every piece and post a chapel_ sheet (R23, R42)", () => {
+      const { hub } = town(BAKED);
+      const call = vi.mocked(world.addBuildings).mock.calls.find((c) => (c[2] as readonly { house_id?: string }[]).some((w) => w.house_id === "chapel"))!;
+      expect((call[4] as { sheets: unknown }).sheets).toBe(walls_.CHAPEL_WALLS);
+      const built = vi.mocked(world.addBuildings).mock.results.flatMap((r) => r.value as import("@/render/world").BuiltBuilding[]);
+      const b = built.find((x) => x.house.id === "chapel")!;
+      const walls = sprites([...b.shared, ...b.interior, ...b.exterior] as unknown as Made[]).map(sheetOf).filter((s) => !/^door_[xy]$/.test(s));
+      expect(walls.length).toBeGreaterThan(0);
+      for (const sheet of walls) expect(sheet).toMatch(/^chapel_(wall_(back|front|exterior)_[a-z]+_[xy]|post_(back|front)|door_head_[xy])$/);
+      // its outward face shows the church's bays, and its east door its pointed-arch head
+      expect(walls).toEqual(expect.arrayContaining(["chapel_wall_exterior_lancet_y", "chapel_wall_exterior_buttress_x", "chapel_door_head_y"]));
+      expect(partsOf(hub, "chapel").some((m) => /^tower_/.test(sheetOf(m)))).toBe(false);
+    });
+
+    it("should roof the chapel in its own slate set, where the town's set would stand; the other houses keep roof_ (R23, R42)", () => {
+      const { hub } = town(BAKED);
+      const chapel = roofsOf(hub).find((r) => r.house.id === "chapel")!;
+      expect(chapel.baked).toBe(true);
+      const sheets = new Set(chapel.parts.map(sheetOf));
+      expect(sheets).toEqual(new Set(["chapel_roof_slope", "chapel_roof_ridge", "chapel_roof_gable_x"]));
+      const house = { id: "chapel", ...interiors.HUB_CHAPEL };
+      const lay = [...roofs_.planRoof(house, "chapel_"), ...roofs_.planGables(house, 20, "chapel_")];
+      expect(chapel.parts.map((m) => m.args.slice(0, 2))).toEqual(
+        lay.map((p) => {
+          const s = iso.worldToScreen(p.at.x, p.at.y);
+          return [s.x, s.y - p.lift];
+        }),
+      );
+      for (const id of ["inn", "store", "smithy"])
+        for (const m of roofsOf(hub).find((r) => r.house.id === id)!.parts) expect(sheetOf(m)).toMatch(/^roof_(slope|ridge|gable_[xy])$/);
+    });
+
+    it("should raise no chimney over the chapel; the other three houses keep theirs (R23)", () => {
+      const { hub } = town(BAKED);
+      (hub as unknown as DrawnHub).drawScenery(TOWN);
+      const chimneys = (id: string) => roofsOf(hub).find((r) => r.house.id === id)!.parts.filter((m) => sheetOf(m) === "chimney");
+      expect(chimneys("chapel")).toEqual([]);
+      for (const id of ["inn", "store", "smithy"]) expect(chimneys(id), id).toHaveLength(1);
+    });
+
+    it("should draw the chapel as baked: no tint on any wall piece, post, door head, roof or gable, nor on any other house (owner feedback F6)", () => {
+      const { hub } = town(BAKED);
+      for (const id of ["chapel", "inn", "store", "smithy"])
+        for (const p of partsOf(hub, id)) expect(p.calls, `${id} ${sheetOf(p)}`).not.toContain("setTint");
+    });
+
+    it("should fall back to placeholder walls and the placeholder roof without the chapel_ sheets, never to the tower_ masonry (Edge States)", () => {
+      const { hub } = town(withoutChapelSheets());
+      const parts = partsOf(hub, "chapel");
+      expect(parts.length).toBeGreaterThan(0);
+      // only the door leaves, shut and open, are baked sprites: they are the run door's
+      expect(sprites(parts).map(sheetOf)).toEqual(["door_y", "door_y"]);
+      expect(roofsOf(hub).find((r) => r.house.id === "chapel")!.baked).toBe(false);
+      const blocks = vi.mocked(iso.addUprightBlock).mock.calls;
+      for (const w of BUILDING_WALLS.filter((x) => x.house_id === "chapel"))
+        expect(blocks.some((c) => sameRect(c, ["", w.position.x, w.position.y, w.width, w.height])), w.entity_id).toBe(true);
+      // the other houses are drawn as ever
+      for (const id of ["inn", "store", "smithy"]) expect(roofsOf(hub).find((r) => r.house.id === id)!.baked).toBe(true);
+    });
+
+    it("should stand the rebaked 20 × 100 pew on each pew's 20 × 100 rect (R24, R36)", () => {
+      town(BAKED);
+      expect(BAKED.has("pew")).toBe(true);
+      const calls = vi.mocked(world.addProp).mock.calls;
+      const pews = chapelRect("pew");
+      expect(pews).toHaveLength(6);
+      for (const r of pews) {
+        expect([r.width, r.height]).toEqual([20, 100]);
+        const i = calls.findIndex(([, , sheet, at]) => sheet === "pew" && at.x === r.x + r.width / 2 && at.y === r.y + r.height / 2);
+        expect(i, `${r.x}, ${r.y}`).toBeGreaterThanOrEqual(0);
+        const { sprite } = vi.mocked(world.addProp).mock.results[i].value as { sprite: Made };
+        const s = iso.worldToScreen(r.x + r.width / 2, r.y + r.height / 2);
+        expect(sprite.args.slice(0, 2)).toEqual([s.x, s.y]);
+      }
+    });
   });
 
   describe("the indoor blackout and the one hide rule (FS-9PN7X §A.4, §C, §D)", () => {
@@ -3545,12 +3729,17 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       expect(shown(drawn(stage, /^wall_exterior_/))).toBe(true);
       expect(shown(drawn(stage, /^roof_(slope|ridge)$/))).toBe(true);
       expect(shown(drawn(stage, /^roof_gable_[xy]$/))).toBe(true);
-      const doors = drawn(stage, /^door_x$/).filter((m) => m.visible);
+      // a door on each building's face: along x in a south wall, along y in the chapel's east wall
+      // (FS-R4MYX R9)
+      const doors = drawn(stage, /^door_[xy]$/).filter((m) => m.visible);
       expect(doors).toHaveLength(BUILDINGS.length);
+      const eastFaced = HUB_TOWN_GOLDEN.buildings.filter((b) => b.doorFace === "east").length;
+      expect(doors.filter((m) => sheetOf(m) === "door_y")).toHaveLength(eastFaced);
       // shut with no lock: a town door can't be acted on, so nothing amber on it
       expect(doors.every((m) => frameOf(m) === "shut")).toBe(true);
       // and the wall carried on over each door's lintel to the wall top: nothing of the room above it
-      const heads = drawn(stage, /^door_head_x$/).filter((m) => m.visible);
+      // (the chapel's in its own pointed-arch head, FS-R4MYX R23)
+      const heads = drawn(stage, /^(chapel_)?door_head_[xy]$/).filter((m) => m.visible);
       expect(heads).toHaveLength(BUILDINGS.length);
       expect(heads.map((m) => m.args.slice(0, 2))).toEqual(doors.map((m) => m.args.slice(0, 2)));
       // no dark opening is drawn anywhere (amended 2026-11-03)
@@ -3663,7 +3852,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       }
       const BEHIND_INN = { x: 670, y: 30 };
       // nearer the viewer than every building's footprint
-      const FAR_FRONT = { x: 1950, y: 980 };
+      const FAR_FRONT = { x: 1950, y: 1650 };
 
       it("should show behind a building, masked to the pieces covering the player, and hide in front and inside", () => {
         const t = town(BAKED);
@@ -5033,6 +5222,12 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
     vi.restoreAllMocks();
   });
 
+  it("should fit the town's whole grown diamond, 2000 × 1700, the one hub size (FS-R4MYX R22)", () => {
+    const { render, map } = townWithMap();
+    render();
+    expect((map() as unknown as { world: unknown }).world).toEqual({ width: 2000, height: 1700 });
+  });
+
   it("should build no map before a state carries the town's walls, then one with the first that does", () => {
     const { render, map, layers } = townWithMap();
     render(AWAY, [], []);
@@ -5071,7 +5266,8 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
   it("should redraw the map on a change of the town only, never as the player walks (§A.4)", () => {
     const { render, map } = townWithMap();
     render({ x: 1000, y: 500 });
-    render({ x: 1010, y: 500 });
+    // far enough that the dot moves a whole px at the town's scale, which shrank as it grew south
+    render({ x: 1030, y: 500 });
     render({ x: 1200, y: 600 });
     expect(map()!.redraws).toBe(1);
     expect(map()!.dotRedraws).toBe(3);
@@ -6431,5 +6627,133 @@ describe("HubScene auras (FS-1J1CB R35)", () => {
     hub.placePlayer(player, false);
 
     expect(hub.auras.see).toHaveBeenCalledWith("w", player);
+  });
+});
+
+const graveyard = await import("@/render/world/hubGraveyard");
+
+describe("HubScene the graveyard, the belfry and the wayside cross (FS-R4MYX R27–R30, R41; FS-KYPQ9 §A.9)", () => {
+  type Manifest = { sheets: Record<string, { animations: Record<string, { frames: unknown[][] }> }> };
+  const SHIPPED = (): Manifest =>
+    JSON.parse(readFileSync(new URL("../../public/art/manifest.json", import.meta.url), "utf8")) as Manifest;
+  /** The sheets the graveyard, the belfry and the wayside cross draw from, the reused dead trees among them. */
+  const SHEETS = ["headstone", "grave_flowers", "grave_mound", "stone_cross", "belfry", "wayside_cross", "graveyard_wall", "tree_dead", "tree_dead_snag"];
+
+  /**
+   * The shipped manifest with the graveyard's sheets as the bake lays them out (I-R4MYX-8), on a
+   * town frame: whatever the bake has shipped, this suite needs none of it.
+   */
+  function withGraveyardArt(): Manifest {
+    const m = SHIPPED();
+    const like = m.sheets.flower_box;
+    const frame = like.animations.x.frames[0][0];
+    const sheet = (animations: Record<string, number>) => ({
+      ...like,
+      animations: Object.fromEntries(
+        Object.entries(animations).map(([name, n]) => [name, { fps: 0, loop: false, frames: [Array(n).fill(frame)] }]),
+      ),
+    });
+    m.sheets.headstone = sheet({ intact: 2, weathered: 3, broken: 2 });
+    m.sheets.grave_flowers = sheet({ fresh: 1, withered: 1 });
+    m.sheets.grave_mound = sheet({ default: 1 });
+    m.sheets.stone_cross = sheet({ default: 1 });
+    m.sheets.belfry = sheet({ default: 1 });
+    m.sheets.wayside_cross = sheet({ default: 1 });
+    m.sheets.graveyard_wall = sheet({ x: 2, y: 2 });
+    m.sheets.tree_dead = sheet({ variants: 2 });
+    m.sheets.tree_dead_snag = sheet({ variants: 2 });
+    return m;
+  }
+
+  /** The shipped manifest with none of the graveyard's sheets. */
+  function withoutGraveyardArt(): Manifest {
+    const m = SHIPPED();
+    for (const name of SHEETS) delete m.sheets[name];
+    return m;
+  }
+
+  interface SceneryHub {
+    art: unknown;
+    lightMap?: { add: ReturnType<typeof vi.fn> };
+    occluders: { items: { sprite: Made }[] };
+    drawScenery(walls: unknown[]): void;
+  }
+
+  /** The town's walls as hub_map.go lays them out, from its golden: blocked() has the last word. */
+  const TOWN_WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+    townOutline(b).map(([x, y, width, height], k) => ({
+      entity_id: `b${i}w${k}`,
+      house_id: `b${i}`,
+      position: { x, y },
+      width,
+      height,
+    })),
+  );
+
+  /** The scenery drawn round the town with `manifest`: what was placed, and the hub. */
+  function scenery(manifest: Manifest) {
+    vi.mocked(world.addProp).mockClear();
+    const { hub: raw } = hubOnStage();
+    const hub = raw as unknown as SceneryHub;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    hub.art = new ArtLibrary(manifest as never, { warn: () => {} });
+    hub.lightMap = { add: vi.fn() };
+    hub.drawScenery(TOWN_WALLS);
+    const placed = vi.mocked(world.addProp).mock.calls.map(([, , sheet, at, q], i) => ({
+      sheet,
+      at,
+      animation: q?.animation,
+      index: q?.index ?? 0,
+      sprite: (vi.mocked(world.addProp).mock.results[i].value as { sprite: Made }).sprite,
+    }));
+    return { hub, placed, warned: warn.mock.calls.map((c) => String(c[0])) };
+  }
+
+  const same = (a: { x: number; y: number }, b: { x: number; y: number }) => a.x === b.x && a.y === b.y;
+  const ALL = [...graveyard.HUB_GRAVEYARD, ...graveyard.HUB_GRAVEYARD_WALL, graveyard.HUB_BELFRY, graveyard.HUB_WAYSIDE_CROSS];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should stand every piece on its spot with its state and variant when the sheets exist", () => {
+    const { placed } = scenery(withGraveyardArt());
+    for (const piece of ALL) {
+      const mine = placed.filter((p) => p.sheet === piece.sheet && same(p.at, piece.at));
+      expect(mine, `${piece.sheet} at (${piece.at.x}, ${piece.at.y})`).toHaveLength(1);
+      expect([mine[0].animation, mine[0].index]).toEqual([piece.animation, piece.index ?? 0]);
+    }
+  });
+
+  it("should fade the tall pieces over the player: the crosses, the dead trees, the belfry and the wayside cross", () => {
+    const { hub, placed } = scenery(withGraveyardArt());
+    const fading = new Set(hub.occluders.items.map((i) => i.sprite));
+    const ours = placed.filter((p) => ALL.some((g) => g.sheet === p.sheet && same(g.at, p.at)));
+    const tall = ours.filter((p) => fading.has(p.sprite)).map((p) => p.sheet).sort();
+    expect(tall).toEqual(["belfry", "stone_cross", "stone_cross", "tree_dead", "tree_dead", "tree_dead_snag", "wayside_cross"]);
+  });
+
+  it("should sort the wall's pieces by their tile's back corner and trim the last of a run", () => {
+    const { placed } = scenery(withGraveyardArt());
+    for (const piece of graveyard.HUB_GRAVEYARD_WALL) {
+      const { sprite } = placed.find((p) => p.sheet === "graveyard_wall" && same(p.at, piece.at))!;
+      expect(sprite.depth).toBe(iso.worldDepth(piece.depthAt.x, piece.depthAt.y));
+      expect(sprite.calls.includes("setCrop")).toBe(piece.keep < 1);
+    }
+  });
+
+  it("should lay the flowers on a mound over its earth", () => {
+    const { placed } = scenery(withGraveyardArt());
+    const onMound = graveyard.HUB_GRAVEYARD.find((p) => p.sheet === "grave_flowers" && p.depthAt)!;
+    const flowers = placed.find((p) => p.sheet === "grave_flowers" && same(p.at, onMound.at))!;
+    const mound = placed.find((p) => p.sheet === "grave_mound" && same(p.at, onMound.depthAt!))!;
+    expect(flowers.sprite.depth).toBeGreaterThan(mound.sprite.depth!);
+  });
+
+  it("should draw nothing of the graveyard, the belfry or the wayside cross without their sheets, and say which are missing", () => {
+    const { placed, warned } = scenery(withoutGraveyardArt());
+    expect(placed.filter((p) => ALL.some((g) => g.sheet === p.sheet && same(g.at, p.at)))).toEqual([]);
+    const warning = warned.find((w) => w.startsWith("hub: no art for"));
+    for (const name of SHEETS) expect(warning).toContain(`"${name}"`);
   });
 });

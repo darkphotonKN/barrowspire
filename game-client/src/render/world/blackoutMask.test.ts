@@ -14,7 +14,9 @@ import {
   type MaskLook,
   type Stamp,
 } from "./blackoutMask";
-import type { House } from "./houses";
+import { doorGaps, gapDoor } from "./buildingLooks";
+import { EAST_DOOR_WALLS } from "./eastDoor.fixture";
+import { housesFrom, type House } from "./houses";
 
 const INN: House = { id: "inn", x: 470, y: 110, width: 400, height: 300 };
 const STORE: House = { id: "store", x: 1130, y: 150, width: 300, height: 240 };
@@ -196,6 +198,16 @@ describe("maskFloor (FS-9PN7X §D, the owner's pixel model)", () => {
       expect(b.y).toBeLessThanOrEqual(bottom.y);
       expect(l.x).toBeGreaterThanOrEqual(left.x);
     }
+  });
+});
+
+describe("maskFloor with the door in the east wall (FS-R4MYX §B R9)", () => {
+  it("should stop the floor at the east threshold's middle, as it does at a south one", () => {
+    const [house] = housesFrom(EAST_DOOR_WALLS);
+    const [gap] = doorGaps(EAST_DOOR_WALLS);
+    const middle = gapDoor(gap, false).at.x;
+    expect(middle).toBe(1130);
+    expect(maskFloor(house, WALL)).toEqual(projectRect(670, 1050, 1130 - 670, 320));
   });
 });
 

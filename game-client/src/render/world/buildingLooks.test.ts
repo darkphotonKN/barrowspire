@@ -3,6 +3,7 @@ import { WORLD_PX_PER_TILE } from "@/render/iso";
 import type { WallState } from "@/types/gameState";
 import { BAKE } from "./bake";
 import { doorGaps, doorHead, gapDoor, planBuildings, planCap } from "./buildingLooks";
+import { EAST_DOOR_WALLS } from "./eastDoor.fixture";
 import { housesFrom } from "./houses";
 import { townOutline } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
@@ -47,8 +48,9 @@ const gapless = (x: number, y: number, w: number, h: number, id: string) => [
 ];
 
 /**
- * The client's town mirror (hub_map.go's buildings), walled as the server walls them: the Inn's
- * street gap off centre, against its partition (ADR-0073).
+ * The client's town mirror (hub_map.go's buildings), walled as the server walls them, each on its
+ * door face: the Inn's street gap off centre, against its partition (ADR-0073), the chapel's in its
+ * east wall (FS-R4MYX R6).
  */
 const TOWN = HUB_TOWN_GOLDEN.buildings;
 const TOWN_WALLS = TOWN.flatMap((b, i) => townOutline(b).map(([x, y, w, h]) => wall(x, y, w, h, `b${i}`)));
@@ -168,7 +170,8 @@ describe("doorGaps (FS-9PN7X §B.5)", () => {
   it("should find each town building's door gap from the walls, the gap's own rect", () => {
     const gaps = doorGaps(TOWN_WALLS);
     // the golden's gaps, as the server cuts them: the Inn's 15 px east of centre with its west
-    // jamb on the partition's east face (ADR-0073), the store's and the smithy's centred
+    // jamb on the partition's east face (ADR-0073), the store's and the smithy's centred, the
+    // chapel's centred in its east wall (FS-R4MYX R6)
     expect(gaps).toEqual(
       TOWN.map(({ doorGap: g }, i) => ({
         houseId: `b${i}`,
@@ -177,7 +180,13 @@ describe("doorGaps (FS-9PN7X §B.5)", () => {
         height: g.h,
       })),
     );
-    expect(gaps).toHaveLength(3);
+    expect(gaps).toHaveLength(TOWN.length);
+  });
+
+  it("should find each gap in the wall on its building's door face (FS-R4MYX R6, R9)", () => {
+    const along = (g: { width: number; height: number }) => (g.width > g.height ? "south" : "east");
+    expect(doorGaps(TOWN_WALLS).map(along)).toEqual(TOWN.map((b) => b.doorFace));
+    expect(TOWN.map((b) => b.doorFace)).toContain("east");
   });
 
   it("should open the Inn's street gap wholly into the taproom, no partition standing in it (FS-MMA2H R10)", () => {
@@ -226,21 +235,32 @@ describe("doorGaps (FS-9PN7X §B.5)", () => {
   });
 });
 
-describe("gapDoor (FS-9PN7X §B.5, amended 2026-11-03)", () => {
-  it("should hang a shut plank door, no lock on it, in a town door gap while the player is outside", () => {
-    const [gap] = doorGaps(TOWN_WALLS);
-    expect(gapDoor(gap, false)).toEqual({
-      sheet: "door_x",
-      frame: "shut",
-      axis: "x",
-      at: { x: gap.position.x + DOOR / 2, y: gap.position.y + THICK / 2 },
-      depthAt: gap.position,
-      rect: { x: gap.position.x, y: gap.position.y, width: DOOR, height: THICK },
-    });
-  });
+/**
+ * Each town building's door gap with the axis its face gives it: along x in a south wall, along y
+ * in an east wall (FS-R4MYX R9), and the gap's size along that axis.
+ */
+const TOWN_DOORS = doorGaps(TOWN_WALLS).map((gap, i) => {
+  const axis = TOWN[i].doorFace === "east" ? ("y" as const) : ("x" as const);
+  const [width, height] = axis === "x" ? [DOOR, THICK] : [THICK, DOOR];
+  return [`${TOWN[i].name}'s ${TOWN[i].doorFace} door`, { gap, axis, width, height }] as const;
+});
 
-  it("should show the door open while the player is inside its building", () => {
-    const [gap] = doorGaps(TOWN_WALLS);
+describe("gapDoor (FS-9PN7X §B.5, amended 2026-11-03)", () => {
+  it.each(TOWN_DOORS)(
+    "should hang a shut plank door, no lock on it, in the %s gap on its face's axis while the player is outside",
+    (_, { gap, axis, width, height }) => {
+      expect(gapDoor(gap, false)).toEqual({
+        sheet: `door_${axis}`,
+        frame: "shut",
+        axis,
+        at: { x: gap.position.x + width / 2, y: gap.position.y + height / 2 },
+        depthAt: gap.position,
+        rect: { x: gap.position.x, y: gap.position.y, width, height },
+      });
+    },
+  );
+
+  it.each(TOWN_DOORS)("should show the %s open while the player is inside its building", (_, { gap }) => {
     expect(gapDoor(gap, true)).toEqual({ ...gapDoor(gap, false), frame: "open" });
   });
 
@@ -255,16 +275,18 @@ describe("gapDoor (FS-9PN7X §B.5, amended 2026-11-03)", () => {
 });
 
 describe("doorHead (FS-9PN7X §B.5, amended 2026-11-03)", () => {
-  it("should close a town door gap over the door's lintel in the type's own wall, sorted like the door", () => {
-    const [gap] = doorGaps(TOWN_WALLS);
-    expect(doorHead(gap, TIMBER_WALLS)).toEqual({
-      sheet: "door_head_x",
-      axis: "x",
-      at: { x: gap.position.x + DOOR / 2, y: gap.position.y + THICK / 2 },
-      depthAt: gap.position,
-      rect: { x: gap.position.x, y: gap.position.y, width: DOOR, height: THICK },
-    });
-  });
+  it.each(TOWN_DOORS)(
+    "should close the %s gap over the door's lintel in the type's own wall, on its face's axis, sorted like the door",
+    (_, { gap, axis, width, height }) => {
+      expect(doorHead(gap, TIMBER_WALLS)).toEqual({
+        sheet: `door_head_${axis}`,
+        axis,
+        at: { x: gap.position.x + width / 2, y: gap.position.y + height / 2 },
+        depthAt: gap.position,
+        rect: { x: gap.position.x, y: gap.position.y, width, height },
+      });
+    },
+  );
 
   it("should give a Spire room's gap the masonry head, on the gap's own axis", () => {
     const gap = { houseId: "r", position: { x: 280, y: 60 }, width: THICK, height: DOOR };
@@ -308,5 +330,83 @@ describe("a run house's 80 px door (FS-MMA2H §B R7, R8)", () => {
         expect(to <= west + 1e-6 || from >= east - 1e-6, `${p.sheet} at ${from}–${to}`).toBe(true);
       }
     }
+  });
+});
+
+describe("a town building's east door (FS-R4MYX §B R9; FS-MMA2H R8; ADR-0036)", () => {
+  /** The east wall's centreline, and the gap's span along it. */
+  const EAST_X = 1130;
+  const [north, south] = [1170, 1250];
+  /** The stretch of the east wall's line a piece's kept footprint covers. */
+  const span = (p: { at: { y: number }; keep: number }) => [p.at.y - T / 2, p.at.y - T / 2 + p.keep * T];
+
+  it("should find one gap on axis y in the east wall, the gap's own rect", () => {
+    const gaps = doorGaps(EAST_DOOR_WALLS);
+    expect(gaps).toEqual([{ houseId: "east-door", position: { x: 1120, y: north }, width: THICK, height: DOOR }]);
+  });
+
+  it("should hang a door_y in it, shut from outside and open from inside, at the gap's centre", () => {
+    const [gap] = doorGaps(EAST_DOOR_WALLS);
+    const shut = gapDoor(gap, false);
+    expect(shut).toEqual({
+      sheet: "door_y",
+      frame: "shut",
+      axis: "y",
+      at: { x: EAST_X, y: 1210 },
+      depthAt: { x: 1120, y: north },
+      rect: { x: 1120, y: north, width: THICK, height: DOOR },
+    });
+    expect(gapDoor(gap, true)).toEqual({ ...shut, frame: "open" });
+  });
+
+  it.each([
+    ["timber", TIMBER_WALLS, "door_head_y"],
+    ["masonry", MASONRY_WALLS, "tower_door_head_y"],
+  ])("should close the gap over the lintel with the %s head, sorted like the door under it", (_, sheets, sheet) => {
+    const [gap] = doorGaps(EAST_DOOR_WALLS);
+    expect(doorHead(gap, sheets)).toEqual({
+      sheet,
+      axis: "y",
+      at: gapDoor(gap, false).at,
+      depthAt: gapDoor(gap, false).depthAt,
+      rect: gapDoor(gap, false).rect,
+    });
+  });
+
+  it.each([
+    ["timber", TIMBER_WALLS, ""],
+    ["masonry", MASONRY_WALLS, "tower_"],
+  ])("should post both jambs and draw nothing in the gap, in both %s looks", (_, sheets, prefix) => {
+    const [plan] = planBuildings(EAST_DOOR_WALLS, 5, sheets);
+    for (const [look, post] of [
+      [plan.interior, `${prefix}post_front`],
+      [plan.exterior, `${prefix}post_back`],
+    ] as const) {
+      // a post at each jamb: on the east wall's centreline, half the wall's thickness in from its end
+      const onEast = look.posts.filter((p) => p.at.x === EAST_X);
+      expect(onEast.map((p) => p.at.y)).toEqual(expect.arrayContaining([north - THICK / 2, south + THICK / 2]));
+      for (const p of onEast) expect(p.sheet).toBe(post);
+      // no post and no piece of the east wall stands in the gap
+      expect(onEast.some((p) => p.at.y > north && p.at.y < south)).toBe(false);
+      const pieces = look.pieces.filter((p) => p.axis === "y" && p.at.x === EAST_X);
+      expect(pieces.length).toBeGreaterThan(0);
+      for (const p of pieces) {
+        const [from, to] = span(p);
+        expect(to <= north + 1e-6 || from >= south - 1e-6, `${p.sheet} at ${from}–${to}`).toBe(true);
+      }
+    }
+    // the south wall whole: its pieces run its length unbroken, none of the gap's posts on it
+    const southPieces = plan.exterior.pieces.filter((p) => p.axis === "x" && p.at.y === 1370);
+    expect(southPieces.reduce((n, p) => n + p.keep * T, 0)).toBeCloseTo(480);
+  });
+
+  it("should stand the east front full height outside, on the cut-away's footprint, in the outward face", () => {
+    const [plan] = planBuildings(EAST_DOOR_WALLS, 5, MASONRY_WALLS);
+    const shape = (p: (typeof plan.interior.pieces)[number]) => [p.wallId, p.at, p.depthAt, p.keep, p.axis];
+    expect(plan.exterior.pieces.map(shape)).toEqual(plan.interior.pieces.map(shape));
+    for (const p of plan.exterior.pieces) expect(p.sheet).toMatch(/^tower_wall_exterior_(plain|pillar)_[xy]$/);
+    // the SE corner and the two jambs, cut away inside, columns outside
+    expect(plan.interior.posts).toHaveLength(3);
+    expect(plan.exterior.posts.map((p) => p.at)).toEqual(plan.interior.posts.map((p) => p.at));
   });
 });

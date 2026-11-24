@@ -8,13 +8,15 @@
  * part-tile goes to the eave overhang instead.
  */
 
-import { WORLD_PX_PER_TILE, type Point } from "@/render/iso";
+// by path, not the barrel: the barrel pulls in the Phaser drawing helpers, and this is pure maths
+import { WORLD_PX_PER_TILE, type Point } from "@/render/iso/projection";
 import { BAKE } from "./bake";
 import { tileHash } from "./ground";
 import type { House } from "./houses";
 
 export interface RoofPiece {
-  sheet: "roof_slope" | "roof_ridge";
+  /** `{prefix}roof_slope` or `{prefix}roof_ridge`: the town's `roof_` set, or the chapel's `chapel_roof_`. */
+  sheet: `${string}roof_slope` | `${string}roof_ridge`;
   /** The slope's downhill side (n/e/s/w), or the ridge's axis (x/y). */
   animation: string;
   /** World position of the piece's footprint centre; also what it sorts by. */
@@ -27,7 +29,11 @@ const T = WORLD_PX_PER_TILE;
 /** How far the roof reaches past the walls, at least, in world px. */
 export const ROOF_EAVE = 10;
 
-export function planRoof(house: House): RoofPiece[] {
+/**
+ * A house's roof. `prefix` names its roof set (FS-R4MYX R42): `""` for the town's, `"chapel_"` for
+ * the chapel's slate; the sets are cut and sized alike, so only the sheet names change.
+ */
+export function planRoof(house: House, prefix = ""): RoofPiece[] {
   const alongX = house.width >= house.height;
   // "along" runs with the ridge, "across" climbs from one eave to the other
   const alongLength = (alongX ? house.width : house.height) + 2 * ROOF_EAVE;
@@ -54,20 +60,20 @@ export function planRoof(house: House): RoofPiece[] {
       const lift = base + (rows - 1 - j) * rise;
       const out = (j + 0.5) * T;
       pieces.push({
-        sheet: "roof_slope",
+        sheet: `${prefix}roof_slope`,
         animation: downhillFar,
         at: point(along, midAcross + out),
         lift,
       });
       pieces.push({
-        sheet: "roof_slope",
+        sheet: `${prefix}roof_slope`,
         animation: downhillNear,
         at: point(along, midAcross - out),
         lift,
       });
     }
     pieces.push({
-      sheet: "roof_ridge",
+      sheet: `${prefix}roof_ridge`,
       animation: alongX ? "x" : "y",
       at: point(along, midAcross),
       lift: base + rows * rise,
@@ -87,10 +93,15 @@ export function planRoof(house: House): RoofPiece[] {
 export const GABLE_FOOT = BAKE.WALL_BACK * BAKE.VPX;
 
 export interface GablePiece {
-  /** `roof_gable_{x|y}`, named for the ridge it closes the ends of, as `roof_ridge`'s animations. */
-  sheet: "roof_gable_x" | "roof_gable_y";
+  /**
+   * `{prefix}roof_gable_{x|y}`, named for the ridge it closes the ends of, as `roof_ridge`'s
+   * animations.
+   */
+  sheet: `${string}roof_gable_x` | `${string}roof_gable_y`;
   /** The roof half it closes, by that half's downhill side: n/s on an x ridge, e/w on a y ridge. */
   animation: string;
+  /** Its frame: `GABLE_APEX` for the piece against the ridge, 0 (the plain end wall) elsewhere. */
+  index: number;
   /** World position of its footprint centre, on the end wall's centreline. */
   at: Point;
   /**
@@ -106,6 +117,13 @@ export interface GablePiece {
 }
 
 /**
+ * A gable sheet's frame for the piece against the ridge: the apex, which carries what crowns the
+ * gable (the chapel's half rose window and half its stone cross, the two halves meeting over the
+ * ridge, FS-R4MYX R42). A sheet with one frame (the town's timber gable) wraps it to that frame.
+ */
+export const GABLE_APEX = 1;
+
+/**
  * The timber gables that close a roof's two ends (FS-9PN7X, ADR-0036): the triangle between an end
  * wall's top and the roof's slopes, so a closed block never shows its inside under the roof.
  *
@@ -113,9 +131,14 @@ export interface GablePiece {
  * from the ridge in step with `planRoof`'s rows, so a piece's top edge climbs one rise across its
  * tile under that row's slope piece, from that row's lift. The last piece is pulled in to end
  * on the side wall's centreline, where the corner post stands, so none pokes out under the eave.
- * `wallThickness` is the server's (20 world px for the hub and runs alike).
+ * `wallThickness` is the server's (20 world px for the hub and runs alike); `prefix` names the roof
+ * set, as `planRoof`'s.
  */
-export function planGables(house: House, wallThickness: number): GablePiece[] {
+export function planGables(
+  house: House,
+  wallThickness: number,
+  prefix = "",
+): GablePiece[] {
   const alongX = house.width >= house.height;
   const across = alongX ? house.height : house.width;
   // planRoof's rows: the roof line falls one rise a tile from the ridge to the eave
@@ -147,8 +170,9 @@ export function planGables(house: House, wallThickness: number): GablePiece[] {
         const inner = Math.min(k * T, Math.max(0, reach - T));
         const centre = midAcross + sign * (inner + T / 2);
         pieces.push({
-          sheet: alongX ? "roof_gable_x" : "roof_gable_y",
+          sheet: `${prefix}roof_gable_${alongX ? "x" : "y"}`,
           animation,
+          index: k === 0 ? GABLE_APEX : 0,
           at: point(end, centre),
           lift: base + (rows - (inner + T) / T) * rise - GABLE_FOOT,
           // the end wall's back face, a tile before the piece's low corner: behind the wall

@@ -10,6 +10,10 @@
 // Spirewarden, who sends players down, is tall in grave-watch mail and a hooded mantle, with a
 // lantern hung from a crook; the Quartermaster, who keeps the stores, is stout, in a leather
 // apron and felt cap, with a ledger on his arm.
+//
+// The Confessor keeps the chapel (FS-R4MYX §H R37). He is no function NPC yet and carries nothing:
+// tall and gaunt in a dark hooded robe to the ground, his face in the cowl's shadow, a white stole
+// hung from his neck as the one pale mark on him, his hands clasped before him.
 
 import * as THREE from "three";
 import { materials } from "../materials.js";
@@ -23,6 +27,7 @@ import {
   cap,
   cloak,
   cloakBones,
+  cowl,
   face,
   hair,
   hands,
@@ -209,6 +214,64 @@ export function quartermaster() {
   return { rig, style };
 }
 
+/** The stole's two bands, either side of the front (rad, 0 his right, π/2 his front). */
+const STOLE = [
+  [Math.PI / 2 + 0.17, Math.PI / 2 + 0.43],
+  [Math.PI / 2 - 0.43, Math.PI / 2 - 0.17],
+];
+
+/**
+ * The Confessor (FS-R4MYX §H R37): tall and gaunt, a dark hooded robe to the ground under a deep
+ * cowl that shadows his eyes, a white stole from the neck to the shin, a cord at the waist, his
+ * hands clasped before him in wide sleeves. No weapon, no marker, nothing amber.
+ */
+export function confessor() {
+  const F = fabrics();
+  const rig = createRig(2.06, { shoulderW: 0.9, torsoW: 0.84, torsoD: 0.86, hipW: 0.92, limbR: 0.84, armR: 0.84, headR: 0.059 });
+  rig.hooks = [];
+  skirtBones(rig, { stiffness: 50, drag: 0.24 });
+  const [, hy] = J(rig, "hips");
+  // the robe is cut as the wizard's gown is, to the ground, so a stride keeps the knee inside it
+  const robe = { top: hy - 0.005, bottom: 0.016, rTop: [0.096, 0.072], rBottom: [0.15, 0.134], legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 64, trail: 0.02, kneeCover: 0.05 };
+
+  torso(rig, F.confessorRobe);
+  neck(rig, F.skin, { w: 0.86 });
+  // wide sleeves, falling open from the elbow
+  arms(rig, F.confessorRobe, { sleeve: (t) => 1 + 0.9 * THREE.MathUtils.smoothstep(t, 0.4, 0.95) });
+  legs(rig, F.breeches, { under: robe });
+  hands(rig, F.skin, { size: 0.9 });
+  boots(rig, F.leatherDark, { top: 0.08 });
+  head(rig, F.skin, { jaw: 0.84 });
+  face(rig, F.face, F.browGrey);
+  // the crown drawn out behind into a short drooping point, so from behind he reads as hooded and
+  // not as a dark ball over the robe
+  cowl(rig, F.confessorRobe, { shade: 1, brow: 0.4, gap: 0.95, reach: 0.018, point: { dir: [0, 0.45, -0.9], length: 0.07, droop: 0.45, pinch: 0.75, girth: 2.6 } });
+  skirt(rig, F.confessorRobe, robe);
+  // the stole: two bands from under the cowl's mantle down his front, lying over the robe on its
+  // own rig, so the robe never shows through it, to the shin
+  for (const arc of STOLE) {
+    overTorso(rig, F.stole, { from: hy - 0.01, arc, pad: 0.014 });
+    skirt(rig, F.stole, { top: robe.top, bottom: 0.17, rTop: [robe.rTop[0] + 0.008, robe.rTop[1] + 0.008], rBottom: [robe.rBottom[0] + 0.006, robe.rBottom[1] + 0.008], arc, over: robe });
+  }
+  // a plain cord girdle over the robe and the stole
+  belt(rig, F.cord, F.cord, { r: [0.113, 0.098], dy: 0 });
+
+  const style = {
+    speed: 0.7,
+    // the hands clasped before him at the waist, the elbows in at his sides
+    hold: pose({
+      upperArmL: [-0.22, -0.72, -0.1],
+      foreArmL: [-1.2, 0, 0],
+      upperArmR: [-0.22, 0.72, 0.1],
+      foreArmR: [-1.2, 0, 0],
+    }),
+    // a slow, measured step; the clasped hands barely swing
+    walk: { stride: 0.7, knee: 0.85, arms: [0.08, 0.08], lean: 0.0, twist: 0.5 },
+    idle: { lean: 0.0 },
+  };
+  return { rig, style };
+}
+
 /** The folk as manifest sheets: idle and walk only (FOLK_ANIMATIONS). */
 export const FOLK = [
   // each build carries the palettes the hub sends (game-server hub_map.go hubResidents); the
@@ -217,4 +280,5 @@ export const FOLK = [
   { sheet: "folk_resident_skirt", fn: "resident", build: () => resident("skirt", ["green", "flax"]) },
   { sheet: "folk_spirewarden", fn: "spirewarden", build: spirewarden },
   { sheet: "folk_quartermaster", fn: "quartermaster", build: quartermaster },
+  { sheet: "folk_confessor", fn: "confessor", build: confessor },
 ].map((f) => ({ ...f, group: "folk", animations: FOLK_ANIMATIONS }));

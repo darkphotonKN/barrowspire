@@ -28,22 +28,24 @@ import {
   type Footprint,
   type PropSpot,
 } from "./hubKeepOut";
-import { townDoorGap, townOutline } from "./hubTown.fixture";
+import { HUB_BELFRY, HUB_GRAVEYARD, HUB_GRAVEYARD_WALL, HUB_WAYSIDE_CROSS } from "./hubGraveyard";
+import { townDoorGap, townDoorStrip, townOutline, type TownDoorGap } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
 import { ROOF_EAVE } from "./roofs";
 
 /**
  * The town's buildings, from the golden of game-server/game-service/internal/game/hub_map.go
- * (hubBuildings): the Inn, the Quartermaster's store and the smithy (FS-B0H2D R1–R3), walled
- * 20 thick as addHubBuilding does, the south wall cut in two around the door gap the golden
- * records (R9; hubTown.fixture.ts, the Inn's off centre by ADR-0073). Furnishings are not used here: they stand indoors, and this checks the
+ * (hubBuildings): the Inn, the Quartermaster's store, the smithy and the chapel (FS-B0H2D R1–R3,
+ * FS-R4MYX R2), walled 20 thick as addHubBuilding does, the wall on each door face cut in two
+ * around the door gap the golden records (R9; FS-R4MYX R6; hubTown.fixture.ts, the Inn's off
+ * centre by ADR-0073, the chapel's in its east wall). Furnishings are not used here: they stand indoors, and this checks the
  * outdoor dressing. The scene takes its walls from the server; the golden lets the keep-out rule
  * be checked at review against the town hub_map.go actually lays out.
  */
 const HUB_BUILDINGS = HUB_TOWN_GOLDEN.buildings.map(({ x, y, w, h }): Rect4 => [x, y, w, h]);
 /**
- * Each building's door gap as the server cuts it (the golden's), as the span along its south
- * wall's line and the y of its sill.
+ * Each building's door gap as the server cuts it (the golden's), as the span along its door
+ * face's line and its sill.
  */
 const DOOR_GAPS = HUB_TOWN_GOLDEN.buildings.map(townDoorGap);
 const HUB_WALLS: WallState[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
@@ -85,9 +87,12 @@ const crosses = (a: Rect4, b: Rect4) =>
 const indoors = (fp: Footprint) =>
   HUB_BUILDINGS.some(([x, y, w, h]) => crosses(squareOf(fp), [x - EAVE, y - EAVE, w + 2 * EAVE, h + 2 * EAVE]));
 
-/** The ground in front of a door gap a player walks out onto: the gap's width, 80 deep (R5). */
+/**
+ * The ground in front of a door gap a player walks out onto: the gap's width, 80 deep beyond the
+ * sill, on the door's face (R5; FS-R4MYX R10).
+ */
 const THRESHOLD = 80;
-const thresholds: Rect4[] = DOOR_GAPS.map((g) => [g.x0, g.sill, g.x1 - g.x0, THRESHOLD]);
+const thresholds: Rect4[] = DOOR_GAPS.map((g) => townDoorStrip(g, THRESHOLD, "outside"));
 
 const label = (s: PropSpot) => `${s.sheet} at (${s.at.x}, ${s.at.y})`;
 
@@ -103,6 +108,31 @@ function beyondTheEdge(fp: Footprint): boolean {
 }
 
 describe("the hub keep-out constants (FS-KYPQ9 §A.3)", () => {
+  it("holds the hub's size to the golden's, the server's HubMapWidth × HubMapHeight (FS-R4MYX R1, R22)", () => {
+    const { w, h } = HUB_TOWN_GOLDEN.mapSize;
+    expect(HUB_SIZE).toEqual({ width: w, height: h });
+  });
+
+  it("is the smallest multiple of 100 deep that holds the town, its graveyard and its paths (FS-R4MYX R1)", () => {
+    const bottoms = [
+      ...HUB_TOWN_GOLDEN.buildings.map((b) => b.y + b.h),
+      ...HUB_TOWN_GOLDEN.fixedResidents.map((r) => r.y),
+      ...HUB_KEEP_OUT.wander.map((q) => q.y + q.height),
+      ...HUB_PATHS.map(([, y, , h]) => y + h),
+      ...[...HUB_GRAVEYARD, ...HUB_GRAVEYARD_WALL, HUB_BELFRY, HUB_WAYSIDE_CROSS].map((s) => s.at.y + s.r),
+    ];
+    const deepest = Math.max(...bottoms);
+    expect(deepest).toBeLessThanOrEqual(HUB_SIZE.height);
+    expect(deepest).toBeGreaterThan(HUB_SIZE.height - 100);
+    expect(HUB_SIZE.height % 100).toBe(0);
+  });
+
+  it("holds the residents' quarters to the golden's, as the server walks them (FS-R4MYX R40)", () => {
+    expect(HUB_KEEP_OUT.wander).toEqual(
+      HUB_TOWN_GOLDEN.wanderRegions.map(({ name, x, y, w, h }) => ({ name, x, y, width: w, height: h })),
+    );
+  });
+
   it("holds K3–K6 as the server places them", () => {
     expect(HUB_KEEP_OUT.spawn).toEqual({ at: { x: 1000, y: 800 }, clearance: 60 });
     // the Elder by the spawn, the Quartermaster in his store (FS-B0H2D R8)
@@ -112,12 +142,6 @@ describe("the hub keep-out constants (FS-KYPQ9 §A.3)", () => {
     ]);
     expect(HUB_KEEP_OUT.npcs.clearance).toBe(80);
     expect(HUB_KEEP_OUT.hearth).toEqual({ at: { x: 1000, y: 640 }, clearance: 80 });
-    expect(HUB_KEEP_OUT.wander).toEqual([
-      { name: "Cottar", x: 560, y: 560, width: 180, height: 200 },
-      { name: "Herbwife", x: 1260, y: 540, width: 240, height: 220 },
-      { name: "Woodcutter", x: 700, y: 820, width: 300, height: 140 },
-      { name: "Bellringer", x: 1180, y: 820, width: 280, height: 140 },
-    ]);
   });
 
   it("holds K8's gates as the server places them, with GateRange (FS-0XMCP R2, R4)", () => {
@@ -283,7 +307,7 @@ describe("the keep-out check catches a bad placement", () => {
     ["K4 in the Elder's talk range", { x: 1140, y: 760 }, 10, "K4"],
     ["K4 in the Quartermaster's talk range", { x: 1280, y: 340 }, 10, "K4"],
     ["K5 by the hearth", { x: 1080, y: 600 }, 10, "K5"],
-    ["K6 in the Woodcutter's quarter", { x: 850, y: 900 }, 10, "K6"],
+    ["K6 in the Woodcutter's quarter", { x: 1870, y: 1080 }, 10, "K6"],
     ["K7 off the map", { x: 1990, y: 500 }, 20, "K7"],
     ["K8 in the Spire gate's range", { x: 1060, y: 110 }, 10, "K8"],
     ["K8 in the Forest gate's range", { x: 80, y: 640 }, 10, "K8"],
@@ -293,6 +317,11 @@ describe("the keep-out check catches a bad placement", () => {
     ["K8 on the east road", { x: 1600, y: 365 }, 10, "K8"],
   ] as const)("flags %s", (_, at, r, rule) => {
     expect(breaches(spotFootprint({ sheet: "crate", at, r }))).toContain(rule);
+  });
+
+  it("holds K7 at the grown south edge: the new ground is in, past y 1700 is out (FS-R4MYX R22)", () => {
+    expect(breaches(spotFootprint({ sheet: "crate", at: { x: 1850, y: 1650 }, r: 10 }))).not.toContain("K7");
+    expect(breaches(spotFootprint({ sheet: "crate", at: { x: 1850, y: 1695 }, r: 10 }))).toContain("K7");
   });
 
   it("measures K3–K5 from the nearest point of a fence run, not its start", () => {
@@ -398,29 +427,65 @@ describe("the gates' approaches and dressing (FS-0XMCP R18–R20)", () => {
   });
 });
 
-describe("the town buildings' doors and the trodden ground (FS-B0H2D R24)", () => {
-  /** The rect of trodden ground that starts at a door gap and spans it. */
-  const spurOf = (g: (typeof DOOR_GAPS)[number]) =>
-    HUB_PATHS.find(([x, y, w]) => y === g.sill && x <= g.x0 && x + w >= g.x1);
+describe("the town buildings' doors and the trodden ground (FS-B0H2D R24; FS-R4MYX R10, R31)", () => {
+  /** How far a rect runs out from a door's sill: south of a south door, east of an east one. */
+  const depthOf = (g: TownDoorGap, [, , w, h]: Rect4) => (g.face === "east" ? w : h);
+  /** The door's spur: the strip as wide as its gap, from its sill outward, as deep as the rect. */
+  const spurFor = (g: TownDoorGap, rect: Rect4) => townDoorStrip(g, depthOf(g, rect), "outside");
+  /** The rect of trodden ground that starts at a door gap's sill and spans it, on its face. */
+  const spurOf = (g: TownDoorGap) => HUB_PATHS.find((p) => p.join() === spurFor(g, p).join());
 
-  it("lays one spur per door, as wide as its gap, from its west jamb and its sill (FS-MMA2H R14)", () => {
-    // the spurs are kept by hand, the gaps are the server's: a gap moved or widened in
-    // hub_map.go goes red here until the spur follows
-    expect(HUB_DOOR_SPURS.map(([x, y, w]) => [x, y, w])).toEqual(
-      DOOR_GAPS.map((g) => [g.x0, g.sill, g.x1 - g.x0]),
-    );
+  /** FS-R4MYX R31's path, rect for rect. */
+  const EAST_ARM_ON: Rect4 = [1380, 660, 390, 70];
+  const CHAPEL_LANE: Rect4 = [1700, 730, 70, 875];
+  const GRAVEYARD_SPUR: Rect4 = [490, 1555, 1280, 50];
+  const GAP_PATH: Rect4 = [500, 1520, 70, 35];
+
+  it("lays one spur per door, as wide as its gap, from its sill outward on its face (FS-MMA2H R14; FS-R4MYX R10)", () => {
+    // the spurs are kept by hand, the gaps and faces are the server's: a gap moved, widened or
+    // turned in hub_map.go goes red here until the spur follows
+    expect(HUB_DOOR_SPURS).toHaveLength(DOOR_GAPS.length);
+    HUB_DOOR_SPURS.forEach((spur, i) => expect(spur).toEqual(spurFor(DOOR_GAPS[i], spur)));
     for (const spur of HUB_DOOR_SPURS) expect(HUB_PATHS).toContain(spur);
   });
 
-  it.each(DOOR_GAPS.map((g, i) => [`building ${i}'s door at x ${g.x0}–${g.x1}`, g] as const))(
+  it.each(DOOR_GAPS.map((g, i) => [`building ${i}'s ${g.face} door at ${g.from}–${g.to}`, g] as const))(
     "lays a short spur from %s to another path or approach",
     (_, gap) => {
       const spur = spurOf(gap);
       expect(spur).toBeDefined();
-      expect(spur![3]).toBeLessThanOrEqual(120);
+      expect(depthOf(gap, spur!)).toBeLessThanOrEqual(120);
       expect(HUB_PATHS.some((p) => p !== spur && touches(p, spur!))).toBe(true);
     },
   );
+
+  it("lays the chapel's door spur east from its sill to the chapel lane (FS-R4MYX R31)", () => {
+    const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
+    expect(chapel.doorFace).toBe("east");
+    const spur = spurOf(townDoorGap(chapel));
+    expect(spur).toEqual([1580, 1280, 120, 80]);
+    expect(touches(spur!, CHAPEL_LANE)).toBe(true);
+  });
+
+  it("lays the trodden way from the hearth's east arm to the chapel and into the graveyard's gap (FS-R4MYX R31)", () => {
+    for (const r of [EAST_ARM_ON, CHAPEL_LANE, GRAVEYARD_SPUR, GAP_PATH]) expect(HUB_PATHS).toContainEqual(r);
+    const eastArm = HUB_PATHS.find((p) => p.join() === [1000, 660, 380, 70].join())!;
+    expect(touches(EAST_ARM_ON, eastArm)).toBe(true);
+    expect(touches(CHAPEL_LANE, EAST_ARM_ON)).toBe(true);
+    // the old lane ran where the bigger chapel stands
+    expect(HUB_PATHS).not.toContainEqual([1200, 700, 70, 775]);
+    expect(touches(GRAVEYARD_SPUR, CHAPEL_LANE)).toBe(true);
+    expect(touches(GAP_PATH, GRAVEYARD_SPUR)).toBe(true);
+    // along the chapel's south side, clear of its wall's eave
+    const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
+    expect(GRAVEYARD_SPUR[1]).toBeGreaterThanOrEqual(chapel.y + chapel.h + EAVE);
+  });
+
+  it("keeps the Woodcutter's and the Bellringer's quarters, east of the chapel, off its way (FS-R4MYX R5)", () => {
+    for (const q of HUB_KEEP_OUT.wander.filter((w) => w.name === "Woodcutter" || w.name === "Bellringer"))
+      for (const r of [EAST_ARM_ON, CHAPEL_LANE, GRAVEYARD_SPUR, ...HUB_DOOR_SPURS])
+        expect(crosses([q.x, q.y, q.width, q.height], r), `${q.name} on [${r.join(", ")}]`).toBe(false);
+  });
 
   it.each(HUB_PATHS.map((p) => [`[${p.join(", ")}]`, p] as const))(
     "lays the trodden ground %s outdoors, never across a room's floor",

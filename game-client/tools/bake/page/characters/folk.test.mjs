@@ -31,8 +31,8 @@ const THREE = await import("three");
 const worst = (clips) => Object.entries(clips ?? {}).reduce((w, [anim, c]) => (c.px > w.px ? { anim, ...c } : w), { anim: null, px: 0, frame: 0 });
 
 describe("the hub folk's legs stay under their clothes (FS-HF0WW § Change: The folk's legs stay under their clothes)", () => {
-  it("bakes the four folk sheets", () => {
-    expect(FOLK.map((f) => f.sheet)).toEqual(["folk_resident_trousers", "folk_resident_skirt", "folk_spirewarden", "folk_quartermaster"]);
+  it("bakes the five folk sheets", () => {
+    expect(FOLK.map((f) => f.sheet)).toEqual(["folk_resident_trousers", "folk_resident_skirt", "folk_spirewarden", "folk_quartermaster", "folk_confessor"]);
   });
 
   it.each(FOLK.map((f) => [f.sheet, f]))("%s wears its clothes on the garment weighting the classes use, not the old mirrored one", (sheet, f) => {
@@ -104,5 +104,36 @@ describe("the hub folk's legs stay under their clothes (FS-HF0WW § Change: The 
   it("leaves only the monsters on the legacy lists", () => {
     expect([...KNOWN_CLIPPING.keys()]).toEqual(["creature_troll_base", "creature_zombie_base", "creature_ghost_base"]);
     expect([...MIRRORED_LEGACY].sort()).toEqual(["creature_demon_base", "creature_ghost_base", "creature_ghoul_base", "creature_troll_base", "creature_zombie_base"]);
+  });
+});
+
+// FS-R4MYX §H R37: the Confessor carries nothing; his hands are clasped before him at the waist,
+// and stay so through the idle and the walk
+describe("the Confessor (FS-R4MYX §H R37)", () => {
+  it("the Confessor's hands stay clasped before him at the waist, through idle and walk", () => {
+    const f = FOLK.find((x) => x.sheet === "folk_confessor");
+    const { rig, poses } = characterPoses(f);
+    const at = (bone) => new THREE.Vector3().setFromMatrixPosition(rig.bones[bone].matrixWorld).divideScalar(rig.H);
+    // poses per clip, palette suffix dropped (`walk_<palette>` is the walk)
+    const checked = {};
+    for (const p of poses) {
+      p.apply();
+      rig.root.updateMatrixWorld(true);
+      const [L, R, hips, chest] = ["handL", "handR", "hips", "chest"].map(at);
+      const where = `${p.anim} frame ${p.i}`;
+      // the wrists together, so the hands overlap
+      expect(L.distanceTo(R), where).toBeLessThan(0.04);
+      // before him, out past the robe's front, between the hips and the chest
+      for (const w of [L, R]) {
+        expect(w.z, where).toBeGreaterThan(0.12);
+        expect(w.y, where).toBeGreaterThan(hips.y);
+        expect(w.y, where).toBeLessThan(chest.y);
+      }
+      const clip = p.anim.replace(/_.*/, "");
+      checked[clip] = (checked[clip] ?? 0) + 1;
+    }
+    // the loop ran over the idle and the walk, and nothing else: an empty pose list fails here
+    expect(Object.keys(checked).sort()).toEqual(["idle", "walk"]);
+    for (const n of Object.values(checked)) expect(n).toBeGreaterThan(0);
   });
 });

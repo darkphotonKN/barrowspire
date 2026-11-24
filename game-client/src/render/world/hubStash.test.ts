@@ -72,11 +72,12 @@ describe("the stash chest's spot (FS-VPD8Y R31)", () => {
   });
 
   it("should keep off the walk in from the door to the Quartermaster: gap-wide, from the sill to him", () => {
-    const { x0, x1, sill } = townDoorGap(store);
+    const { face, from, to, sill } = townDoorGap(store);
+    expect(face).toBe("south");
     const lane = {
-      x: x0,
+      x: from,
       y: quartermaster.y,
-      width: x1 - x0,
+      width: to - from,
       height: sill - quartermaster.y,
     };
     expect(overlaps(chest, lane)).toBe(false);

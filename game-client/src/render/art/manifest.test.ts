@@ -12,6 +12,7 @@ import {
 import { BAKE } from "@/render/world/bake";
 import { castOffset } from "@/render/world/wallShadows";
 import { DIRECTION_ORDER, directionIndex, validateManifest } from "./manifest";
+import { SCENE_SCOPED_GROUPS } from "./sceneArt";
 
 /** A minimal manifest that satisfies every rule. Each case below breaks one. */
 function fixture() {
@@ -1235,6 +1236,190 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(standing("anvil")).toBeLessThan(standing("counter"));
     });
 
+  });
+
+  describe("the chapel's and the graveyard's props (FS-R4MYX §H R36)", () => {
+    type Sheet = {
+      atlas: string;
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      light?: unknown;
+      source: string;
+      licence: string;
+    };
+    const sheet = (name: string): Sheet => baked.sheets[name];
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+
+    // sheet → its authoring function in tools/bake/page/models/chapel.js, and its animations with
+    // their frame counts (a headstone's frames by state: intact rounded and gothic; weathered
+    // cracked, leaning, chipped; broken stump and snapped. A wall tile's by axis: whole, crumbled)
+    const CHAPEL: [string, string, Record<string, number>][] = [
+      ["pew", "pew", { default: 1 }],
+      ["chapel_altar", "chapelAltar", { default: 1 }],
+      ["lectern", "lectern", { default: 1 }],
+      ["dais", "dais", { default: 1 }],
+      ["belfry", "belfry", { default: 1 }],
+      ["headstone", "headstone", { intact: 2, weathered: 3, broken: 2 }],
+      ["grave_flowers", "graveFlowers", { fresh: 1, withered: 1 }],
+      ["grave_mound", "graveMound", { default: 1 }],
+      ["stone_cross", "stoneCross", { default: 1 }],
+      ["graveyard_wall", "graveyardWall", { x: 2, y: 2 }],
+      // the wayside calvary by the chapel's door (R41)
+      ["wayside_cross", "waysideCross", { default: 1 }],
+    ];
+
+    // the chapel's own building (R42), authored in models/chapelBuilding.js: each piece by the
+    // sheet it stands in for, which it must equal in frame size, anchor and animations
+    const variants = { variants: 2 };
+    const CHAPEL_BUILDING: [string, string, string][] = [
+      ...(["back", "front"] as const).flatMap((h) =>
+        ["plain", "pillar"].flatMap((k) =>
+          ["x", "y"].map((a): [string, string, string] => [`chapel_wall_${h}_${k}_${a}`, "chapelWall", `tower_wall_${h}_${k}_${a}`]),
+        ),
+      ),
+      ...["plain", "lancet", "buttress"].flatMap((k) =>
+        ["x", "y"].map((a): [string, string, string] => [`chapel_wall_exterior_${k}_${a}`, "chapelExterior", `tower_wall_exterior_plain_${a}`]),
+      ),
+      ["chapel_post_back", "chapelPost", "tower_post_back"],
+      ["chapel_post_front", "chapelPost", "tower_post_front"],
+      ["chapel_door_head_x", "chapelDoorHead", "tower_door_head_x"],
+      ["chapel_door_head_y", "chapelDoorHead", "tower_door_head_y"],
+      ["chapel_roof_slope", "chapelRoofSlope", "roof_slope"],
+      ["chapel_roof_ridge", "chapelRoofRidge", "roof_ridge"],
+    ];
+    const frameCounts = (s: Sheet) => Object.fromEntries(Object.entries(s.animations).map(([a, v]) => [a, v.frames[0].length]));
+
+    it.each(CHAPEL)("%s is baked, authored in models/chapel.js#%s, with its frames", (name, fn, frames) => {
+      const s = sheet(name);
+      expect(s, name).toBeDefined();
+      expect(Number.isInteger(s.frameWidth) && s.frameWidth > 0).toBe(true);
+      expect(Number.isInteger(s.frameHeight) && s.frameHeight > 0).toBe(true);
+      expect(s.anchor.x).toBeGreaterThan(0);
+      expect(s.anchor.x).toBeLessThan(1);
+      expect(s.anchor.y).toBeGreaterThan(0);
+      expect(s.anchor.y).toBeLessThanOrEqual(1);
+      expect(s.directions).toBe(1);
+      expect(Object.fromEntries(Object.entries(s.animations).map(([a, v]) => [a, v.frames[0].length]))).toEqual(frames);
+      expect(s.source).toBe(`authored: tools/bake/page/models/chapel.js#${fn}`);
+      expect(s.licence).toBe(baked.sheets.brazier.licence);
+      expect(s.atlas, name).toMatch(/^chapel-\d+$/);
+    });
+
+    it.each(CHAPEL_BUILDING)(
+      "%s is baked from models/chapelBuilding.js#%s, cut and framed exactly as %s (R42)",
+      (name, fn, counterpart) => {
+        const s = sheet(name);
+        const c = sheet(counterpart);
+        expect(s, name).toBeDefined();
+        expect(s.source).toBe(`authored: tools/bake/page/models/chapelBuilding.js#${fn}`);
+        expect(s.atlas, name).toMatch(/^chapel-\d+$/);
+        expect([s.frameWidth, s.frameHeight]).toEqual([c.frameWidth, c.frameHeight]);
+        expect(s.anchor).toEqual(c.anchor);
+        expect(frameCounts(s)).toEqual(frameCounts(c));
+      },
+    );
+
+    it("bakes two variants of every wall piece, as the tower's, and the inside kinds plain and pillar, the outside plain, lancet and buttress (R23)", () => {
+      for (const [name] of CHAPEL_BUILDING.filter(([n]) => n.startsWith("chapel_wall_"))) expect(frameCounts(sheet(name)), name).toEqual(variants);
+      const kinds = (stem: string) =>
+        Object.keys(baked.sheets)
+          .filter((n) => n.startsWith(stem) && n.endsWith("_x"))
+          .map((n) => n.slice(stem.length, -2))
+          .sort();
+      expect(kinds("chapel_wall_back_")).toEqual(["pillar", "plain"]);
+      expect(kinds("chapel_wall_front_")).toEqual(["pillar", "plain"]);
+      expect(kinds("chapel_wall_exterior_")).toEqual(["buttress", "lancet", "plain"]);
+      // no stone cap: the chapel has a roof
+      expect(baked.sheets.chapel_cap).toBeUndefined();
+    });
+
+    it.each(["x", "y"])(
+      "bakes chapel_roof_gable_%s with the town gable's animations, each the plain piece then the apex piece with the rose window and the cross (R42)",
+      (axis) => {
+        const s = sheet(`chapel_roof_gable_${axis}`);
+        const town = sheet(`roof_gable_${axis}`);
+        expect(s.source).toBe("authored: tools/bake/page/models/chapelBuilding.js#chapelGable");
+        expect(s.atlas).toMatch(/^chapel-\d+$/);
+        expect(Object.keys(s.animations)).toEqual(Object.keys(town.animations));
+        for (const a of Object.keys(s.animations)) expect(s.animations[a].frames[0].length, a).toBe(2);
+        // as wide as a masonry end wall's piece, standing on its foot as the town's does, and taller
+        // than the town's by the cross on the apex
+        expect(s.frameWidth).toBeGreaterThanOrEqual(town.frameWidth);
+        const standing = (x: Sheet) => x.anchor.y * x.frameHeight;
+        expect(standing(s) - standing(town)).toBeGreaterThan(BAKE.VPX);
+        // how far the cross stands over the ridge row is R39's: hubCover.test.ts derives the
+        // chapel's RIDGE_ALLOWANCE from this frame
+      },
+    );
+
+    it("packs them into a resident group of their own, so no existing atlas reflows and the hub draws them without a scene change", () => {
+      const ours = [...CHAPEL.map(([n]) => n), ...CHAPEL_BUILDING.map(([n]) => n), "chapel_roof_gable_x", "chapel_roof_gable_y"];
+      for (const [name, s] of Object.entries(baked.sheets) as [string, Sheet][])
+        if (atlasGroup(s.atlas) === "chapel") expect(ours).toContain(name);
+      expect(SCENE_SCOPED_GROUPS.has("chapel")).toBe(false);
+    });
+
+    it("lights none of them: the chapel's light is the reused candelabra's (R15); its lancets and rose windows are dark glass (R23)", () => {
+      for (const [name] of CHAPEL) expect(sheet(name).light, name).toBeUndefined();
+      for (const [name] of CHAPEL_BUILDING) expect(sheet(name).light, name).toBeUndefined();
+      for (const axis of ["x", "y"]) expect(sheet(`chapel_roof_gable_${axis}`).light).toBeUndefined();
+      expect(sheet("candelabra").light).toBeDefined();
+      // the chapel's altar is its own sheet: `altar` stays the run's Altar of Consecration
+      expect(atlasGroup(sheet("altar").atlas)).toBe("summoning");
+    });
+
+    // the rect each sheet stands on, world px (x × y) about its spot (R12, R14, R30); the mound's
+    // heap is rounded, never reaching its rect's corners (tools/bake/page/models/chapel.test.mjs
+    // holds it inside 50 × 28)
+    const FOOTPRINTS: [string, number, number][] = [
+      ["pew", 20, 100],
+      ["chapel_altar", 30, 80],
+      ["lectern", 20, 20],
+      ["dais", 130, 200],
+      ["belfry", 40, 40],
+      ["wayside_cross", 40, 40],
+    ];
+
+    it.each(FOOTPRINTS)("frames %s round its %i × %i footprint, the anchor on its centre", (name, w, h) => {
+      const s = sheet(name);
+      const ax = s.anchor.x * s.frameWidth;
+      const ay = s.anchor.y * s.frameHeight;
+      for (const [cx, cy] of [
+        [-w / 2, -h / 2],
+        [w / 2, -h / 2],
+        [w / 2, h / 2],
+        [-w / 2, h / 2],
+      ]) {
+        const p = worldToScreen(cx, cy);
+        expect(ax + p.x, `${name} corner ${cx},${cy}`).toBeGreaterThanOrEqual(0);
+        expect(ax + p.x, `${name} corner ${cx},${cy}`).toBeLessThanOrEqual(s.frameWidth);
+        expect(ay + p.y, `${name} corner ${cx},${cy}`).toBeGreaterThanOrEqual(0);
+        expect(ay + p.y, `${name} corner ${cx},${cy}`).toBeLessThanOrEqual(s.frameHeight);
+      }
+    });
+
+    it("lays the dais flat, standing hardly above its own footprint's diamond (R14)", () => {
+      const s = sheet("dais");
+      const top = -worldToScreen(-65, -100).y;
+      expect(s.anchor.y * s.frameHeight).toBeLessThanOrEqual(top + 10);
+    });
+
+    it("stands the belfry over a body's height, the stone cross over every headstone", () => {
+      const standing = (name: string) => sheet(name).anchor.y * sheet(name).frameHeight;
+      expect(standing("belfry")).toBeGreaterThan(baked.sheets.folk_spirewarden.crown);
+      expect(standing("belfry")).toBeGreaterThan(standing("stone_cross"));
+      expect(standing("stone_cross")).toBeGreaterThan(standing("headstone"));
+      expect(standing("graveyard_wall")).toBeLessThan(standing("headstone"));
+    });
+
+    it("stands the wayside cross tall, over a body's height and the graveyard's stone cross (R41)", () => {
+      const standing = (name: string) => sheet(name).anchor.y * sheet(name).frameHeight;
+      expect(standing("wayside_cross")).toBeGreaterThan(baked.sheets.folk_spirewarden.crown);
+      expect(standing("wayside_cross")).toBeGreaterThan(standing("stone_cross"));
+    });
   });
 
   describe("characters and creatures (FS-2325V §E)", () => {

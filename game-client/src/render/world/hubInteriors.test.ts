@@ -8,9 +8,12 @@ import {
   HUB_FIXED_RESIDENTS,
   HUB_FURNISHINGS,
   HUB_INDOOR_DRESSING,
+  HUB_CHAPEL,
   HUB_INN,
   INN_FLOOR,
+  TOWN_ROOF,
   furnishingOf,
+  isChapel,
   isFurnishing,
   isInn,
   townHouseLook,
@@ -21,17 +24,21 @@ import {
   splitFurnishings,
   type IndoorSpot,
 } from "./hubInteriors";
-import { TOWN_WALL_THICK, townDoorGap, townOutline } from "./hubTown.fixture";
+import { eastDoorWalls } from "./eastDoor.fixture";
+import { HUB_GRAVEYARD } from "./hubGraveyard";
+import { buildingAt, hidden } from "./indoors";
+import { TOWN_WALL_THICK, townDoorGap, townDoorStrip, townOutline } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN, type TownRect } from "./hubTownGolden";
-import { TIMBER_WALLS } from "./walls";
+import { doorGaps, doorHead } from "./buildingLooks";
+import { CHAPEL_WALLS, MASONRY_WALLS, TIMBER_WALLS } from "./walls";
 
 /**
  * The town's buildings and furnishings, from the golden of
  * game-server/game-service/internal/game/hub_map.go (hubBuildings): walled 20 thick as
- * addHubBuilding does, the south wall cut in two around its door gap (hubTown.fixture.ts), each furnishing
- * a wall carrying its building's house id (FS-B0H2D R1–R3, R9, R10, R12), and the Inn's partition
- * as hub_map.go walls it, north edge to south edge either side of its door gap. In hub_map.go's
- * order: the Inn, the Quartermaster's store, the smithy.
+ * addHubBuilding does, the wall on its door face cut in two around its door gap (hubTown.fixture.ts;
+ * FS-R4MYX R6), each furnishing a wall carrying its building's house id (FS-B0H2D R1–R3, R9, R10,
+ * R12), and the Inn's partition as hub_map.go walls it, north edge to south edge either side of
+ * its door gap. In hub_map.go's order: the Inn, the Quartermaster's store, the smithy, the chapel.
  */
 const rect4 = ({ x, y, w, h }: TownRect): [number, number, number, number] => [x, y, w, h];
 const BUILDINGS = HUB_TOWN_GOLDEN.buildings.map(rect4);
@@ -108,6 +115,7 @@ describe("the Inn's partition (hub_map.go hubPartition)", () => {
       ["Inn", 2],
       ["Quartermaster's store", 0],
       ["Smithy", 0],
+      ["Chapel", 0],
     ]);
   });
 
@@ -161,13 +169,37 @@ describe("HUB_INN, the Inn's footprint (hub_map.go hubBuildings)", () => {
   });
 
   it("should know the Inn among the houses the walls build, and only the Inn", () => {
-    expect(HOUSES.map(isInn)).toEqual([true, false, false]);
+    expect(HOUSES.map(isInn)).toEqual(HUB_TOWN_GOLDEN.buildings.map((b) => b.name === "Inn"));
+  });
+});
+
+describe("HUB_CHAPEL, the chapel's footprint (hub_map.go hubBuildings; FS-R4MYX R2–R4, R21)", () => {
+  const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
+
+  it("should mirror the golden's chapel", () => {
+    expect(HUB_CHAPEL).toEqual({ x: chapel.x, y: chapel.y, width: chapel.w, height: chapel.h });
+  });
+
+  it("should know the chapel among the houses the walls build, and only the chapel", () => {
+    expect(HOUSES.map(isChapel)).toEqual(HUB_TOWN_GOLDEN.buildings.map((b) => b.name === "Chapel"));
+  });
+
+  it("should wall the chapel by its east door face, as the server cuts an east door (FS-R4MYX R6)", () => {
+    expect(chapel.doorFace).toBe("east");
+    const rects = (ws: readonly WallState[]) => ws.map((w) => [w.position.x, w.position.y, w.width, w.height]);
+    expect(townOutline(chapel)).toEqual(rects(eastDoorWalls(chapel.x, chapel.y, chapel.w, chapel.h, "chapel")));
+  });
+
+  it("should wall every other building by its south door face", () => {
+    const others = HUB_TOWN_GOLDEN.buildings.filter((b) => b.name !== "Chapel");
+    expect(others.map((b) => b.doorFace)).toEqual(others.map(() => "south"));
   });
 });
 
 describe("townHouseLook, how each town building is built", () => {
-  it("should build the Inn in timber with no lit kind, on planks", () => {
-    const { sheets, floor } = townHouseLook(HOUSES[0]);
+  it("should build the Inn in timber with no lit kind, on planks, under the town's roof", () => {
+    const { sheets, floor, roof } = townHouseLook(HOUSES[0]);
+    expect(roof).toBe(TOWN_ROOF);
     expect(sheets.lit).toEqual([]);
     expect(sheets.back.map(([, kind]) => kind)).not.toContain("torch");
     expect(sheets.front.map(([, kind]) => kind)).not.toContain("window");
@@ -175,8 +207,43 @@ describe("townHouseLook, how each town building is built", () => {
     expect(floor).toBe(INN_FLOOR);
   });
 
-  it("should build every other house in plain timber on the town's flagstone", () => {
-    for (const house of HOUSES.slice(1)) expect(townHouseLook(house)).toEqual({ sheets: TIMBER_WALLS });
+  it("should build every other house but the chapel in plain timber on the town's flagstone, under the town's roof with its chimney", () => {
+    const others = HOUSES.filter((h) => !isInn(h) && !isChapel(h));
+    expect(others).toHaveLength(2);
+    for (const house of others) expect(townHouseLook(house)).toEqual({ sheets: TIMBER_WALLS, roof: TOWN_ROOF });
+  });
+
+  describe("the chapel (FS-R4MYX R23, R42)", () => {
+    const chapel = () => HOUSES.find(isChapel)!;
+
+    it("should build the chapel in its own material, CHAPEL_WALLS: chapel_, masonry thick, unlit, capless", () => {
+      const { sheets } = townHouseLook(chapel());
+      expect(sheets).toBe(CHAPEL_WALLS);
+      expect(sheets.prefix).toBe("chapel_");
+      expect(sheets.thickness).toBe(MASONRY_WALLS.thickness);
+      expect(sheets.lit ?? []).toEqual([]);
+      expect(sheets.cap).toBeUndefined();
+      expect(sheets.outward.map(([, kind]) => kind)).toEqual(["plain", "lancet", "buttress"]);
+    });
+
+    it("should roof it in the chapel_roof_ set, with no chimney: a church has no hearth to vent", () => {
+      expect(townHouseLook(chapel()).roof).toEqual({ prefix: "chapel_", chimney: false });
+    });
+
+    it("should stand it on the town's flagstone, drawn as baked: no tint over any part (owner feedback F6)", () => {
+      expect(townHouseLook(chapel())).toEqual({ sheets: CHAPEL_WALLS, roof: { prefix: "chapel_", chimney: false } });
+    });
+
+    it("should close its east door with the chapel's own pointed-arch head, chapel_door_head_y", () => {
+      const own = BUILDING_WALLS.filter((w) => w.house_id === chapel().id);
+      const gaps = doorGaps(own);
+      expect(gaps).toHaveLength(1);
+      expect(doorHead(gaps[0], townHouseLook(chapel()).sheets).sheet).toBe("chapel_door_head_y");
+    });
+
+    it("should give every chapel the same sheets, so its walls are built in one go", () => {
+      expect(townHouseLook(chapel()).sheets).toBe(townHouseLook({ ...chapel(), id: "again" }).sheets);
+    });
   });
 
   it("should give every Inn the same sheets, so its walls are built in one go", () => {
@@ -190,7 +257,7 @@ describe("HUB_FURNISHINGS, the client's mirror of the furnishings (FS-B0H2D R19,
     expect(HUB_FURNISHINGS).toHaveLength(FURNISHING_WALLS.length);
   });
 
-  it("should draw the long table, the great hearth, the counter, two tables and the forge", () => {
+  it("should draw the long table, the great hearth, the counter, two tables, the forge, six pews and the altar", () => {
     expect(FURNISHING_WALLS.map((w) => furnishingOf(w)?.kind)).toEqual([
       "long_table",
       "hall_hearth",
@@ -198,6 +265,8 @@ describe("HUB_FURNISHINGS, the client's mirror of the furnishings (FS-B0H2D R19,
       "table",
       "table",
       "forge",
+      ...Array<string>(6).fill("pew"),
+      "altar",
     ]);
   });
 
@@ -209,7 +278,19 @@ describe("HUB_FURNISHINGS, the client's mirror of the furnishings (FS-B0H2D R19,
       ["table", "inn_table", "narrow"],
       ["table", "inn_table", "wide"],
       ["forge", "forge", undefined],
+      ...Array(6).fill(["pew", "pew", undefined]),
+      // the chapel's altar, not the run's Altar of Consecration (`altar`, dormant and burned)
+      ["altar", "chapel_altar", undefined],
     ]);
+  });
+
+  it("should stand the chapel's pews and altar inside the chapel, none of them tall (FS-R4MYX R12, R21)", () => {
+    const inChapel = HUB_FURNISHINGS.filter((f) => f.kind === "pew" || f.kind === "altar");
+    expect(inChapel).toHaveLength(7);
+    for (const f of inChapel) {
+      expect(insideHouse({ x: f.rect.x, y: f.rect.y }, { id: "", ...HUB_CHAPEL })).toBe(true);
+      expect(f.tall).toBe(false);
+    }
   });
 
   it("should know no furnishing on a rect the mirror lacks", () => {
@@ -253,6 +334,28 @@ describe("HUB_FIXED_RESIDENTS, the client's mirror of the fixed residents (FS-B0
   });
 });
 
+describe("the chapel's people under its roof (FS-R4MYX R19, R20, R25)", () => {
+  const chapel = HOUSES.find((h) => h.x === HUB_CHAPEL.x && h.y === HUB_CHAPEL.y)!;
+  const INSIDE = ["Confessor", "Penitent", "Chandler", "Goodwife", "Ploughman"];
+  const MOURNERS = ["Keener", "Widower", "Veteran"];
+  const at = (name: string) => HUB_FIXED_RESIDENTS.find((r) => r.name === name)!.at;
+
+  it("should stand exactly the three mourners outdoors, every other fixed resident in a building", () => {
+    const outdoors = HUB_FIXED_RESIDENTS.filter((r) => !buildingAt(r.at, HOUSES)).map((r) => r.name);
+    expect(outdoors).toEqual(MOURNERS);
+  });
+
+  it.each(INSIDE)("should hide the %s with the chapel's roof on, and show them with the player inside", (name) => {
+    expect(buildingAt(at(name), HOUSES)).toBe(chapel);
+    expect(hidden(at(name), HOUSES, undefined)).toBe(true);
+    expect(hidden(at(name), HOUSES, chapel)).toBe(false);
+  });
+
+  it.each(MOURNERS)("should never hide the %s under a roof: shown from the street", (name) => {
+    expect(hidden(at(name), HOUSES, undefined)).toBe(false);
+  });
+});
+
 describe("indoor dressing (FS-B0H2D R15)", () => {
   const spots = HUB_INDOOR_DRESSING.map((s, i) => [`${s.sheet}#${i}`, s] as const);
   const inner = (h: House): Rect => ({
@@ -279,16 +382,45 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
     expect(f.y + f.height).toBeLessThanOrEqual(room.y + room.height);
   });
 
-  it.each(spots)("should keep %s off every furnishing and off the partition", (_n, s) => {
-    for (const w of [...FURNISHING_WALLS, ...PARTITION_WALLS])
+  it.each(spots)("should keep %s off the partition, and off every furnishing unless it lies flat (FS-R4MYX R14)", (_n, s) => {
+    for (const w of [...(s.flat ? [] : FURNISHING_WALLS), ...PARTITION_WALLS])
       expect(overlaps(footprint(s), rectOf(w)), w.entity_id).toBe(false);
   });
 
-  it.each(spots)("should keep %s off its door's threshold: gap-wide, 80 px in", (_n, s) => {
-    for (const { x0, x1, sill } of HUB_TOWN_GOLDEN.buildings.map(townDoorGap)) {
-      const threshold = { x: x0, y: sill - 80, width: x1 - x0, height: 80 };
-      expect(overlaps(footprint(s), threshold)).toBe(false);
+  it("should dress the chapel with its dais, lectern and two candelabra, nothing else (FS-R4MYX R14)", () => {
+    const inChapel = HUB_INDOOR_DRESSING.filter((s) => insideHouse(s.at, { id: "", ...HUB_CHAPEL }));
+    expect(inChapel.map((s) => [s.sheet, s.at, s.size])).toEqual([
+      ["dais", { x: 1105, y: 1320 }, [130, 200]],
+      ["lectern", { x: 1190, y: 1250 }, [20, 20]],
+      ["candelabra", { x: 1135, y: 1250 }, [30, 30]],
+      ["candelabra", { x: 1135, y: 1390 }, [30, 30]],
+    ]);
+  });
+
+  it("should lay the chapel's dais flat on the floor, under the altar, and stand everything else upright", () => {
+    const inChapel = HUB_INDOOR_DRESSING.filter((s) => insideHouse(s.at, { id: "", ...HUB_CHAPEL }));
+    const dais = inChapel.find((s) => s.sheet === "dais")!;
+    expect(dais.flat).toBe(true);
+    const altar = HUB_FURNISHINGS.find((f) => f.kind === "altar")!;
+    expect(overlaps(footprint(dais), altar.rect)).toBe(true);
+    // the standing pieces keep off it all: the altar, the pews
+    for (const s of inChapel.filter((d) => d !== dais)) {
+      expect(s.flat, s.sheet).toBeFalsy();
+      for (const f of HUB_FURNISHINGS) expect(overlaps(footprint(s), f.rect), `${s.sheet} on ${f.kind}`).toBe(false);
     }
+  });
+
+
+  it.each(spots)("should keep %s off its door's threshold: gap-wide, 80 px in from the sill on its face (FS-R4MYX R10)", (_n, s) => {
+    for (const gap of HUB_TOWN_GOLDEN.buildings.map(townDoorGap)) {
+      const [x, y, width, height] = townDoorStrip(gap, 80, "inside");
+      expect(overlaps(footprint(s), { x, y, width, height })).toBe(false);
+    }
+  });
+
+  it("should lay the chapel's indoor threshold west of its east door's sill (FS-R4MYX R10)", () => {
+    const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
+    expect(townDoorStrip(townDoorGap(chapel), 80, "inside")).toEqual([1500, 1280, 80, 80]);
   });
 
   it("should dress every house: the Inn's two rooms, the store's shelves, the smithy's anvil", () => {
@@ -396,6 +528,20 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
     }
   });
 
+  it("should light the chapel by its two candelabra only, its furnishings and other dressing unlit (FS-R4MYX R15)", () => {
+    const manifest = JSON.parse(readFileSync(new URL("../../../public/art/manifest.json", import.meta.url), "utf8")) as {
+      sheets: Record<string, { light?: unknown }>;
+    };
+    const chapel = { id: "", ...HUB_CHAPEL };
+    const chapelSheets = [
+      ...HUB_INDOOR_DRESSING.filter((s) => insideHouse(s.at, chapel)).map((s) => s.sheet),
+      ...HUB_FURNISHINGS.filter((f) => insideHouse({ x: f.rect.x, y: f.rect.y }, chapel)).map((f) => f.sheet),
+    ];
+    // the candelabra carry the manifest's light; nothing else in the room may
+    expect(manifest.sheets.candelabra?.light).toBeDefined();
+    for (const sheet of chapelSheets.filter((x) => !!manifest.sheets[x]?.light)) expect(sheet).toBe("candelabra");
+  });
+
   it("should light the Inn by its hearth, candelabra and lanterns only (as the manifest declares lights)", () => {
     const manifest = JSON.parse(readFileSync(new URL("../../../public/art/manifest.json", import.meta.url), "utf8")) as {
       sheets: Record<string, { light?: unknown }>;
@@ -411,7 +557,7 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
   });
 });
 
-describe("fixed residents' facing (FS-B0H2D R25)", () => {
+describe("fixed residents' facing (FS-B0H2D R25; FS-R4MYX R17, R26)", () => {
   /** A step of 45° in world space, as Facing8 names it. */
   const STEP: Record<Facing8, [number, number]> = {
     n: [0, -1],
@@ -432,24 +578,93 @@ describe("fixed residents' facing (FS-B0H2D R25)", () => {
     }
     return false;
   };
+  /** The angle, in degrees, between `facing` and the bearing from `at` to the rect's nearest point. */
+  const offBearing = (at: { x: number; y: number }, facing: Facing8, r: Rect) => {
+    const near = {
+      x: Math.min(Math.max(at.x, r.x), r.x + r.width),
+      y: Math.min(Math.max(at.y, r.y), r.y + r.height),
+    };
+    const [dx, dy] = STEP[facing];
+    const bearing = Math.atan2(near.y - at.y, near.x - at.x);
+    const turned = Math.abs(bearing - Math.atan2(dy, dx)) * (180 / Math.PI);
+    return Math.min(turned, 360 - turned);
+  };
+  /** A grave's head as the graveyard lays it (hubGraveyard.ts): a headstone, or a fresh mound. */
+  const GRAVES: Rect[] = HUB_GRAVEYARD.filter((s) => s.sheet === "headstone" || s.sheet === "grave_mound").map((s) => ({
+    x: s.at.x - s.r,
+    y: s.at.y - s.r,
+    width: 2 * s.r,
+    height: 2 * s.r,
+  }));
+  /** A town building's street door: the gap its door face is cut round (the golden's). */
+  const DOORS: Rect[] = HUB_TOWN_GOLDEN.buildings.map(({ doorGap: { x, y, w, h } }) => ({ x, y, width: w, height: h }));
+  /** What a fixed resident may face: the furnishings of its kind, the graveyard's graves, or a door. */
+  const facedBy = (r: (typeof HUB_FIXED_RESIDENTS)[number]): Rect[] =>
+    r.faces === "grave"
+      ? GRAVES
+      : r.faces === "door"
+        ? DOORS
+        : HUB_FURNISHINGS.filter((f) => f.kind === r.faces).map((f) => f.rect);
+  const WORSHIPPERS = ["Penitent", "Chandler", "Goodwife", "Ploughman"];
+  const MOURNERS = ["Keener", "Widower", "Veteran"];
+  const named = (name: string) => HUB_FIXED_RESIDENTS.find((r) => r.name === name)!;
 
-  it.each(HUB_FIXED_RESIDENTS.map((r) => [r.name, r] as const))(
-    "should turn the %s to face their furnishing",
+  it.each(HUB_FIXED_RESIDENTS.filter((r) => ![...WORSHIPPERS, "Confessor"].includes(r.name)).map((r) => [r.name, r] as const))(
+    "should turn the %s to face what they stand at, within arm's reach",
     (_name, r) => {
       const facing = residentFacing(r.name)!;
-      expect(facing).toBeDefined();
-      const faced = HUB_FURNISHINGS.filter((f) => f.kind === r.faces);
-      // one of its kind in town, so the kind names the furnishing
-      expect(faced).toHaveLength(1);
-      expect(looksAt(r.at, facing, faced[0].rect)).toBe(true);
+      expect(facing).toBe(r.facing);
+      expect(facedBy(r).some((rect) => looksAt(r.at, facing, rect))).toBe(true);
     },
   );
 
+  it.each(WORSHIPPERS)("should turn the %s west across the nave to the altar (FS-R4MYX R17)", (name) => {
+    const r = named(name);
+    expect(residentFacing(name)).toBe("w");
+    expect(r.faces).toBe("altar");
+    const [altar] = facedBy(r);
+    // the altar is ahead of them, not off to the side: within one step of eight of where they face
+    expect(offBearing(r.at, "w", altar)).toBeLessThanOrEqual(45);
+    expect(altar.x + altar.width).toBeLessThan(r.at.x);
+  });
+
+  it("should turn the Confessor east down the aisle to the chapel's door, nothing standing between (FS-R4MYX R17)", () => {
+    const r = named("Confessor");
+    expect(residentFacing("Confessor")).toBe("e");
+    expect(r.faces).toBe("door");
+    const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
+    const door = DOORS[HUB_TOWN_GOLDEN.buildings.indexOf(chapel)];
+    expect(looksAt(r.at, "e", door, chapel.w)).toBe(true);
+    for (const f of HUB_FURNISHINGS.filter((f) => f.rect.x > r.at.x && f.rect.x < door.x))
+      expect(r.at.y > f.rect.y && r.at.y < f.rect.y + f.rect.height, `${f.kind} at (${f.rect.x}, ${f.rect.y})`).toBe(false);
+  });
+
+  it("should stand the Confessor in front of the dais, not on it or behind the altar (FS-R4MYX R17, owner feedback F2)", () => {
+    const r = named("Confessor");
+    const dais = HUB_INDOOR_DRESSING.find((s) => s.sheet === "dais")!;
+    const daisEast = dais.at.x + dais.size[0] / 2;
+    const altar = HUB_FURNISHINGS.find((f) => f.kind === "altar")!;
+    expect(r.at.x).toBeGreaterThan(daisEast);
+    expect(r.at.x).toBeGreaterThan(altar.rect.x + altar.rect.width);
+    expect(Math.abs(r.at.y - dais.at.y)).toBeLessThan(dais.size[1] / 2);
+  });
+
+  it("should name each furnishing faced by a kind that is one of its kind in town", () => {
+    const kinds = new Set(HUB_FIXED_RESIDENTS.map((r) => r.faces).filter((k) => k !== "grave" && k !== "door"));
+    for (const kind of kinds) expect(HUB_FURNISHINGS.filter((f) => f.kind === kind), kind).toHaveLength(1);
+  });
+
   it("should face the Alewife to the counter, the patrons to the long table and the Smith to the forge", () => {
-    const kindFaced = (name: string) => HUB_FIXED_RESIDENTS.find((r) => r.name === name)!.faces;
+    const kindFaced = (name: string) => named(name).faces;
     expect(kindFaced("Alewife")).toBe("counter");
     expect(["Drover", "Gravedigger", "Pilgrim"].map(kindFaced)).toEqual(["long_table", "long_table", "long_table"]);
     expect(kindFaced("Smith")).toBe("forge");
+  });
+
+  it("should face the Confessor east to the door, the worshippers to the altar and the mourners to their graves (FS-R4MYX R17, R26)", () => {
+    expect(named("Confessor")).toMatchObject({ facing: "e", faces: "door" });
+    for (const name of WORSHIPPERS) expect(named(name), name).toMatchObject({ facing: "w", faces: "altar" });
+    for (const name of MOURNERS) expect(named(name), name).toMatchObject({ facing: "w", faces: "grave" });
   });
 
   it("should know no facing for a name it has none for, so the default stands", () => {
