@@ -130,6 +130,9 @@ type ClientGameState struct {
 	// is none. FS-5FZ4J §I R46.
 	Fountain      *FountainState      `json:"fountain,omitempty"`
 	HallowedAltar *HallowedAltarState `json:"hallowed_altar,omitempty"`
+	// Merchant is the floor's wandering merchant and his wares, sent whole;
+	// absent where there is none. FS-9JV5K §A R4.
+	Merchant *MerchantState `json:"merchant,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -240,6 +243,8 @@ type BackendGameState struct {
 	// Fountain and HallowedAltar are a floor's respites (FS-5FZ4J §I R46)
 	Fountain      *FountainState
 	HallowedAltar *HallowedAltarState
+	// Merchant is the floor's wandering merchant (FS-9JV5K §A R4)
+	Merchant *MerchantState
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.
@@ -359,6 +364,19 @@ func (m *Message) ParsePayload() (interface{}, error) {
 
 		return parsedPayload, nil
 
+	case constants.ActionBuy:
+		// FS-9JV5K §B R5: the merchant and the ware
+		merchantID, err := m.requireString("merchant_id")
+		if err != nil {
+			return nil, fmt.Errorf("parsing buy payload: %w", err)
+		}
+		ware, err := m.requireString("ware")
+		if err != nil {
+			return nil, fmt.Errorf("parsing buy payload: %w", err)
+		}
+
+		return PlayerBuyPayload{MerchantID: merchantID, Ware: ware}, nil
+
 	case constants.ActionCastSkill:
 		// Skill fields stay optional, as they were before: SkillSystem is a stub
 		// and nothing consumes them yet.
@@ -399,6 +417,12 @@ type PlayerSectionAttackPayload struct {
 
 type PlayerEquipPayload struct {
 	ItemEntityID string `json:"item_entity_id"`
+}
+
+// PlayerBuyPayload names the merchant bought from and the ware. FS-9JV5K §B R5.
+type PlayerBuyPayload struct {
+	MerchantID string `json:"merchant_id"`
+	Ware       string `json:"ware"`
 }
 
 // PlayerUseItemPayload names the bag item to use. FS-9JV5K §D R17.

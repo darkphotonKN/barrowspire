@@ -393,7 +393,7 @@ func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 		}
 
 		// containers, switches, escape doors, the tome, both altars, the
-		// fountain and seal pieces stand centred on their position, a
+		// fountain, the merchant and seal pieces stand centred on their position, a
 		// container's size
 		if entity.HasComponent(ecs.ComponentTypeContainer) ||
 			entity.HasComponent(ecs.ComponentTypeSwitch) ||
@@ -402,6 +402,7 @@ func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 			entity.HasComponent(ecs.ComponentTypeAltar) ||
 			entity.HasComponent(ecs.ComponentTypeHallowedAltar) ||
 			entity.HasComponent(ecs.ComponentTypeFountain) ||
+			entity.HasComponent(ecs.ComponentTypeMerchant) ||
 			entity.HasComponent(ecs.ComponentTypeSealPiece) {
 			keepOut = append(keepOut, PlaceArea{
 				X: at.X - constants.ContainerWidthRadius,

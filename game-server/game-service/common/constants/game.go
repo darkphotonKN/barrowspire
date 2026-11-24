@@ -65,6 +65,10 @@ const (
 	ActionEquip     Action = "equip"
 	ActionUnequip   Action = "unequip"
 	ActionCastSkill Action = "cast_skill"
+	// ActionBuy is a delver in a run buying a ware from the wandering
+	// merchant; payload { "merchant_id", "ware" }, answered on this action with
+	// { success, ware } or { success: false, reason }. FS-9JV5K §B R5.
+	ActionBuy Action = "buy"
 	// ActionChat is a chat line, inbound as { "channel", "text" } and outbound
 	// as the pod-stamped line. Handled on the message hub, never by a world.
 	// FS-WJGFJ §Requirements A2–A4, B11.

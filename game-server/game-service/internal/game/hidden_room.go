@@ -50,11 +50,12 @@ const (
 // floorDraw is what a dungeon floor draws before its layout is generated:
 // its seals, in chain order (none on the top floor), what each of its hidden
 // rooms holds, in the order the layout gives the rooms, and whether it holds
-// a fountain (§G R40).
+// a fountain (§G R40) and the wandering merchant (FS-9JV5K §A R1).
 type floorDraw struct {
 	seals    []components.SealKind
 	hidden   []hiddenUse
 	fountain bool
+	merchant bool
 }
 
 // drawFloor draws the floor at depth's seals, for alive delvers alive at its
@@ -68,6 +69,7 @@ func (s *Session) drawFloor(depth, alive int, also ...hiddenUse) floorDraw {
 	}
 	draw.hidden = hiddenRoomsFor(s.spawnRand, depth, draw.seals, also...)
 	draw.fountain = fountainFor(s.spawnRand, depth, s.isTopFloor(depth))
+	draw.merchant = merchantFor(s.spawnRand, depth, s.isTopFloor(depth))
 	return draw
 }
 
@@ -94,7 +96,7 @@ func (s *Session) redrawChasm(alive int, draw floorDraw) floorDraw {
 		hidden = append(hidden, hiddenStairKey)
 		shuffle(s.spawnRand, hidden)
 	}
-	return floorDraw{seals: seals, hidden: hidden, fountain: draw.fountain}
+	return floorDraw{seals: seals, hidden: hidden, fountain: draw.fountain, merchant: draw.merchant}
 }
 
 // hiddenRoomMax is how many hidden rooms the floor at depth rolls at most.

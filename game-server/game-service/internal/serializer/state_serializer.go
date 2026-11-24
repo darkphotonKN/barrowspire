@@ -140,6 +140,14 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			continue
 		}
 
+		// --- The wandering merchant and his wares (FS-9JV5K §A R4) ---
+		if mc, isMerchant := entity.GetComponent(ecs.ComponentTypeMerchant); isMerchant {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				backendState.Merchant = merchantState(entity.ID, mc.(*components.MerchantComponent), tc.(*components.TransformComponent))
+			}
+			continue
+		}
+
 		// --- Player ---
 		pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
 
@@ -761,6 +769,8 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		// a floor's respites, sent whole (FS-5FZ4J §I R46)
 		Fountain:      backendState.Fountain,
 		HallowedAltar: backendState.HallowedAltar,
+		// the floor's merchant, sent whole (FS-9JV5K §A R4)
+		Merchant: backendState.Merchant,
 	}
 
 	// on a dungeon floor each recipient is sent only what lies near it
@@ -857,6 +867,7 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Traps = fresh(state.Traps)
 	state.Fountain = nil
 	state.HallowedAltar = nil
+	state.Merchant = nil
 }
 
 // fresh is an empty list on new memory as large as the old, or nil if it was
@@ -1062,4 +1073,25 @@ func ItemStateOf(itemID uuid.UUID, entityID uuid.UUID, item *components.ItemComp
 		UniqueEffect:    item.UniqueEffectText,
 		Unsafe:          item.Unsafe,
 	}
+}
+
+// merchantState is the merchant on the wire: where he stands and every ware,
+// each on new memory, so a sent frame never shares the tick's stock.
+// FS-9JV5K §A R4.
+func merchantState(id uuid.UUID, merchant *components.MerchantComponent, at *components.TransformComponent) *types.MerchantState {
+	wares := make([]*types.MerchantWareState, 0, len(merchant.Wares))
+	for _, w := range merchant.Wares {
+		ware := &types.MerchantWareState{Ware: string(w.Kind), Price: w.Price, Left: w.Left}
+		if w.Item != nil {
+			ware.Item = &types.MerchantWareItem{
+				Name:          w.Item.Name,
+				ItemType:      w.Item.ItemType,
+				Rarity:        w.Item.RarityCode,
+				HealingAmount: w.Item.HealingAmount,
+				ManaAmount:    w.Item.ManaAmount,
+			}
+		}
+		wares = append(wares, ware)
+	}
+	return &types.MerchantState{EntityID: id, Position: &types.Position{X: at.X, Y: at.Y}, Wares: wares}
 }

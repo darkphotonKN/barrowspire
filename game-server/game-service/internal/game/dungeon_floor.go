@@ -168,7 +168,11 @@ func (s *Session) generateDungeonFloor(depth, arriving int) (*dungeonFloor, dung
 		// the fountain's room is held after the seals', so it is none of
 		// theirs (FS-5FZ4J §G R40, §H R45)
 		if draw.fountain {
-			s.planRespite(d, respiteFountain, constants.ContainerWidthRadius, constants.ContainerHeightRadius)
+			s.planRespite(d, respiteFountain, constants.ContainerWidthRadius, constants.ContainerHeightRadius, nil)
+		}
+		// the merchant's after the fountain's, in a room of its own (FS-9JV5K §A R1)
+		if draw.merchant {
+			s.planRespite(d, respiteMerchant, constants.ContainerWidthRadius, constants.ContainerHeightRadius, d.merchantRoomOpen)
 		}
 		slog.Debug("Dungeon floor generated",
 			"sessionID", s.ID, "floor", depth, "seed", seed, "attempt", layout.Attempt, "rooms", len(layout.Rooms))
@@ -286,8 +290,9 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixture
 	}
 	s.laySeals(d, fixtures.seals)
 	s.layHiddenRooms(d)
-	// the fountain, before the containers (FS-5FZ4J §H R45)
+	// the fountain and the merchant, before the containers (FS-5FZ4J §H R45)
 	s.layFountain(d)
+	s.layMerchant(depth, d)
 
 	s.layDungeonContainers(d)
 

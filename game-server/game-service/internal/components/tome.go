@@ -17,6 +17,9 @@ type TomePlanComponent struct {
 	Carried bool
 	// Burned is whether the tome was burned at the altar.
 	Burned bool
+	// Sold is whether the tome is the wandering merchant's to sell on
+	// TomeFloor, never laid there (FS-9JV5K §E R19).
+	Sold bool
 }
 
 func (p *TomePlanComponent) Type() ecs.ComponentType {

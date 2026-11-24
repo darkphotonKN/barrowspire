@@ -118,6 +118,8 @@ const (
 	ComponentTypeHallowedAltarPlan ComponentType = "HallowedAltarPlan"
 	ComponentTypeHallowedAltar     ComponentType = "HallowedAltar"
 	ComponentTypeBlessed           ComponentType = "Blessed"
+	// the wandering merchant and his wares (FS-9JV5K §A R1-R4)
+	ComponentTypeMerchant ComponentType = "Merchant"
 )
 
 type Entity struct {

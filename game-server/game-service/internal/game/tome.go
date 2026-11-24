@@ -82,7 +82,8 @@ func (s *Session) layTomeAndAltar(depth int, d *dungeonFloor) {
 		return
 	}
 	anyRoom := func(int) bool { return true }
-	if depth == plan.TomeFloor {
+	// a tome the merchant sells lies nowhere (FS-9JV5K §E R19)
+	if depth == plan.TomeFloor && !plan.Sold {
 		s.placeRunObject(d, "tome", anyRoom, CreateTomeEntity)
 	}
 	if depth == plan.AltarFloor {

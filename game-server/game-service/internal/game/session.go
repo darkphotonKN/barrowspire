@@ -223,6 +223,20 @@ type Session struct {
 	// the release so it happens once, and is the tick's alone.
 	seatDeadline  time.Time
 	seatsReleased bool
+
+	// wallet is what a run's purchases are paid from, set by the host as it
+	// builds the run; nil in every other world and in a run built without
+	// one. Guarded by mu. FS-9JV5K §B R7, ADR-0093.
+	wallet WalletDebiter
+	// tokens are each seated member's latest bearer token, the one a
+	// purchase's debit is made with (FS-9JV5K §B R8)
+	tokens *memberTokens
+	// purchases are the run's purchase counts and the purchases in flight
+	// (FS-9JV5K §B R7)
+	purchases *purchaseBook
+	// purchaseRetry is how a purchase's debit is retried (R9); a test
+	// shortens it
+	purchaseRetry purchaseRetry
 }
 
 // SeatReleaseAfter is how long a run keeps a seat for a matched player still
@@ -414,6 +428,10 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 
 		playersPendingConnection: make(map[uuid.UUID]*types.Player),
 		seatDeadline:             time.Now().Add(SeatReleaseAfter),
+
+		tokens:        newMemberTokens(),
+		purchases:     newPurchaseBook(),
+		purchaseRetry: defaultPurchaseRetry,
 	}
 	// a nil sender leaves the interface nil, so a send can tell there is none
 	if sender != nil {
@@ -666,6 +684,27 @@ func (s *Session) manageClientMessages() {
 				}
 
 				s.queueIntent(func() { s.useItem(playerID, itemEntityID) })
+
+			case constants.ActionBuy:
+				// A buy from the wandering merchant, judged on the tick.
+				// FS-9JV5K §B R5.
+				parsedPayload, err := msg.Message.ParsePayload()
+				if err != nil {
+					slog.Debug("Failed to parse buy payload", "player_id", playerID, "error", err)
+					s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse buy request")
+					continue
+				}
+				buyPayload := parsedPayload.(types.PlayerBuyPayload)
+
+				merchantID, err := uuid.Parse(buyPayload.MerchantID)
+				if err != nil {
+					// no id that is not an entity id is a merchant in reach
+					s.refuseBuy(playerID, RefusalOutOfReach)
+					continue
+				}
+				ware := components.WareKind(buyPayload.Ware)
+
+				s.queueIntent(func() { s.buy(playerID, merchantID, ware) })
 
 			case constants.ActionEquip, constants.ActionUnequip:
 				slog.Debug("Before parsing action equip / unequip message payload",
@@ -1106,6 +1145,7 @@ func (s *Session) AddPlayerAt(playerID uuid.UUID, character types.CharacterInPla
 	}
 
 	loadout, bag := s.seatGearLocked(playerID, character, token)
+	s.tokens.seat(playerID, token)
 	return s.buildBodyLocked(playerID, character, x, y, loadout, bag)
 }
 
@@ -1126,6 +1166,7 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 	spawnX, spawnY := s.spawnPoint()
 
 	loadout, bag := s.seatGearLocked(playerID, character, token)
+	s.tokens.seat(playerID, token)
 	return s.buildBodyLocked(playerID, character, spawnX, spawnY, loadout, bag)
 }
 
@@ -1358,6 +1399,7 @@ func (s *Session) seatPlayerLocked(player *types.Player, gear *pbitems.CheckOutR
 		slog.Warn("No loadout for handoff arrival, player spawns with no equipment.", "player_id", player.ID)
 	}
 	s.buildBodyLocked(player.ID, character, spawnX, spawnY, gear.GetLoadout(), gear.GetBag())
+	s.tokens.seat(player.ID, player.Token)
 
 	// remove them from the pending list
 	delete(s.playersPendingConnection, player.ID)
@@ -1477,6 +1519,7 @@ func (s *Session) removePlayerLocked(playerID uuid.UUID) {
 
 	delete(s.playerIDToEntitiesID, playerID)
 	delete(s.playerEntityIDToPlayerID, entityID)
+	s.tokens.forget(playerID)
 	slog.Info("Removed player from session", "playerID", playerID, "sessionID", s.ID)
 }
 
@@ -1819,6 +1862,10 @@ func (s *Session) Shutdown() {
 	close(s.endSessionCh)
 
 	s.mu.Unlock()
+
+	// a paid purchase no tick will now apply is logged for support
+	// (FS-9JV5K §B R11)
+	s.purchases.close(s.ID)
 }
 
 /**

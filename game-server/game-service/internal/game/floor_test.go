@@ -405,8 +405,10 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 	// a tome run (FS-3103M, 2% of runs) also lays its tome or altar on the floor
 	tomeAndAltar := len(entityIDsWith(s, ecs.ComponentTypeTome)) + len(entityIDsWith(s, ecs.ComponentTypeAltar))
 	// and a floor's respites: a fountain on half of floors 2+, the hallowed
-	// altar in 30% of runs (FS-5FZ4J §G R40, R42)
-	respites := len(entityIDsWith(s, ecs.ComponentTypeFountain)) + len(entityIDsWith(s, ecs.ComponentTypeHallowedAltar))
+	// altar in 30% of runs (FS-5FZ4J §G R40, R42), the wandering merchant on
+	// a third of floors 2+ (FS-9JV5K §A R1)
+	respites := len(entityIDsWith(s, ecs.ComponentTypeFountain)) + len(entityIDsWith(s, ecs.ComponentTypeHallowedAltar)) +
+		len(entityIDsWith(s, ecs.ComponentTypeMerchant))
 
 	total := len(s.EntityManager.GetAllEntities())
 	// a sealed floor's gate, seals and their pieces (FS-5FZ4J §B)

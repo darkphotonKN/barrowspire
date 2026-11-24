@@ -653,6 +653,7 @@ func (h *messageHub) Run(ctx context.Context) {
 				constants.ActionUnequip:   true,
 				constants.ActionCastSkill: true,
 				constants.ActionUseItem:   true, // FS-9JV5K §D R17; the run refuses it elsewhere
+				constants.ActionBuy:       true, // FS-9JV5K §B R5; only a run has a merchant
 			}
 
 			messageAction := constants.Action(clientPackage.Message.Action)

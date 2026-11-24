@@ -29,6 +29,9 @@ func TestParsePayload_MalformedPayload_ErrorsWithoutPanicking(t *testing.T) {
 		{"unequip, empty payload", constants.ActionUnequip, map[string]interface{}{}},
 		{"use_item, empty payload", constants.ActionUseItem, map[string]interface{}{}},
 		{"use_item, item_entity_id as number", constants.ActionUseItem, map[string]interface{}{"item_entity_id": 7.0}},
+		{"buy, empty payload", constants.ActionBuy, map[string]interface{}{}},
+		{"buy, no ware", constants.ActionBuy, map[string]interface{}{"merchant_id": "m-1"}},
+		{"buy, ware as number", constants.ActionBuy, map[string]interface{}{"merchant_id": "m-1", "ware": 7.0}},
 	}
 
 	for _, tt := range tests {
@@ -180,6 +183,7 @@ func TestParsePayload_IgnoresPlayerIDIfSent(t *testing.T) {
 		{constants.ActionUnequip, map[string]interface{}{"item_entity_id": "blade-1"}, PlayerEquipPayload{ItemEntityID: "blade-1"}},
 		{constants.ActionCastSkill, map[string]interface{}{"skill_id": "dash"}, PlayerCastSkillPayload{SkillID: "dash"}},
 		{constants.ActionUseItem, map[string]interface{}{"item_entity_id": "antidote-1"}, PlayerUseItemPayload{ItemEntityID: "antidote-1"}},
+		{constants.ActionBuy, map[string]interface{}{"merchant_id": "m-1", "ware": "antidote"}, PlayerBuyPayload{MerchantID: "m-1", Ware: "antidote"}},
 	}
 
 	for _, tt := range tests {

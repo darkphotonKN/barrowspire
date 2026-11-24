@@ -81,6 +81,11 @@ func (s *Server) HandleWebSocketConnection(c *gin.Context) {
 	// so it is read below without the lock the worlds write it under.
 	player, isReconnection := s.connectPlayer(memberId, data.Name, types.BearerToken(c.GetString(auth.TokenKey)))
 	if isReconnection {
+		// the world they are in keeps the token they reconnected with, the
+		// one a purchase there is paid as (FS-9JV5K §B R8)
+		if world, ok := s.GetGameSession(player.CurrentGameSessionId); ok {
+			world.KeepToken(player.ID, player.Token)
+		}
 		slog.Debug("Player is reconnecting",
 			"username", player.Username,
 			"game_session_id", player.CurrentGameSessionId,

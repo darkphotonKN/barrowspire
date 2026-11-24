@@ -30,6 +30,8 @@ type respiteKind string
 const (
 	// respiteFountain is the healing fountain's room (§G R40)
 	respiteFountain respiteKind = "fountain"
+	// respiteMerchant is the wandering merchant's room (FS-9JV5K §A R1)
+	respiteMerchant respiteKind = "merchant"
 )
 
 // respite is one respite room of a floor: what holds it, the room and where
@@ -97,15 +99,16 @@ func (d *dungeonFloor) respiteRoomOpen(room int, pieces map[int]bool) bool {
 /**
 * planRespite holds a respite room for kind, its fixture of half-size (rw, rh)
 * at a spot found as a fixture's is (placeFixture), in a room drawn from the
-* open ones: a room with no free spot is passed over for the next drawn. Run
+* open ones that also allows, when given: a room with no free spot is passed
+* over for the next drawn. Run
 * while the floor is planned, before it is published, after its seals. False,
 * loudly, when no room has a spot: the floor then holds no such respite.
 **/
-func (s *Session) planRespite(d *dungeonFloor, kind respiteKind, rw, rh float64) bool {
+func (s *Session) planRespite(d *dungeonFloor, kind respiteKind, rw, rh float64, also func(room int) bool) bool {
 	pieces := d.sealPieceRooms()
 	var rooms []int
 	for room := range d.layout.Rooms {
-		if d.respiteRoomOpen(room, pieces) {
+		if d.respiteRoomOpen(room, pieces) && (also == nil || also(room)) {
 			rooms = append(rooms, room)
 		}
 	}

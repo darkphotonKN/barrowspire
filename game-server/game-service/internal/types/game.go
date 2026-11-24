@@ -455,6 +455,35 @@ type HallowedAltarState struct {
 	Prayed   bool      `json:"prayed"`
 }
 
+// MerchantState is the wandering merchant on his floor and his wares, sent
+// whole; absent in the hub, a field and on a floor without him. FS-9JV5K §A R4.
+type MerchantState struct {
+	EntityID uuid.UUID            `json:"entity_id"`
+	Position *Position            `json:"position"`
+	Wares    []*MerchantWareState `json:"wares"`
+}
+
+// MerchantWareState is one of his wares: what it is, its price in gold, how
+// many are neither sold nor reserved, and the item the client draws, absent
+// for the tome.
+type MerchantWareState struct {
+	Ware  string            `json:"ware"`
+	Price int64             `json:"price"`
+	Left  int               `json:"left"`
+	Item  *MerchantWareItem `json:"item,omitempty"`
+}
+
+// MerchantWareItem is a ware's display data: its name, rarity and the stats
+// the client's icon resolver keys on (item type, healing, mana), since the
+// catalogue carries no icon or item code.
+type MerchantWareItem struct {
+	Name          string   `json:"name"`
+	ItemType      ItemType `json:"item_type"`
+	Rarity        string   `json:"rarity,omitempty"`
+	HealingAmount int      `json:"healing_amount,omitempty"`
+	ManaAmount    int      `json:"mana_amount,omitempty"`
+}
+
 // CellState is a cell's column and row on the floor map's grid.
 type CellState struct {
 	X int `json:"x"`

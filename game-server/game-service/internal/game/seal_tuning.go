@@ -162,6 +162,27 @@ const (
 	BrazierWindowSolo = 90.0
 )
 
+// MerchantFloorChance is the chance a floor 2+ below the top holds the
+// wandering merchant, drawn after its fountain; 1 forces one onto every such
+// floor in a local build. MerchantTomeChance is the chance a merchant offers
+// the Tome of Filth, when the run has no tome plan and a floor above his can
+// hold the altar. FS-9JV5K §A R1, §E R18.
+var (
+	MerchantFloorChance = 0.33
+	MerchantTomeChance  = 0.10
+)
+
+// A merchant's wares, their prices in gold and the stock each is rolled with.
+// FS-9JV5K §A R3.
+const (
+	MerchantPotionPrice   int64 = 60
+	MerchantPotionStock         = 3
+	MerchantAntidotePrice int64 = 40
+	MerchantAntidoteStock       = 3
+	MerchantTomePrice     int64 = 1500
+	MerchantTomeStock           = 1
+)
+
 // FountainFloorChance is the chance a floor 2+ below the top holds a healing
 // fountain, drawn with its seals; 1 forces one onto every such floor in a
 // local build. FS-5FZ4J §G R40.

@@ -285,6 +285,8 @@ func TestInWorldAction_RefusalAnswersTheConnectionsPlayer(t *testing.T) {
 		{constants.ActionInteract, map[string]interface{}{"entity_id": "not-an-entity"}},
 		{constants.ActionAttack, map[string]interface{}{"enemy_entity_id": "not-an-entity"}},
 		{constants.ActionUseItem, map[string]interface{}{"item_entity_id": "not-an-entity"}},
+		// FS-9JV5K §B R5-R6: routed to the run, refused out_of_reach
+		{constants.ActionBuy, map[string]interface{}{"merchant_id": "not-an-entity", "ware": "antidote"}},
 	}
 
 	for _, tc := range tests {
