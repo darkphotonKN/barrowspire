@@ -2918,3 +2918,83 @@ describe("a monster's ability on the ground (FS-C8VM7 §F R36)", () => {
     expect(() => new MonsterRoster(stage, fixtureArt()).sync([monster({ ability: slam })])).not.toThrow();
   });
 });
+
+// FS-4EC7Z §F R24, §G R32 (I-4EC7Z-6): the hostile humans on the monster path, from their looks on the
+// on-demand `encounter` group, the mark with the boss plate and its server name
+describe("the hostile humans: cutthroats and the contract's mark (FS-4EC7Z §G R32)", () => {
+  const ENCOUNTER_PAGES = Object.keys(shippedManifest().atlases).filter((a) => a.startsWith("encounter-"));
+  const cutthroat = (fields: Partial<MonsterState> = {}) =>
+    monster({ entity_id: "c1", archetype: "cutthroat", look: "cutthroat_b", name: "Cutthroat", level: 6, ...fields });
+  const mark = (fields: Partial<MonsterState> = {}) =>
+    monster({ entity_id: "mark", archetype: "contract_mark", look: "debtor_knight", name: "Ser Aldous the Indebted", level: 9, boss: true, ...fields });
+  const inArt = () => {
+    const art = runArt();
+    art.admit(ENCOUNTER_PAGES);
+    return art;
+  };
+
+  it("should draw each from its look's sheet, a variant on its own clips, at a player's height and never boss size", () => {
+    const art = inArt();
+    expect(drawnLook("cutthroat", art, false, "cutthroat_b")).toMatchObject({ sheet: "npc_cutthroat", variant: "b" });
+    expect(drawnLook("cutthroat", art, false, "cutthroat_a")).toMatchObject({ sheet: "npc_cutthroat" });
+    expect(drawnLook("cutthroat", art, false, "cutthroat_a").variant).toBeUndefined();
+    const knight = drawnLook("contract_mark", art, true, "debtor_knight");
+    expect(knight).toMatchObject({ sheet: "npc_debtor_knight", tier: "fodder" });
+    expect(drawnLook("contract_mark", art, true, "hooded_duelist").sheet).toBe("npc_hooded_duelist");
+    expect(monsterScale(knight, art)).toBe(1);
+  });
+
+  it("should draw a look it does not know as its archetype's first: a Cutthroat, the hooded duelist", () => {
+    const art = inArt();
+    expect(drawnLook("cutthroat", art, false, "cutthroat_z").sheet).toBe("npc_cutthroat");
+    expect(drawnLook("contract_mark", art, true).sheet).toBe("npc_hooded_duelist");
+  });
+
+  it("should draw the stand-in under its wash until the group lands, ask for it once, then wear its own look", () => {
+    const art = runArt();
+    const { stage, sprites } = fakeStage();
+    const asked: string[] = [];
+    let land = () => {};
+    const roster = new MonsterRoster(stage, art, undefined, undefined, {
+      fetch: (group, landed) => {
+        if (asked.includes(group)) return;
+        asked.push(group);
+        land = landed;
+      },
+    });
+    roster.sync([cutthroat(), mark()]);
+    roster.sync([cutthroat(), mark()]);
+    roster.update(FRAME);
+    expect(asked).toEqual(["encounter"]);
+    for (const s of sprites) {
+      expect(s.anims.currentAnim?.key).toMatch(/^char_mercenary_base\/idle\//);
+      expect(s.tint).toBe(palette.merchantStandIn);
+    }
+    art.admit(ENCOUNTER_PAGES);
+    land();
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^npc_cutthroat\/idle_b\//);
+    expect(sprites[1].anims.currentAnim?.key).toMatch(/^npc_debtor_knight\/idle\//);
+    for (const s of sprites) expect(s.tint).toBeNull();
+  });
+
+  it("should play a variant's own clips as it moves, strikes and falls", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, inArt());
+    roster.sync([cutthroat({ action: "attack" })]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^npc_cutthroat\/attack_b\//);
+    const { stage: s2, sprites: fallen } = fakeStage();
+    new MonsterRoster(s2, inArt()).sync([cutthroat({ action: "dead", current_health: 0 })]);
+    expect(fallen[0].plays.at(-1)?.key).toMatch(/^npc_cutthroat\/death_b\//);
+  });
+
+  it("should letter the mark's plate with its server name and level, in the hostile ink", () => {
+    const { stage, texts } = fakeStage();
+    const roster = new MonsterRoster(stage, inArt());
+    roster.sync([mark()]);
+    roster.update(FRAME);
+    expect(texts[0].content).toBe("Ser Aldous the Indebted · Lv 9");
+    expect(texts[0].color).toBe(toCss(palette.markerHostile));
+  });
+});

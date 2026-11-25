@@ -1,7 +1,7 @@
 /**
  * The player's status marks on the run's HUD (FS-5FZ4J §J R55): a small mark per lasting status,
- * beside the player's own health bar, each with a hover line. v1 marks the hallowed altar's Blessing
- * alone (poison is the health bar's tint). Pure, so which marks show, their words and where they
+ * beside the player's own health bar, each with a hover line: the hallowed altar's Blessing and
+ * Contract Settled (FS-4EC7Z §G R34), in that order (poison is the health bar's tint). Pure, so which marks show, their words and where they
  * stand are tested without a canvas; `StatusMarksHud` draws what this returns, on the UI scene
  * (ADR-0086: screen-fixed).
  */
@@ -12,11 +12,12 @@ import { HUD_COLUMN_W, RESOURCE_HUD_AT, resourceHudRowMiddle } from "./ResourceH
 import type { HudPoint } from "./uiSceneHud";
 
 /** A lasting status the HUD marks. */
-export type StatusMark = "blessed";
+export type StatusMark = "blessed" | "contract_settled";
 
 /** Each mark's hover line, in the client's words. */
 export const STATUS_MARK_LINES: Readonly<Record<StatusMark, string>> = {
   blessed: "Blessed: better finds, quicker resource",
+  contract_settled: "Contract Settled: +15% damage",
 };
 
 /** A mark's square, logical px. */
@@ -46,7 +47,10 @@ export interface MarkRect {
 export function statusMarks(state: Pick<ClientGameState, "world_type" | "current_player">): StatusMark[] {
   const me = state.current_player;
   if (state.world_type === "hub" || !me || resolved(me)) return [];
-  return me.blessed === true ? ["blessed"] : [];
+  const marks: StatusMark[] = [];
+  if (me.blessed === true) marks.push("blessed");
+  if (me.contract_settled === true) marks.push("contract_settled");
+  return marks;
 }
 
 /** `count` marks' squares from `at`, in a row left to right. */

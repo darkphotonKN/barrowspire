@@ -340,6 +340,57 @@ describe('traps, poison and a search on the wire (FS-5FZ4J §I R46, R47, R49)', 
   });
 });
 
+// FS-4EC7Z §F R22–R25, R28 (I-4EC7Z-6): the encounters, as game-service's types.EncounterNPCState, CageState,
+// EncounterKeyState, ContractState, PublicPlayerState.ContractSettled, BarrierState.Revealed and MonsterState.Look send them
+describe('dungeon encounters on the wire (FS-4EC7Z §F)', () => {
+  const base = {
+    session_id: 'session-1',
+    other_players: [],
+    items: [],
+    doors: [],
+    containers: [],
+    escape_doors: [],
+    switches: [],
+    escaped_count: 0,
+    world_type: 'run',
+    floor: 3,
+  };
+  const me = { id: 'p1', entity_id: 'e1', username: 'Wenna', class: 'mercenary', position: { x: 1, y: 2 }, direction: { x: 0, y: 1 }, escape: false };
+
+  it('should keep encounter_npcs, cages, encounter_keys, cage_key_carried, contract and contract_settled as the server sends them', () => {
+    const npcs = [
+      { entity_id: 'npc-1', kind: 'pilgrim', look: 'pilgrim_b', position: { x: 300, y: 400 }, facing: { x: 0, y: 1 }, health: 40, max_health: 60, stance: 'peaceful', action: 'cower', line: 'pilgrim_plea', line_at: 12.5 },
+      { entity_id: 'npc-2', kind: 'cutthroat', look: 'cutthroat_a', position: { x: 320, y: 410 }, facing: { x: 1, y: 0 }, health: 90, max_health: 90, stance: 'ally', action: 'move', hirer_id: 'p1' },
+    ];
+    const wire = JSON.parse(
+      JSON.stringify({
+        ...base,
+        current_player: { ...me, contract_settled: true, contract: { state: 'active', heading: 'north-east' } },
+        other_players: [{ ...me, id: 'p2', entity_id: 'e2', contract_settled: true }],
+        encounter_npcs: npcs,
+        cages: [{ entity_id: 'cage-1', position: { x: 500, y: 520 }, open: false }],
+        encounter_keys: [{ entity_id: 'key-1', position: { x: 900, y: 140 } }],
+        cage_key_carried: true,
+        barriers: [{ entity_id: 'door-1', kind: 'secret_door', cells: [{ x: 9, y: 2 }], open: false, revealed: true }],
+        monsters: [
+          { entity_id: 'm-1', archetype: 'contract_mark', look: 'debtor_knight', name: 'Ser Aldous the Indebted', level: 9, elite: false, boss: true, position: { x: 1, y: 1 }, facing: { x: 0, y: 1 }, action: 'idle', current_health: 900, max_health: 900 },
+        ],
+      }),
+    );
+    expect(isGameState(wire)).toBe(true);
+    const state = wire as ClientGameState;
+    expect(state.encounter_npcs).toEqual(npcs);
+    expect(state.cages).toEqual([{ entity_id: 'cage-1', position: { x: 500, y: 520 }, open: false }]);
+    expect(state.encounter_keys).toEqual([{ entity_id: 'key-1', position: { x: 900, y: 140 } }]);
+    expect(state.cage_key_carried).toBe(true);
+    expect(state.current_player?.contract).toEqual({ state: 'active', heading: 'north-east' });
+    expect(state.current_player?.contract_settled).toBe(true);
+    expect(state.other_players[0].contract_settled).toBe(true);
+    expect(state.barriers?.[0].revealed).toBe(true);
+    expect(state.monsters?.[0]).toMatchObject({ archetype: 'contract_mark', look: 'debtor_knight', boss: true });
+  });
+});
+
 describe('placedKind (FS-1D6BX R12, D2)', () => {
   it.each([
     ['chest', 'chest'],

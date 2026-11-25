@@ -199,10 +199,15 @@ export function minimapProjection(
   return fit(floorSize(grid), panel).project;
 }
 
-/** A fixture the minimap marks once found (§E.22): where it stands. */
+/**
+ * A fixture the minimap marks once found (§E.22): where it stands, and where it is judged seen from
+ * when that is not its own spot: a revealed secret door (FS-4EC7Z §G R35) stands in a wall cell, in
+ * no region, and shows once the ground beside it is seen.
+ */
 export interface MinimapFixture {
-  kind: "switch" | "escape-door" | "stairs";
+  kind: "switch" | "escape-door" | "stairs" | "secret-door";
   at: Point;
+  seenAt?: readonly Point[];
 }
 
 /**
@@ -264,10 +269,12 @@ export function minimapContent(
     const s = state(r.id);
     if (s !== "unexplored") regions.push({ id: r.id, state: s, cells: r.cells });
   }
-  const found = fixtures.filter((f) => {
-    const id = regionAt(grid, f.at);
-    return id !== 0 && state(id) !== "unexplored";
-  });
+  const found = fixtures.filter((f) =>
+    (f.seenAt ?? [f.at]).some((p) => {
+      const id = regionAt(grid, p);
+      return id !== 0 && state(id) !== "unexplored";
+    }),
+  );
   return { regions, fixtures: found };
 }
 
@@ -458,6 +465,8 @@ const GLYPH_ART: Record<MapMarkKind, readonly string[]> = {
   "escape-door": ["..###..", ".#####.", "##ooo##", "##ooo##", "##ooo##", "##ooo##", "##ooo##"],
   // a flight of three steps rising to the right
   stairs: [".....##", ".....##", "...####", "...####", ".######", ".######", "#######"],
+  // a revealed secret door (FS-4EC7Z §G R35): a shut, planked door, its boards' seams dark
+  "secret-door": ["#######", "#o#o#o#", "#o#o#o#", "#######", "#o#o#o#", "#o#o#o#", "#######"],
   // the town's and the fields' (FS-P0HSP §C.17), a starting draft for the owner's eye:
   // a battlemented tower with a dark door
   tower: ["#.#.#.#", "#######", ".#####.", ".##o##.", ".##o##.", ".#####.", "#######"],

@@ -13,11 +13,19 @@ describe("the player's status marks (FS-5FZ4J §J R55)", () => {
     expect(statusMarks({ world_type: "run", current_player: me() })).toEqual([]);
   });
 
+  // FS-4EC7Z §G R34 (I-4EC7Z-6)
+  it("should mark Contract Settled while the player holds it, after the Blessing", () => {
+    expect(statusMarks({ world_type: "run", current_player: me({ contract_settled: true }) })).toEqual(["contract_settled"]);
+    expect(statusMarks({ world_type: "run", current_player: me({ blessed: true, contract_settled: true }) })).toEqual(["blessed", "contract_settled"]);
+    expect(STATUS_MARK_LINES.contract_settled).toBe("Contract Settled: +15% damage");
+  });
+
   it("should mark nothing in the hub, before the player's first state, or out of the delve", () => {
     expect(statusMarks({ world_type: "hub", current_player: me({ blessed: true }) })).toEqual([]);
     expect(statusMarks({ world_type: "run", current_player: null })).toEqual([]);
     expect(statusMarks({ world_type: "run", current_player: me({ blessed: true, escape: true }) })).toEqual([]);
     expect(statusMarks({ world_type: "run", current_player: me({ blessed: true, current_health: 0 }) })).toEqual([]);
+    expect(statusMarks({ world_type: "run", current_player: me({ contract_settled: true, current_health: 0 }) })).toEqual([]);
   });
 
   it("should say what the Blessing gives in its hover line, of players' finds, never delvers'", () => {

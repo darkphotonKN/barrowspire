@@ -221,6 +221,12 @@ export const palette = {
    * hovered) nor as arcane green's ally.
    */
   blessed: mix(BARROW_HEX.brassBright, BARROW_HEX.vellum, 0.35),
+  /**
+   * Contract Settled's status mark (FS-4EC7Z §G R34): the mercenary's blood-price, an ember steel
+   * paled toward vellum, so the two crossed blades read as a damage boon held, apart from the
+   * Blessing's gold, never as amber's "act on this" nor as oxblood's harm done.
+   */
+  contractSettled: mix(BARROW_HEX.ember, BARROW_HEX.vellum, 0.4),
 
   /**
    * The chat window (FS-WJGFJ R30): one stream, told apart by colour. The user's hues mapped
@@ -315,6 +321,11 @@ export const palette = {
   /** Another player (FS-77AB6 req 40): co-op, so the ally channel, arcane green. */
   markerAlly: BARROW_HEX.arcane,
   markerHub: BARROW_HEX.vellum,
+  /**
+   * An encounter NPC's name plate while it is no ally (FS-4EC7Z §G R29): someone met, neither friend
+   * nor foe, so the neutral vellum the town's residents wear.
+   */
+  markerEncounter: BARROW_HEX.vellum,
   /**
    * A function NPC's name and sigil (FS-MRZH7 req 2): someone the player deals with for real, so
    * the interactable channel, amber. Apart from the player's own bright-brass name.

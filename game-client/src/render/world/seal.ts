@@ -142,6 +142,8 @@ export class SealSet<S extends { destroy(): void }> {
   private laidOver?: SealGrid;
   /** The wall faces the secret doors' cracks were laid over: new ones (the walls rebuilt) lay them again. */
   private crackedOver?: readonly WallFace[];
+  /** The cells of each shut secret door the latest broadcast says was revealed (FS-4EC7Z §F R28). */
+  private revealedShut: CellState[][] = [];
 
   constructor(private readonly stage: SealStage<S>) {}
 
@@ -210,6 +212,30 @@ export class SealSet<S extends { destroy(): void }> {
     return drawn.map((d) => d.sprite);
   }
 
+  /**
+   * Each shut secret door the Cutthroats' tip revealed (FS-4EC7Z §F R28, §G R35), for the minimap's
+   * door glyph: at its first cell's centre, a wall cell in no region, so seen from the ground beside
+   * its cells. None before the floor's grid stands.
+   */
+  revealedDoors(): { at: Point; seenAt: Point[] }[] {
+    const grid = this.laidOver;
+    if (!grid) return [];
+    return this.revealedShut
+      .filter((cells) => cells.length > 0)
+      .map((cells) => {
+        const own = new Set(cells.map(cellKey));
+        const beside = cells.flatMap((c) =>
+          [
+            { x: c.x - 1, y: c.y },
+            { x: c.x + 1, y: c.y },
+            { x: c.x, y: c.y - 1 },
+            { x: c.x, y: c.y + 1 },
+          ].filter((n) => !own.has(cellKey(n)) && grid.walkable(n.x, n.y)),
+        );
+        return { at: cellCentre(cells[0], grid.cell), seenAt: beside.map((n) => cellCentre(n, grid.cell)) };
+      });
+  }
+
   /** Every shut gate's run, for the minimap's wall stroke (R56). */
   shutGates(): GateStroke[] {
     const grid = this.laidOver;
@@ -244,6 +270,7 @@ export class SealSet<S extends { destroy(): void }> {
     this.doors.clear();
     this.laidOver = undefined;
     this.crackedOver = undefined;
+    this.revealedShut = [];
   }
 
   private syncPieces(listed: SealPieceState[]): void {
@@ -370,6 +397,7 @@ export class SealSet<S extends { destroy(): void }> {
       this.crackedOver = faces;
     }
     const doors = listed.filter((b) => knownBarrier(b.kind) === "secret_door");
+    this.revealedShut = doors.filter((b) => b.revealed === true && !b.open).map((b) => b.cells);
     const present = new Set(doors.map((b) => b.entity_id));
     for (const [id, d] of this.doors) {
       if (present.has(id)) continue;

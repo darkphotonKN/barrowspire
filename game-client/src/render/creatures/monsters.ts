@@ -38,7 +38,7 @@ import {
 } from "@/render/markers";
 import { bodyHitArea, footprintHitArea, type BodyColumn } from "@/render/world/footprint";
 import type { MarkerMode } from "./markerMode";
-import { onDemandFor } from "@/render/art/sceneArt";
+import { ENCOUNTER_ART, encounterLook, onDemandFor } from "@/render/art/sceneArt";
 import { AbilityTelegraphs, type GroundBrush } from "@/render/effects/monsterAbility";
 import type { StunHead } from "@/render/effects/stun";
 import type { MonsterAction, MonsterState } from "@/types/gameState";
@@ -81,6 +81,16 @@ export interface MonsterLook {
    * when absent. Inside the band only (FS-C8VM7 §F R34: the ogre family at the brute band's top).
    */
   aim?: number;
+  /**
+   * The palette variant whose clips it plays (`idle_b`), for a sheet holding several looks: a hostile
+   * human's (FS-4EC7Z §G R32). The sheet's first variant plays the plain clips.
+   */
+  variant?: string;
+  /**
+   * A human body (FS-4EC7Z §G R32): drawn at a player's own size, as the town's cast and the
+   * encounter NPCs are, and never lifted to the boss tier by `boss: true`.
+   */
+  human?: true;
 }
 
 /** A Spire variant's own baked sheet (FS-C8VM7 §F R34): `creature_<archetype>_base`. */
@@ -175,6 +185,28 @@ export const MONSTER_LOOKS: Record<string, MonsterLook> = {
  */
 export const FALLBACK_LOOK = MONSTER_LOOKS.troll;
 
+/** The look each hostile human archetype draws when its `look` is absent or unknown (FS-4EC7Z §F R24). */
+const HUMAN_DEFAULT_LOOKS: Readonly<Record<string, string>> = {
+  cutthroat: "cutthroat_a",
+  contract_mark: "hooded_duelist",
+};
+
+/** Whether an archetype is a hostile human, drawn from the encounters' group by its look (FS-4EC7Z §F R24). */
+const isHuman = (archetype: string): boolean => ENCOUNTER_ART.archetypes.includes(archetype);
+
+/**
+ * A hostile human's own look (FS-4EC7Z §G R32): its `look`'s sheet and variant on the `encounter`
+ * group (`encounterLook`), its archetype's first look for one the bake does not carry, at a player's
+ * height (fodder, aimed at 1). Undefined for any other archetype.
+ */
+function humanLook(archetype: string, look?: string): MonsterLook | undefined {
+  if (!isHuman(archetype)) return undefined;
+  const own = (look !== undefined ? encounterLook(look) : undefined) ?? encounterLook(HUMAN_DEFAULT_LOOKS[archetype]);
+  const sheet = own?.sheet ?? ENCOUNTER_ART.standIn.sheet;
+  const variant = own?.suffix ? own.suffix.slice(1) : undefined;
+  return { sheet, tier: "fodder", aim: 1, human: true, ...(variant ? { variant } : {}) };
+}
+
 /** The sheet and size tier an archetype is drawn with. */
 export function monsterLook(archetype: string): MonsterLook {
   return Object.hasOwn(MONSTER_LOOKS, archetype)
@@ -186,7 +218,9 @@ export function monsterLook(archetype: string): MonsterLook {
  * The look a monster wears once its art is in: its archetype's, or a champion's (`boss: true` on a
  * look not boss tier, FS-C8VM7 §F R35): the same sheet, scaled to the boss tier's aim.
  */
-function ownLook(archetype: string, boss = false): MonsterLook {
+function ownLook(archetype: string, boss = false, wire?: string): MonsterLook {
+  const human = humanLook(archetype, wire);
+  if (human) return human;
   const look = monsterLook(archetype);
   if (!boss || look.tier === "boss") return look;
   const { aim: _bandAim, ...rest } = look;
@@ -202,8 +236,14 @@ export function drawnLook(
   archetype: string,
   art: Pick<ArtLibrary, "has">,
   boss = false,
+  wire?: string,
 ): MonsterLook {
-  const look = ownLook(archetype, boss);
+  const look = ownLook(archetype, boss, wire);
+  if (look.human) {
+    if (art.has(look.sheet)) return look;
+    const { sheet, tint } = ENCOUNTER_ART.standIn;
+    return { sheet, tier: look.tier, aim: look.aim, human: true, ...(tint === undefined ? {} : { tint }) };
+  }
   const standIn = onDemandFor(archetype)?.standIn;
   if (!standIn || art.has(look.sheet)) return look;
   const { aim: _standInAim, ...stand } = monsterLook(standIn.archetype);
@@ -252,9 +292,10 @@ const HEIGHT_PER_LENGTH_PX = Math.cos(Math.PI / 6);
  * The sprite scale that stands a look at its tier: the tier's aim times a player's head height,
  * over the creature's own measure, both taken by the bake: its `crown`, or a quadruped's body
  * `length` in the same height px. Without both the art is not there to measure, and the tier's
- * aim is the best guess.
+ * aim is the best guess. A human is drawn at a player's own size (FS-4EC7Z §G R32).
  */
 export function monsterScale(look: MonsterLook, art: SheetHeights): number {
+  if (look.human) return 1;
   const aim = lookAim(look);
   const player = art.sheet(PLAYER_REFERENCE_SHEET)?.crown;
   const own = art.sheet(look.sheet);
@@ -584,6 +625,13 @@ interface MonsterView {
 
 const alive = (monster: MonsterState) => monster.action !== "dead";
 
+/** A clip's name on a sheet under a palette variant (`death_b`), as `CharacterAnimator` plays it. */
+const variantClip = (clip: string, variant?: string) => (variant ? `${clip}_${variant}` : clip);
+
+/** The on-demand group an archetype's art is on: its table row's, the encounters' for a human, or none. */
+const groupOf = (archetype: string): string | undefined =>
+  isHuman(archetype) ? ENCOUNTER_ART.group : onDemandFor(archetype)?.group;
+
 /**
  * Every monster on the canvas, keyed by `entity_id`. {@link sync} on each state broadcast creates,
  * updates and removes; {@link update} once a frame eases and animates.
@@ -668,7 +716,7 @@ export class MonsterRoster {
         this.views.delete(id);
       }
 
-    for (const { archetype } of monsters) this.fetchArtOf(archetype);
+    for (const monster of monsters) this.fetchArtOf(monster);
     this.abilities?.sync(monsters);
 
     for (const monster of monsters) {
@@ -716,7 +764,7 @@ export class MonsterRoster {
       // one that dies unseen lies where it fell, and is never seen mid-fall when it is shown again
       const fellUnseen = state.action === "dead" && !view.fallen && !view.sprite.visible;
       view.fallen = state.action === "dead";
-      if (fellUnseen) this.layCorpse(view, view.anim.sheet);
+      if (fellUnseen) this.layCorpse(view, view.anim.sheet, view.look.variant);
       else if (view.anim.baked && !this.turnWindUp(view, choice, turnedFrom))
         view.anim.show(view.sprite, choice);
       if (view.flashMs > 0) {
@@ -818,26 +866,30 @@ export class MonsterRoster {
   }
 
   /** Whether a sheet carries a clip. */
-  private clipsOf(sheet: string): MonsterView["has"] {
-    return (clip) => this.art.animationKey(sheet, clip) !== undefined;
+  private clipsOf(sheet: string, variant?: string): MonsterView["has"] {
+    return (clip) => this.art.animationKey(sheet, variantClip(clip, variant)) !== undefined;
   }
 
-  /** Asks for the art of `archetype`'s on-demand group, if it has one and it is not in yet (§F R44). */
-  private fetchArtOf(archetype: string): void {
-    const onDemand = onDemandFor(archetype);
-    if (onDemand && !this.art.has(monsterLook(archetype).sheet))
-      this.artFetch?.fetch(onDemand.group, () => this.redress(onDemand.group));
+  /**
+   * Asks for the art of a monster's on-demand group, if it has one and its own sheet is not in yet
+   * (§F R44): an archetype's row of the table, or a hostile human's, the encounters' group (FS-4EC7Z
+   * §H R36).
+   */
+  private fetchArtOf(monster: MonsterState): void {
+    const group = groupOf(monster.archetype);
+    if (group && !this.art.has(ownLook(monster.archetype, monster.boss, monster.look).sheet))
+      this.artFetch?.fetch(group, () => this.redress(group));
   }
 
   /**
    * The group's art is in: every monster drawn as a stand-in for it changes (§F R48), whichever
    * archetype asked. A group's later asks are dropped, so the first asker's callback answers them
    * all (FS-M8CSE §H R42); a floor's pool fetched ahead of its monsters answers here too (FS-C8VM7
-   * §G R42, R44).
+   * §G R42, R44), and the encounters' group fetched by its NPCs answers its hostile humans.
    */
   redress(group: string): void {
     for (const view of this.views.values())
-      if (onDemandFor(view.state.archetype)?.group === group) this.wearOwnLook(view);
+      if (groupOf(view.state.archetype) === group) this.wearOwnLook(view);
   }
 
   /**
@@ -846,22 +898,22 @@ export class MonsterRoster {
    * hit column stands, a tier's height either way (crown × scale).
    */
   private wearOwnLook(view: MonsterView): void {
-    const look = ownLook(view.state.archetype, view.state.boss);
+    const look = ownLook(view.state.archetype, view.state.boss, view.state.look);
     const sheet = monsterSheet(look, view.state);
     view.look = look;
     view.scale = monsterScale(look, this.art);
-    view.anim = new CharacterAnimator(this.art, { sheet }, view.facing);
-    view.has = this.clipsOf(sheet);
+    view.anim = new CharacterAnimator(this.art, { sheet, variant: look.variant }, view.facing);
+    view.has = this.clipsOf(sheet, look.variant);
     view.anim.dress(view.sprite, view.scale);
     view.anim.show(view.sprite, this.clip(view));
     if (view.flashMs <= 0) this.wear(view);
   }
 
   private create(state: MonsterState): MonsterView {
-    const look = drawnLook(state.archetype, this.art, state.boss);
+    const look = drawnLook(state.archetype, this.art, state.boss, state.look);
     const sheet = monsterSheet(look, state);
     const facing = facingFrom(state.facing.x, state.facing.y, "se");
-    const anim = new CharacterAnimator(this.art, { sheet }, facing);
+    const anim = new CharacterAnimator(this.art, { sheet, variant: look.variant }, facing);
     const sprite = this.stage.sprite();
     const scale = monsterScale(look, this.art);
     anim.dress(sprite, scale);
@@ -895,13 +947,13 @@ export class MonsterRoster {
       facing,
       fallen: false,
       flashMs: 0,
-      has: this.clipsOf(sheet),
+      has: this.clipsOf(sheet, look.variant),
       state,
     };
     this.wear(view);
     this.target(view, look, sheet);
     this.stand(view);
-    if (state.action === "dead") this.layCorpse(view, sheet);
+    if (state.action === "dead") this.layCorpse(view, sheet, look.variant);
     return view;
   }
 
@@ -961,11 +1013,11 @@ export class MonsterRoster {
    * into interest, FS-KE075 §H.48) already lies where it fell: its death clip starts on the last
    * frame, so the fall is not replayed.
    */
-  private layCorpse(view: MonsterView, sheet: string): void {
+  private layCorpse(view: MonsterView, sheet: string, variant?: string): void {
     const direction = directionIndex(view.facing);
-    const key = this.art.animationKey(sheet, ACTION_CLIPS.dead, direction);
-    const frames =
-      this.art.sheet(sheet)?.animations[ACTION_CLIPS.dead]?.frames[direction];
+    const clip = variantClip(ACTION_CLIPS.dead, variant);
+    const key = this.art.animationKey(sheet, clip, direction);
+    const frames = this.art.sheet(sheet)?.animations[clip]?.frames[direction];
     if (key && frames) view.sprite.play({ key, startFrame: frames.length - 1 });
   }
 

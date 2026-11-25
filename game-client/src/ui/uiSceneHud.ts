@@ -33,6 +33,8 @@ export type HudMessage = { readonly world: World } & (
   | { readonly kind: "window"; readonly window: SealWindowView | null }
   // the player's lasting statuses beside their own health bar: the Blessing (FS-5FZ4J §J R55)
   | { readonly kind: "statusMarks"; readonly marks: StatusMark[] }
+  // the contract's heading under the notices while it is active, none otherwise (FS-4EC7Z §G R34)
+  | { readonly kind: "contract"; readonly line: string | null }
 );
 
 export type HudKind = HudMessage["kind"];
@@ -73,6 +75,8 @@ export interface HudBuild {
   window(): HudPiece<SealWindowView | null>;
   /** The status marks, from their first one's top-left (FS-5FZ4J §J R55, `statusMarkRects`). */
   statusMarks(at: HudPoint): HudPiece<StatusMark[]>;
+  /** The contract's heading line places itself, under the notices at the top centre (FS-4EC7Z §G R34, `contractLineAt`). */
+  contract(): HudPiece<string | null>;
 }
 
 interface HudPlaces {
@@ -85,6 +89,8 @@ interface HudPlaces {
   readonly window?: true;
   /** The player's status marks stand here, beside the health bar: a run's alone, as the Blessing is. */
   readonly statusMarks?: HudPoint;
+  /** A contract's heading line stands in this world: a run's alone, where contracts are taken. */
+  readonly contract?: true;
 }
 
 /**
@@ -96,7 +102,7 @@ interface HudPlaces {
 export const HUD_PLACES: Readonly<Record<World, HudPlaces>> = {
   hub: { progress: true },
   field: { progress: true, bars: RESOURCE_HUD_AT.field, bar: true },
-  run: { progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, statusMarks: STATUS_MARKS_AT },
+  run: { progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, statusMarks: STATUS_MARKS_AT, contract: true },
 };
 
 interface HudStanding {
@@ -105,6 +111,7 @@ interface HudStanding {
   progress?: ProgressPiece;
   window?: HudPiece<SealWindowView | null>;
   statusMarks?: HudPiece<StatusMark[]>;
+  contract?: HudPiece<string | null>;
 }
 
 /**
@@ -177,6 +184,11 @@ export class UiHudSlot {
         // built on the first mark, never for none
         if (!places.statusMarks || (!pieces.statusMarks && message.marks.length === 0)) return;
         (pieces.statusMarks ??= this.build.statusMarks(places.statusMarks)).show(message.marks);
+        return;
+      case "contract":
+        // built on the first line, never for none
+        if (!places.contract || (!pieces.contract && message.line === null)) return;
+        (pieces.contract ??= this.build.contract()).show(message.line);
         return;
     }
   }

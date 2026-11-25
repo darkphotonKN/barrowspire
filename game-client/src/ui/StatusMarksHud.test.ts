@@ -95,4 +95,16 @@ describe("StatusMarksHud: the Blessing mark beside the health bar (FS-5FZ4J §J 
     hud.destroy();
     expect(live()).toEqual([]);
   });
+
+  // FS-4EC7Z §G R34 (I-4EC7Z-6)
+  it("should draw Contract Settled beside the Blessing, each with its own ground and hover line", () => {
+    const { scene, live, words } = onScene();
+    const hud = new StatusMarksHud(scene, STATUS_MARKS_AT.x, STATUS_MARKS_AT.y);
+    hud.show(["blessed", "contract_settled"]);
+    const zones = live().filter((m) => m.kind === "zone");
+    expect(zones).toHaveLength(2);
+    expect(Number(zones[1].args[0])).toBeGreaterThan(Number(zones[0].args[0]));
+    zones[1].handlers.pointerover();
+    expect(words()).toEqual(["Contract Settled: +15% damage"]);
+  });
 });

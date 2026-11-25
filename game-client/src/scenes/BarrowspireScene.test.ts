@@ -9074,6 +9074,18 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
     };
   }
 
+  // FS-4EC7Z §F R27, §G R31 (I-4EC7Z-6): the encounters' refusals are HUD notices, never lore lines
+  it("should say the cage's refusal as a HUD notice in the client's words, and no lore line", () => {
+    const { notified, said, reply } = connected();
+    reply({ success: false, message: "the cage is locked", reason: "cage_locked" });
+    reply({ success: false, message: "too many follow you already", reason: "too_many_allies" });
+    expect(notified.mock.calls).toEqual([
+      ["Locked. Find the key.", palette.damageBright],
+      ["Too many follow you already.", palette.damageBright],
+    ]);
+    expect(said).not.toHaveBeenCalled();
+  });
+
   // FS-9JV5K §F R23, R24 (I-9JV5K-5): the purchase's and the drink's replies reach the run
   it("should hear the buy and use_item replies, each in plain words as a notice", () => {
     const { notified, buy, useItem } = connected();
@@ -12843,6 +12855,207 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(shimmers.playGranted).not.toHaveBeenCalled();
       run.itemUsed({ success: true });
       expect(shimmers.playGranted).toHaveBeenCalledWith(ANTIDOTE_LOOK, expect.anything());
+    });
+  });
+
+  // FS-4EC7Z §G R29–R35 (I-4EC7Z-6): the encounters, the cage, hostile humans, the contract and the revealed door
+  describe("the dungeon encounters (FS-4EC7Z §G)", () => {
+    interface EncounterRun {
+      bindRunInput(): void;
+      checkBuildingStatus(): void;
+      showNotification(text: string, backing: number): void;
+      stepEncounters(time: number): void;
+      encounters: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      cages: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      ui: WorldUi;
+      dungeon: { minimap?: { show(...args: unknown[]): void } };
+      time: { now: number };
+      fetchEncounterArt(): void;
+      onDemand?: { fetch(group: string, landed: () => void): void };
+    }
+    const ME = at(2560, 3080);
+    const mine = (over: Record<string, unknown> = {}) =>
+      ({ current_player: { ...player("me", "Aldric", 0), position: ME, ...over } }) as Partial<Party>;
+    const npc = (over: Record<string, unknown> = {}) => ({
+      entity_id: "npc-1",
+      kind: "pilgrim",
+      look: "pilgrim_b",
+      position: at(ME.x + 30, ME.y),
+      facing: { x: 0, y: 1 },
+      health: 40,
+      max_health: 40,
+      stance: "peaceful",
+      action: "cower",
+      ...over,
+    });
+    const encounterStage = (extra: Partial<GameState> = { encounter_npcs: [npc()] } as Partial<GameState>, opts: { without?: string } = {}) => {
+      const staged = dungeonStage(mine(), extra, opts);
+      const run = staged.run as unknown as EncounterRun;
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      const next = (over: Record<string, unknown> = {}, me = mine()) => staged.handle({ ...dungeonState(me), ...over } as GameState);
+      return { ...staged, run, notified, next };
+    };
+    const pressE = (run: EncounterRun, playerPos: { x: number; y: number }) => {
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos,
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+      sent.mockRestore();
+      return interacts;
+    };
+    const dressed = (made: Made[], prefix: string) =>
+      made.filter((m) => m.kind === "sprite" && !m.destroyed && String(m.last.setTexture?.[1] ?? m.args[3] ?? "").startsWith(prefix));
+    const texts = (made: Made[], words: string) => made.filter((m) => m.kind === "text" && !m.destroyed && (m.args[2] === words || m.last.setText?.[0] === words));
+
+    it("should draw an encounter NPC from its look, with its kind's plate in the neutral ink (R29)", () => {
+      const { run, stage } = encounterStage();
+      run.stepEncounters(0);
+      expect(dressed(stage.made, "npc_pilgrim/")).toHaveLength(1);
+      const [plate] = texts(stage.made, "Pilgrim");
+      expect(plate).toBeDefined();
+      expect(plate.color).toBe(toCss(palette.markerEncounter));
+    });
+
+    it("should draw its stand-in under the wash while the encounters' group is not in", () => {
+      const { stage } = encounterStage(undefined, { without: "npc_" });
+      const [body] = dressed(stage.made, "char_mercenary_base/");
+      expect(body).toBeDefined();
+      expect(body.tint).toBe(palette.merchantStandIn);
+    });
+
+    it("should plate an ally in the ally ink over its health bar (R29)", () => {
+      const { run, stage } = encounterStage({ encounter_npcs: [npc({ kind: "cutthroat", look: "cutthroat_a", stance: "ally", hirer_id: "me", action: "idle", health: 20 })] } as Partial<GameState>);
+      run.stepEncounters(0);
+      const [plate] = texts(stage.made, "Cutthroat");
+      expect(plate.color).toBe(toCss(palette.markerAlly));
+      const bar = stage.made.find((m) => m.kind === "graphics" && !m.destroyed && m.calls.includes("fillRect") && m.depth === MARKER_DEPTH.bar);
+      expect(bar).toBeDefined();
+    });
+
+    it("should send one interact for the NPC E reaches: a talk (R29)", () => {
+      const { run } = encounterStage();
+      expect(pressE(run, ME)).toEqual([[ActionType.Interact, { entity_id: "npc-1" }]]);
+    });
+
+    it("should show a line said over the NPC's head for 4 s, and none on a first broadcast (R30)", () => {
+      const { run, stage, next } = encounterStage({ encounter_npcs: [npc({ line: "pilgrim_plea", line_at: 3 })] } as Partial<GameState>);
+      expect(texts(stage.made, "Please, they're coming!")).toHaveLength(0);
+      run.time.now = 1000;
+      next({ encounter_npcs: [npc({ line: "pilgrim_plea", line_at: 8 })] });
+      run.stepEncounters(1016);
+      const [line] = texts(stage.made, "Please, they're coming!");
+      expect(line).toBeDefined();
+      expect(shownNow(line)).toBe(true);
+      run.stepEncounters(1000 + 4000);
+      expect(line.destroyed).toBe(true);
+    });
+
+    it("should keep the cutthroats' turn line where they stood once they become monsters (R30, amended)", () => {
+      const cut = (over: Record<string, unknown> = {}) => npc({ kind: "cutthroat", look: "cutthroat_a", action: "idle", ...over });
+      const { run, stage, next } = encounterStage({ encounter_npcs: [cut()] } as Partial<GameState>);
+      run.time.now = 500;
+      next({ encounter_npcs: [cut({ line: "cutthroat_turn", line_at: 4 })] });
+      const placed = vi.spyOn((run as unknown as { encounterBodies: { place(...a: unknown[]): void } }).encounterBodies, "place");
+      run.stepEncounters(516);
+      const [line] = texts(stage.made, "Bad luck for you.");
+      const where = placed.mock.calls.at(-1)![1];
+      next({
+        monsters: [{ entity_id: "m-1", archetype: "cutthroat", look: "cutthroat_a", name: "Cutthroat", level: 4, elite: false, boss: false, position: at(ME.x + 30, ME.y), facing: { x: 0, y: 1 }, action: "idle", current_health: 50, max_health: 50 }],
+      });
+      run.stepEncounters(1500);
+      expect(line.destroyed).toBe(false);
+      expect(placed.mock.calls.at(-1)![1]).toBe(where);
+    });
+
+    it("should draw the cage shut and its key where it lies; E takes the key, then opens the cage (R31)", () => {
+      const cage = (open = false) => ({ entity_id: "cage-1", position: at(ME.x + 200, ME.y), open });
+      const key = { entity_id: "key-1", position: at(ME.x + 20, ME.y) };
+      const { run, stage, next } = encounterStage({ cages: [cage()], encounter_keys: [key] } as Partial<GameState>);
+      expect(dressed(stage.made, "cage/shut_back/")).toHaveLength(1);
+      expect(dressed(stage.made, "cage/shut_front/")).toHaveLength(1);
+      expect(dressed(stage.made, "cage_key/")).toHaveLength(1);
+      expect(pressE(run, ME)).toEqual([[ActionType.Interact, { entity_id: "key-1" }]]);
+      next({ cages: [cage()], cage_key_carried: true });
+      expect(dressed(stage.made, "cage_key/")).toHaveLength(0);
+      expect(pressE(run, at(ME.x + 160, ME.y))).toEqual([[ActionType.Interact, { entity_id: "cage-1" }]]);
+    });
+
+    it("should say The cage key. when it is carried, Locked. Find the key. on cage_locked, and The pilgrims are lost. (R31, R33)", () => {
+      const { notified, next } = encounterStage({ encounter_npcs: [npc()] } as Partial<GameState>);
+      next({ encounter_npcs: [npc()], cage_key_carried: true });
+      next({ encounter_npcs: [npc({ action: "dead", health: 0 })], cage_key_carried: true });
+      expect(notified.mock.calls).toEqual([
+        ["The cage key.", palette.hudPanel],
+        ["The pilgrims are lost.", palette.damageBright],
+      ]);
+    });
+
+    it("should hand the UI scene the contract's heading while active, and say its end, once (R34)", () => {
+      const { run, notified, next } = encounterStage({}, {});
+      const hud = vi.spyOn(run.ui, "hud");
+      next({}, mine({ contract: { state: "active", heading: "east" } }));
+      next({}, mine({ contract: { state: "active", heading: "east" } }));
+      next({}, mine({ contract: { state: "active", heading: "north" } }));
+      next({}, mine({ contract: { state: "settled" }, contract_settled: true }));
+      const lines = hud.mock.calls.map(([m]) => m as { kind: string; line?: unknown; marks?: unknown });
+      expect(lines.filter((m) => m.kind === "contract").map((m) => m.line)).toEqual([
+        "Mark: last seen to the east",
+        "Mark: last seen to the north",
+        null,
+      ]);
+      expect(lines.filter((m) => m.kind === "statusMarks").at(-1)?.marks).toEqual(["contract_settled"]);
+      expect(notified.mock.calls).toEqual([["Contract Settled.", palette.safe]]);
+    });
+
+    it("should say Contract lost. when it is lost, and nothing of a contract a first broadcast finds settled (R34)", () => {
+      const a = encounterStage({}, {});
+      a.next({}, mine({ contract: { state: "active", heading: "east" } }));
+      a.next({}, mine({ contract: { state: "lost" } }));
+      expect(a.notified.mock.calls).toEqual([["Contract lost.", palette.damageBright]]);
+      const b = dungeonStage(mine({ contract: { state: "settled" } }));
+      const told = vi.spyOn(b.run as unknown as EncounterRun, "showNotification").mockImplementation(() => {});
+      b.handle({ ...dungeonState(mine({ contract: { state: "settled" } })) } as GameState);
+      expect(told).not.toHaveBeenCalled();
+    });
+
+    it("should hand the minimap a revealed shut secret door as its door glyph (R35)", () => {
+      const door = (open = false) => ({ entity_id: "door-1", kind: "secret_door", cells: [{ x: 0, y: 0 }], open, revealed: true });
+      const { run, next } = encounterStage({ barriers: [door()] } as Partial<GameState>);
+      const show = vi.spyOn(run.dungeon.minimap!, "show");
+      next({ barriers: [door()] });
+      const fixtures = show.mock.calls.at(-1)![1] as { kind: string }[];
+      expect(fixtures.filter((f) => f.kind === "secret-door")).toHaveLength(1);
+      next({ barriers: [door(true)] });
+      expect((show.mock.calls.at(-1)![1] as { kind: string }[]).filter((f) => f.kind === "secret-door")).toHaveLength(0);
+    });
+
+    it("should fetch the encounters' group once for its NPCs and its hostile humans, and dress both as it lands (§H R36)", () => {
+      const { run } = encounterStage();
+      const asked: string[] = [];
+      let land = () => {};
+      run.onDemand = { fetch: (group, landed) => void (asked.push(group), (land = landed)) } as EncounterRun["onDemand"];
+      const npcs = vi.spyOn(run.encounters as unknown as { landed(): void }, "landed");
+      const redress = vi.fn();
+      (run as unknown as { monsters: { redress(group: string): void } }).monsters = { redress } as never;
+      run.fetchEncounterArt();
+      land();
+      expect(asked).toEqual(["encounter"]);
+      expect(npcs).toHaveBeenCalledTimes(1);
+      expect(redress).toHaveBeenCalledWith("encounter");
+    });
+
+    it("should take the encounters down with their floor", () => {
+      const { run, stage } = encounterStage({ encounter_npcs: [npc()], cages: [{ entity_id: "cage-1", position: ME, open: true }] } as Partial<GameState>);
+      (run as unknown as { leaveFloor(): void }).leaveFloor();
+      expect(dressed(stage.made, "npc_pilgrim/")).toHaveLength(0);
+      expect(dressed(stage.made, "cage/")).toHaveLength(0);
+      expect(texts(stage.made, "Pilgrim")).toHaveLength(0);
+      expect(run.encounters.placed()).toEqual([]);
     });
   });
 });
