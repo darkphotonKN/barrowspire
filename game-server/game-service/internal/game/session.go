@@ -881,6 +881,15 @@ func (s *Session) advanceTick(deltaTime float64) ([]*ecs.Entity, error) {
 	return entities, s.broadcastFullState(entities)
 }
 
+// worldMoveBonus is this world's own move bonus for its delvers, percent: the
+// town bonus in the hub, none in a run or a field (FS-TAGWA R16).
+func (s *Session) worldMoveBonus() int {
+	if s.worldType == types.WorldTypeHub {
+		return constants.HubMoveSpeedBonusPercent
+	}
+	return 0
+}
+
 // step advances the simulation one tick. Damage happens in exactly one place on
 // it: the CombatSystem, fed by the projectile impacts detected just before it.
 //
@@ -891,8 +900,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// the world, on this goroutine alone
 	s.applyIntents()
 
-	// gear: what each delver wears counts from this tick, in every world
-	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).Update(deltaTime, entities)
+	// gear: what each delver wears counts from this tick, in every world, and
+	// the hub walks its delvers the town bonus faster (FS-TAGWA R16)
+	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).WithWorldMoveBonus(s.worldMoveBonus()).Update(deltaTime, entities)
 
 	// drink cooldowns count down, the tick's drinks just applied included
 	// (FS-P9G8R §Requirements 9)

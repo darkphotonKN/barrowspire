@@ -74,10 +74,21 @@ type GearSystem struct {
 	caps       GearCaps
 	effects    UniqueEffectTuning
 	attributes AttributeTuning
+	// worldMoveBonus is the world's own move bonus, percent: the hub's town
+	// bonus, 0 elsewhere (FS-TAGWA R16)
+	worldMoveBonus int
 }
 
 func NewGearSystem(em *ecs.EntityManager, caps GearCaps, effects UniqueEffectTuning, attributes AttributeTuning) *GearSystem {
 	return &GearSystem{em: em, caps: caps, effects: effects, attributes: attributes}
+}
+
+// WithWorldMoveBonus has the system walk every delver percent faster on top of
+// worn move speed, past its cap: the world's own bonus, never gear's (the
+// hub's town bonus, FS-TAGWA R16).
+func (s *GearSystem) WithWorldMoveBonus(percent int) *GearSystem {
+	s.worldMoveBonus = percent
+	return s
 }
 
 // wornSlots are every slot whose item counts as gear, armorSlots the ones read
@@ -116,7 +127,7 @@ func (s *GearSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 		bonus, seated := gearBonus(entity)
 		s.sum(entity, bonus, frenzy, climbed)
 		applyMaxima(entity, bonus, seated)
-		applyMoveSpeed(entity, bonus)
+		applyMoveSpeed(entity, bonus, s.worldMoveBonus)
 	}
 }
 
@@ -261,13 +272,14 @@ func shiftMaximum(maximum, current, delta int, seated bool) (int, int) {
 	return maximum, max(min(current, maximum), 0)
 }
 
-// applyMoveSpeed sets movement speed from the default, so gear never compounds.
-func applyMoveSpeed(entity *ecs.Entity, bonus *components.GearBonusComponent) {
+// applyMoveSpeed sets movement speed from the default, so gear never compounds:
+// the paced walk, worn move speed (capped) and the world's own bonus on top.
+func applyMoveSpeed(entity *ecs.Entity, bonus *components.GearBonusComponent, worldBonus int) {
 	vc, ok := entity.GetComponent(ecs.ComponentTypeVelocity)
 	if !ok {
 		return
 	}
-	vc.(*components.VelocityComponent).Speed = constants.DefaultSpeed * (1 + float64(bonus.MoveSpeedPercent)/100)
+	vc.(*components.VelocityComponent).Speed = constants.DefaultSpeed * (1 + float64(bonus.MoveSpeedPercent)/100) * (1 + float64(worldBonus)/100)
 }
 
 // WornUniqueEffects is the set of unique effect codes the entity wears in its
