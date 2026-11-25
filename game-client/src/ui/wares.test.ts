@@ -25,7 +25,7 @@ describe("waresRows: the wares panel's rows (FS-9JV5K §F R22)", () => {
 
   // FS-9JV5K §Change: The Restoring Draught D6 (I-9JV5K-7): its row from the ware on the wire, no new field
   it("should give the Restoring Draught its own flask, its name, price and count left, as any ware", () => {
-    const draught = { ware: "restoring_draught", price: 50, left: 3, item: { name: "Restoring Draught", item_type: "consumable", rarity: "common" } };
+    const draught = { ware: "restoring_draught", price: 50, left: 3, item: { name: "Restoring Draught", item_type: "consumable", rarity: "normal" } };
     expect(waresRows([draught])).toEqual([
       { ware: "restoring_draught", icon: "icon_restoring_draught", name: "Restoring Draught", price: "50 gold", left: "3 left", action: "Buy", enabled: true },
     ]);
