@@ -1497,9 +1497,14 @@ func alive(entity *ecs.Entity) bool {
 // through whatever this refuses. Only a monster's hit lands on an encounter
 // NPC: a delver's, its reflect, and a trap's pass it by (FS-4EC7Z §A R3), and
 // nothing lands on a caged captive, behind bars (§D R13). A hired ally's
-// lands on a monster and nothing else (§C R9).
+// lands on a monster and nothing else (§C R9). Nothing whose source is a
+// delver or a hired ally lands on a hound, whatever the player-damage setting
+// (FS-X2CMM R28, §Change: The archer's wolf W3): this one rule, here.
 func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage PlayerDamage) bool {
 	if !alive(target) || BodyKindOf(target) == BodyCaptive {
+		return false
+	}
+	if sparesHound(attack, target) {
 		return false
 	}
 	if attack.AllyOf != uuid.Nil && !target.HasComponent(ecs.ComponentTypeEnemy) {
@@ -1518,9 +1523,6 @@ func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage P
 	}
 	fromDelver := attack.AttackerMemberID != uuid.Nil
 	if fromDelver && targetIsDelver && playerDamage == PlayerDamageOff {
-		return false
-	}
-	if sparesHound(attack, target) { // no delver's hit lands on a hound (FS-X2CMM R28)
 		return false
 	}
 
