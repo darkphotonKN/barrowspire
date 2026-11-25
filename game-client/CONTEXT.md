@@ -552,7 +552,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Target frame** (FS-48CTQ): the HUD frame at the top centre that names one monster (name,
   level, HP bar) instead of plates over every head: the hovered monster, else an engaged boss, else
   the monster the local player last hit. A **marker mode** per world and floor says whether
-  monsters carry overhead plates (`overhead`, everywhere today but floor 1) or use the frame; on a
+  monsters carry overhead plates (`overhead`, everywhere today) or use the frame (no floor today); on a
   `frame` floor a damaged monster still carries its HP bar over its head, alone, with no plate
   (§F). Not a **marker**: it is HUD, not drawn in the world.
 - **Damage chip** (FS-48CTQ §F.22): the run of an HP bar, overhead or in the target frame, that
