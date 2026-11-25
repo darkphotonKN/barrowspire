@@ -56,14 +56,16 @@ func encounterFor(rng populationRand, depth int, top bool, tuning floorTuning) (
 }
 
 // encounterFootprint is how many spots an encounter of kind holds in its
-// room, and each one's half-size: a pilgrim's body each, or the Captives'
-// one cage. 0 for a kind not built.
+// room, and each one's half-size: a pilgrim's or a Cutthroat's body each, or
+// the Captives' one cage. 0 for a kind not built.
 func encounterFootprint(kind components.EncounterKind) (int, float64) {
 	switch kind {
 	case components.EncounterLostPilgrims:
 		return PilgrimCount, constants.PlayerRadius
 	case components.EncounterCaptives:
 		return 1, CageHalfSize
+	case components.EncounterCutthroats:
+		return CutthroatCount, constants.PlayerRadius
 	default:
 		return 0, 0
 	}
@@ -171,6 +173,8 @@ func (s *Session) layEncounter(d *dungeonFloor) {
 		s.layPilgrims(encounter, ec, plan.spots)
 	case components.EncounterCaptives:
 		s.layCaptives(encounter, ec, plan)
+	case components.EncounterCutthroats:
+		s.layCutthroats(encounter, ec, plan.spots)
 	}
 	slog.Debug("Encounter laid", "sessionID", s.ID, "kind", plan.kind, "room", plan.room, "npcs", len(ec.NPCs))
 }
@@ -206,7 +210,7 @@ func CreateEncounterNPCEntity(em *ecs.EntityManager, config EncounterNPCConfig) 
 /**
 * advanceEncounters runs the floor's encounters a tick, after the combat:
 * every NPC's clock and its dead (systems.EncounterNPCSystem), then each
-* kind's own tick. FS-4EC7Z §A R3, §B.
+* kind's own tick. FS-4EC7Z §A R3, §B, §D.
 **/
 func (s *Session) advanceEncounters(dt float64, entities []*ecs.Entity) {
 	systems.NewEncounterNPCSystem(s.EntityManager, EncounterCorpseLifetime).Update(dt, entities)
@@ -220,6 +224,9 @@ func (s *Session) advanceEncounters(dt float64, entities []*ecs.Entity) {
 		}
 		if cc, isCaptives := e.GetComponent(ecs.ComponentTypeCaptives); isCaptives {
 			s.advanceCaptives(e, cc.(*components.CaptivesComponent))
+		}
+		if cc, isCutthroats := e.GetComponent(ecs.ComponentTypeCutthroats); isCutthroats {
+			s.advanceCutthroats(dt, ec.(*components.EncounterComponent), cc.(*components.CutthroatsComponent))
 		}
 	}
 }
@@ -299,6 +306,9 @@ func (s *Session) talkToEncounterNPC(playerID uuid.UUID, body *components.Transf
 	if wc, isPilgrims := encounter.GetComponent(ecs.ComponentTypePilgrimWave); isPilgrims {
 		ec, _ := encounter.GetComponent(ecs.ComponentTypeEncounter)
 		s.talkToPilgrim(ec.(*components.EncounterComponent), wc.(*components.PilgrimWaveComponent), npc)
+	}
+	if cc, isCutthroats := encounter.GetComponent(ecs.ComponentTypeCutthroats); isCutthroats {
+		s.talkToCutthroat(cc.(*components.CutthroatsComponent), playerID, target, npc)
 	}
 	return nil
 }

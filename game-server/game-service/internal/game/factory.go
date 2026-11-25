@@ -494,6 +494,9 @@ type MonsterConfig struct {
 	// Name is the display name, elite prefix included; empty means the
 	// archetype's own name.
 	Name string
+	// Look is its art variant within its archetype; empty for one whose look
+	// is the archetype (FS-4EC7Z §F R24).
+	Look string
 	X, Y float64
 	// StatFactor scales a field monster's level stats before any promotion
 	// (FS-X2F2H §Requirements 29); 0 is a Spire monster's own, unscaled.
@@ -538,6 +541,7 @@ func CreateMonsterEntity(em *ecs.EntityManager, config MonsterConfig) *ecs.Entit
 		Boss:           config.Boss,
 		Champion:       config.Champion,
 		Name:           name,
+		Look:           config.Look,
 		HomeX:          config.X,
 		HomeY:          config.Y,
 		Action:         components.MonsterActionIdle,

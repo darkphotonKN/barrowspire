@@ -20,9 +20,8 @@ const EncounterFloorChance = 0.4
 const ForcedEncounterKind components.EncounterKind = ""
 
 // EncounterKinds are the kinds an encounter is drawn from, uniformly
-// (FS-4EC7Z §A R1). The Lost Pilgrims and the Captives are built
-// (I-4EC7Z-1, I-4EC7Z-2); the Cutthroats join with their slice.
-var EncounterKinds = []components.EncounterKind{components.EncounterLostPilgrims, components.EncounterCaptives}
+// (FS-4EC7Z §A R1).
+var EncounterKinds = []components.EncounterKind{components.EncounterLostPilgrims, components.EncounterCaptives, components.EncounterCutthroats}
 
 // The Lost Pilgrims: PilgrimCount pilgrims, each of PilgrimHealthFactor times
 // a standard fodder monster's health at the floor's monster level, in the
@@ -103,3 +102,18 @@ const (
 
 // CaptiveLooks are the captives' art variants, one a captive in turn.
 var CaptiveLooks = []string{"captive_a", "captive_b"}
+
+// The Cutthroats (FS-4EC7Z §D R14): CutthroatCount Cutthroats in the looks of
+// CutthroatLooks by turn, each with a hired Cutthroat's health; the first
+// talk's parley draws their fate CutthroatParleyDelay seconds later, hostile
+// at CutthroatHostileChance (a world's own copy, floorTuning, so a test or a
+// local build forces either way with 1 or 0).
+const (
+	CutthroatCount         = 3
+	CutthroatParleyDelay   = 3.0
+	CutthroatHostileChance = 0.5
+)
+
+// CutthroatLooks are the Cutthroats' art variants, one a Cutthroat in turn;
+// a turned one keeps its look as a monster (§F R24).
+var CutthroatLooks = []string{"cutthroat_a", "cutthroat_b"}

@@ -200,3 +200,40 @@ type CageKeyComponent struct {
 func (c *CageKeyComponent) Type() ecs.ComponentType {
 	return ecs.ComponentTypeCageKey
 }
+
+// CutthroatFate is how the Cutthroats' parley fell (FS-4EC7Z §D R14).
+type CutthroatFate string
+
+const (
+	// FateUndrawn is before the parley's draw: before the first talk, or
+	// while the draw is due
+	FateUndrawn CutthroatFate = ""
+	// FateTurning is the draw fallen hostile: the turn line is said this
+	// tick, and they are monsters the next, so the line reaches the wire
+	FateTurning CutthroatFate = "turning"
+	// FateHostile is every living Cutthroat a cutthroat monster
+	FateHostile CutthroatFate = "hostile"
+	// FatePeaceful is the draw fallen peaceful: the tip is given
+	FatePeaceful CutthroatFate = "peaceful"
+)
+
+/*
+CutthroatsComponent is the Cutthroats' parley and hire (FS-4EC7Z §D R14-R15),
+beside their EncounterComponent. The first talk sets Parleyed, Talker (the
+delver's entity id, whom a hostile turn hunts) and Speaker (the Cutthroat
+talked to, who says the group's lines), the draw due DrawIn seconds later.
+Fate is how it fell. Hired once the group is hired, which cancels a draw
+still due; a hired group is never drawn.
+*/
+type CutthroatsComponent struct {
+	Parleyed bool
+	DrawIn   float64
+	Talker   uuid.UUID
+	Speaker  uuid.UUID
+	Fate     CutthroatFate
+	Hired    bool
+}
+
+func (c *CutthroatsComponent) Type() ecs.ComponentType {
+	return ecs.ComponentTypeCutthroats
+}

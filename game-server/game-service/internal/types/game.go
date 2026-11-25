@@ -379,6 +379,10 @@ type MonsterState struct {
 	EntityID uuid.UUID `json:"entity_id"`
 	// ghoul | troll | demon | blood_demon | bone_archer
 	Archetype string `json:"archetype"`
+	// Look is a hostile human's art variant within its archetype (a turned
+	// Cutthroat's `cutthroat_a`), absent for every archetype whose look is the
+	// archetype itself (FS-4EC7Z §F R24)
+	Look string `json:"look,omitempty"`
 	// server-authored, elite prefix included, level excluded: the client
 	// composes the nameplate
 	Name     string   `json:"name"`
@@ -556,12 +560,14 @@ type SealPieceState struct {
 }
 
 // BarrierState is one barrier, a gate, a secret door or a pit, and the cells
-// it covers. FS-5FZ4J §I R46.
+// it covers. FS-5FZ4J §I R46. Revealed is set on a secret door the
+// Cutthroats' tip revealed, absent on every other (FS-4EC7Z §F R28).
 type BarrierState struct {
 	EntityID uuid.UUID   `json:"entity_id"`
 	Kind     string      `json:"kind"`
 	Cells    []CellState `json:"cells"`
 	Open     bool        `json:"open"`
+	Revealed bool        `json:"revealed,omitempty"`
 }
 
 // TrapState is one detected trap (FS-5FZ4J §I R46): armed false while a

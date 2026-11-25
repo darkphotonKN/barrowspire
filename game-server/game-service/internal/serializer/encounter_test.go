@@ -157,3 +157,27 @@ func TestFormatStateToClientState_CagesAndTheCageKey(t *testing.T) {
 		assert.NotContains(t, tomeWire(t, bare, types.WorldTypeRun, me), k)
 	}
 }
+
+// FS-4EC7Z §F R24: a turned Cutthroat rides monsters[] with archetype
+// `cutthroat` and its look; a monster with no look carries no look key.
+func TestFormatStateToClientState_HostileHumanCarriesItsLook(t *testing.T) {
+	em := ecs.NewEntityManager()
+	onTomeRunFloor(em, 2)
+	me := uuid.New()
+	addDelver(em, me, 0, 0, 100)
+	cutthroat := addMonster(em, "Cutthroat", 200, 0, 60, 60)
+	mc, _ := cutthroat.GetComponent(ecs.ComponentTypeEnemy)
+	mc.(*components.MonsterComponent).Archetype = components.MonsterArchetypeCutthroat
+	mc.(*components.MonsterComponent).Look = "cutthroat_b"
+	troll := addMonster(em, "Troll", 300, 0, 100, 100)
+
+	byID := map[string]map[string]any{}
+	for _, m := range asList(tomeWire(t, em, types.WorldTypeRun, me)["monsters"]) {
+		byID[m.(map[string]any)["entity_id"].(string)] = m.(map[string]any)
+	}
+	require.Contains(t, byID, cutthroat.ID.String())
+	assert.Equal(t, "cutthroat", byID[cutthroat.ID.String()]["archetype"])
+	assert.Equal(t, "cutthroat_b", byID[cutthroat.ID.String()]["look"])
+	require.Contains(t, byID, troll.ID.String())
+	assert.NotContains(t, byID[troll.ID.String()], "look")
+}

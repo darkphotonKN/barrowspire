@@ -268,6 +268,8 @@ var MonsterDrops = map[components.MonsterArchetype]MonsterDrop{
 	components.MonsterArchetypeOgreTyrant:      TrollMonsterDrop,
 	components.MonsterArchetypeDarkWarrior:     TrollMonsterDrop,
 	components.MonsterArchetypeDarkReaper:      TrollMonsterDrop,
+	// FS-4EC7Z §D R14: a turned Cutthroat drops as standard fodder does
+	components.MonsterArchetypeCutthroat: GhoulMonsterDrop,
 }
 
 // GhoulMonsterDrop is the ghoul's row, and the tower monsters' with it.

@@ -731,8 +731,8 @@ func trapState(id uuid.UUID, trap *components.TrapComponent) *types.TrapState {
 	return state
 }
 
-// barrierState is one barrier on the wire, open as its Openable says.
-// FS-5FZ4J §I R46.
+// barrierState is one barrier on the wire, open as its Openable says and
+// revealed as its Detectable says. FS-5FZ4J §I R46, FS-4EC7Z §F R28.
 func barrierState(entity *ecs.Entity, barrier *components.BarrierComponent) *types.BarrierState {
 	cells := make([]types.CellState, len(barrier.Cells))
 	for i, c := range barrier.Cells {
@@ -742,7 +742,11 @@ func barrierState(entity *ecs.Entity, barrier *components.BarrierComponent) *typ
 	if oc, ok := entity.GetComponent(ecs.ComponentTypeOpenable); ok {
 		open = oc.(*components.OpenableComponent).IsOpen
 	}
-	return &types.BarrierState{EntityID: entity.ID, Kind: string(barrier.Kind), Cells: cells, Open: open}
+	revealed := false
+	if dc, ok := entity.GetComponent(ecs.ComponentTypeDetectable); ok {
+		revealed = dc.(*components.DetectableComponent).Revealed
+	}
+	return &types.BarrierState{EntityID: entity.ID, Kind: string(barrier.Kind), Cells: cells, Open: open, Revealed: revealed}
 }
 
 func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGameState, playerID uuid.UUID) *types.ClientGameState {
@@ -1059,6 +1063,7 @@ func monsterState(entity *ecs.Entity, monster *components.MonsterComponent) *typ
 	state := &types.MonsterState{
 		EntityID:  entity.ID,
 		Archetype: string(monster.Archetype),
+		Look:      monster.Look,
 		Name:      monster.Name,
 		Level:     monster.Level,
 		Elite:     monster.Elite,

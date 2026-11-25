@@ -74,6 +74,11 @@ const (
 	MonsterArchetypeDarkReaper  MonsterArchetype = "dark_reaper"
 )
 
+// The hostile humans (FS-4EC7Z §F R24): a Cutthroat turned in the parley
+// (§D R14), never rolled in a floor's pool. Its look on the wire is the
+// Cutthroat it was.
+const MonsterArchetypeCutthroat MonsterArchetype = "cutthroat"
+
 // MonsterAction is what a monster is doing, as the state broadcast names it.
 // `attack` covers the wind-up and the strike, a demon's slam included.
 // FS-77AB6 §Requirements 32. `claw` is a demon's fire claw, from the tick it
@@ -112,6 +117,10 @@ type MonsterComponent struct {
 	// Name is server-authored, elite prefix included and level excluded: every
 	// client shows the same one and adds the level itself.
 	Name string
+	// Look is its art variant within its archetype, for a hostile human (a
+	// turned Cutthroat's is the one it wore, FS-4EC7Z §F R24); empty for
+	// every archetype whose look is the archetype itself.
+	Look string
 
 	// Home is where it was spawned, the anchor it wanders around and leashes to.
 	HomeX, HomeY float64

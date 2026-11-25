@@ -134,6 +134,8 @@ const (
 	ComponentTypeCaptives ComponentType = "Captives"
 	ComponentTypeCage     ComponentType = "Cage"
 	ComponentTypeCageKey  ComponentType = "CageKey"
+	// the Cutthroats' parley and hire (FS-4EC7Z §D R14-R15)
+	ComponentTypeCutthroats ComponentType = "Cutthroats"
 )
 
 type Entity struct {

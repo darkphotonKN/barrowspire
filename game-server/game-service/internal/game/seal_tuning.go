@@ -18,8 +18,9 @@ const ForcedSealKind components.SealKind = ""
 
 /*
 floorTuning is a world's own copy of the floor build's overridable tunables:
-the forced seal kind, the two-body kinds, the respites' and merchant's odds
-and the encounters' odds and forced kind (FS-4EC7Z §Requirements).
+the forced seal kind, the two-body kinds, the respites' and merchant's odds,
+the encounters' odds and forced kind, and the Cutthroats' hostile chance
+(FS-4EC7Z §Requirements).
 newSession starts every world from defaultFloorTuning, the constants here, and
 a test overrides them on its own world (withTuning), so no tunable is mutable
 state shared by every world (game-service CLAUDE.md).
@@ -38,6 +39,7 @@ type floorTuning struct {
 	merchantTomeChance       float64
 	encounterFloorChance     float64
 	forcedEncounterKind      components.EncounterKind
+	cutthroatHostileChance   float64
 }
 
 // defaultFloorTuning is the floor build's tunables as this file sets them.
@@ -52,6 +54,7 @@ func defaultFloorTuning() floorTuning {
 		merchantTomeChance:       MerchantTomeChance,
 		encounterFloorChance:     EncounterFloorChance,
 		forcedEncounterKind:      ForcedEncounterKind,
+		cutthroatHostileChance:   CutthroatHostileChance,
 	}
 }
 

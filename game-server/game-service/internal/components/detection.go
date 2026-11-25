@@ -21,6 +21,10 @@ entity with the floor.
 type DetectableComponent struct {
 	Spots    []Spot
 	Detected bool
+	// Revealed is set when the party was told of it rather than came upon
+	// it: a secret door the Cutthroats' tip names (FS-4EC7Z §D R14, §F R28),
+	// detected with it.
+	Revealed bool
 }
 
 func (d *DetectableComponent) Type() ecs.ComponentType {
