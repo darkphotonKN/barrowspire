@@ -236,6 +236,7 @@ func TestWolf_SparedByEveryDelverSideSource(t *testing.T) {
 					wolf, witness := source.run(w)
 
 					hp := healthT(t, wolf)
+					// and no stun (W5): applyHit stuns only a monster, so a spared wolf is never stunned
 					assert.Equal(t, hp.MaxHealth, hp.CurrentHealth, "the wolf keeps its health")
 					assert.Positive(t, hp.MaxHealth)
 					assert.Less(t, health(witness), healthT(t, witness).MaxHealth, "the source landed on its witness")

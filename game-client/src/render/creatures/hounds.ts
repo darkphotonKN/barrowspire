@@ -1,7 +1,8 @@
 /**
  * The archer's hound on the canvas (FS-X2CMM §I R47; Call the Wolf, R28; a wolf to the player, §Change: The
- * archer's wolf W1): every `hound` entry of the run's book effects (`book_effects`, §F R34), drawn for every viewer from its baked sheet (`creature_hound_base`,
- * built in code at `tools/bake/page/characters/hound.js`, ADR-0021) at its state position, facing the way it
+ * archer's wolf W1): every `hound` entry of the run's book effects (`book_effects`, §F R34), drawn for every
+ * viewer from its baked sheet (`creature_hound_base`, built in code at `tools/bake/page/characters/hound.js`,
+ * ADR-0021) at its state position, facing the way it
  * moves, playing the clip its `action` names. It carries a small health bar over its head and a faint
  * verdigris ring on the floor under it, and never a monster's nameplate: it is the archer's, not the Spire's.
  * While its `bay` shows (§J R49) it bays: a ripple of rings on the floor at the point it bays toward

@@ -154,7 +154,9 @@ function shag({ segs, rings, seed, amount }) {
   return (t, a) => {
     const j = Math.round((((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) / ((2 * Math.PI) / segs));
     const i = Math.round(t * (rings - 1));
-    const tuft = (j + i) % 2 === 0 ? hash2(j % segs, i, seed) : 0.15 * hash2(j % segs, i, seed + 1);
+    // the seam column folds to the first, for the parity as for the hash, so the seam never tears
+    const jj = j % segs;
+    const tuft = (jj + i) % 2 === 0 ? hash2(jj, i, seed) : 0.15 * hash2(jj, i, seed + 1);
     return 1 + amount(t, a) * tuft;
   };
 }
@@ -345,7 +347,7 @@ function hindleg(rig, s, sx, F) {
     segs,
     steps,
     uv: 5,
-    // the breeches: the fur on the back of the thigh stands out in tufts, short below the stifle
+    // the breeches: the fur round the thigh stands out in tufts, short below the stifle
     shape: shag({ segs, rings: (cps.length - 1) * steps + 1, seed: 261 + (sx > 0 ? 0 : 7), amount: (t) => 0.14 * smoothstep(0.05, 0.15, t) * (1 - smoothstep(0.2, 0.4, t)) }),
   });
   shadeBy(mesh, rig.H, legShade);
