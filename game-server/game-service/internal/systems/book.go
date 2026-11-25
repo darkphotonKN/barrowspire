@@ -393,8 +393,9 @@ func resolveHardened(_ *ecs.EntityManager, cast BookCast) {
 // trackersEyeSeconds is how long Tracker's Eye lasts (R26).
 const trackersEyeSeconds = 15.0
 
-// resolveTrackersEye sets tracker's eye on the archer. Its reveal is wave 2
-// (R49).
+// resolveTrackersEye sets tracker's eye on the archer. While it runs, every
+// secret door and trap within 10 cells of them is revealed (R49,
+// BookRevealSystem).
 func resolveTrackersEye(_ *ecs.EntityManager, cast BookCast) {
 	setBookState(cast.Caster, components.BookStateTrackersEye, trackersEyeSeconds)
 }

@@ -171,6 +171,11 @@ export interface BookEffectState {
   max_health?: number;
   /** What a hound is doing (R34, R47), which clip it plays; absent on every other kind. */
   action?: HoundAction;
+  /**
+   * A hound's bay while it shows (R49): the point, world px, it bays toward, the nearest shut secret door or
+   * seal piece or tripwire whose ambush still waits; absent otherwise and on every other kind.
+   */
+  bay?: { x: number; y: number };
 }
 
 /**
@@ -537,7 +542,10 @@ export interface BarrierState {
   kind: BarrierKind | (string & {});
   cells: CellState[];
   open: boolean;
-  /** Set on a secret door the Cutthroats' tip revealed, absent on every other (FS-4EC7Z §F R28). */
+  /**
+   * Set on a secret door the Cutthroats' tip revealed (FS-4EC7Z §F R28) or a book page revealed (Witchlight,
+   * Tracker's Eye: FS-X2CMM §J R49), absent on every other.
+   */
   revealed?: boolean;
 }
 
@@ -550,7 +558,7 @@ const TRAP_KINDS: readonly string[] = ["spike_plate", "dart_wall", "fire_jet", "
  * One detected trap (FS-5FZ4J §I R46): an undetected one is sent to no one. `armed` is false while
  * a fired trap waits to re-arm and for a spent tripwire; a gas vent is always armed, and its puff
  * is `puffed_at`, the floor's simulation time of its last, absent before its first (R48).
- * `revealed` is a book page's (FS-X2CMM), always false for now.
+ * `revealed` is set once a book page revealed it (Witchlight, Tracker's Eye: FS-X2CMM §J R49).
  */
 export interface TrapState {
   entity_id: UUID;

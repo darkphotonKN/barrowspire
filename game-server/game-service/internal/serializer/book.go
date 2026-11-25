@@ -112,6 +112,10 @@ func setHound(state *types.BookEffectState, entity *ecs.Entity) {
 	owner := hound.OwnerMemberID
 	state.OwnerID = &owner
 	state.Action = string(hound.Action)
+	// its bay, toward what it bays at, while the bay shows (R49)
+	if at, baying := systems.Baying(hound); baying {
+		state.Bay = &types.Position{X: at.X, Y: at.Y}
+	}
 	if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok {
 		health := hc.(*components.HealthComponent)
 		current := health.CurrentHealth

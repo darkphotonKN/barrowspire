@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TrapState } from "@/types/gameState";
-import { TRAP_FAINT, type SealLook } from "./sealLooks";
+import { TRAP_FAINT, TRAP_REVEALED, type SealLook } from "./sealLooks";
 import { TrapSet } from "./traps";
 
 type Point = { x: number; y: number };
@@ -12,13 +12,14 @@ function recording() {
     at: Point;
     alpha: number;
     calls: string[];
+    revealed: boolean;
     destroyed: boolean;
     destroy(): void;
   };
   const made: Drawn[] = [];
   const set = new TrapSet<Drawn>({
     add: (look, at, alpha) => {
-      const d: Drawn = { look, at, alpha, calls: [], destroyed: false, destroy: () => void (d.destroyed = true) };
+      const d: Drawn = { look, at, alpha, calls: [], revealed: false, destroyed: false, destroy: () => void (d.destroyed = true) };
       made.push(d);
       return d;
     },
@@ -31,6 +32,10 @@ function recording() {
       d.look = look;
       d.alpha = 1;
       d.calls.push(`spring ${look.frame}${settle ? ` then ${settle.look.frame} ${settle.alpha}` : ""}`);
+    },
+    reveal: (d, revealed) => {
+      d.revealed = revealed;
+      d.calls.push(`reveal ${revealed}`);
     },
   });
   const live = () => made.filter((d) => !d.destroyed);
@@ -164,5 +169,41 @@ describe("TrapSet: a listed trap drawn faint (FS-5FZ4J §J R51)", () => {
     expect(live()).toHaveLength(1);
     set.sync([trap()], grid);
     expect(live()).toHaveLength(2);
+  });
+});
+
+describe("TrapSet: a trap a page revealed, drawn apart from one only detected (FS-X2CMM §J R49)", () => {
+  it("should draw a revealed trap's armed frame stronger than a detected one's, and washed as revealed", () => {
+    const { set, live } = recording();
+    set.sync([trap(), trap({ entity_id: "t2", revealed: true })], grid);
+    const [seen, revealed] = live();
+    expect(seen).toMatchObject({ alpha: TRAP_FAINT, revealed: false });
+    expect(revealed).toMatchObject({ look: { frame: "armed" }, alpha: TRAP_REVEALED, revealed: true });
+    expect(TRAP_REVEALED).toBeGreaterThan(TRAP_FAINT);
+  });
+
+  it("should turn a held trap revealed when the state says so, playing no spring", () => {
+    const { set, live } = recording();
+    set.sync([trap()], grid);
+    set.sync([trap({ revealed: true })], grid);
+    expect(live()[0].calls).toEqual(["reveal true", `show armed ${TRAP_REVEALED}`]);
+    set.sync([trap({ revealed: true })], grid);
+    expect(live()[0].calls).toHaveLength(2);
+  });
+
+  it("should keep a revealed trap washed through its spring, and settle it back at the revealed alpha once re-armed", () => {
+    const { set, live } = recording();
+    set.sync([trap({ revealed: true })], grid);
+    set.sync([trap({ revealed: true, armed: false })], grid);
+    set.sync([trap({ revealed: true })], grid);
+    expect(live()[0].revealed).toBe(true);
+    expect(live()[0].calls).toEqual(["reveal true", "spring sprung", `show armed ${TRAP_REVEALED}`]);
+  });
+
+  it("should settle a revealed gas vent's puff at the revealed alpha", () => {
+    const { set, live } = recording();
+    set.sync([trap({ kind: "gas_vent", revealed: true })], grid);
+    set.sync([trap({ kind: "gas_vent", revealed: true, puffed_at: 3 })], grid);
+    expect(live()[0].calls).toContain(`spring puff then armed ${TRAP_REVEALED}`);
   });
 });

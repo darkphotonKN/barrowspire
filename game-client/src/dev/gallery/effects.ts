@@ -34,6 +34,7 @@ import { HitFeedback } from "@/render/effects/hit";
 import { LoreDust } from "@/render/effects/loreDust";
 import { addMist, prefersReducedMotion } from "@/render/effects/mist";
 import { AbilityTelegraphs, IMPACT_MS } from "@/render/effects/monsterAbility";
+import { HOUND_BAY, paintHoundBay } from "@/render/effects/houndBay";
 import { PageReticle } from "@/render/effects/pageReticle";
 import { ParryFx } from "@/render/effects/parry";
 import { RiposteFx } from "@/render/effects/riposte";
@@ -723,4 +724,22 @@ export const EFFECT_CARDS: EffectCard[] = [
     name: "A draught's heal: a faint rise of health's own colour",
     demo: (s) => playBookState(s, "draught"),
   },
+  {
+    module: "houndBay",
+    name: "The hound's bay: verdigris rings rippling out at what it bays at",
+    // at the aim, as a run lays it at the point the hound's `bay` names (FS-X2CMM §J R49), bayed three times
+    demo: (s) => playHoundBay(s),
+  },
 ];
+
+/** The hound's bay at the figure's aim, played as a run plays it on each bay, three bays a hold apart. */
+function playHoundBay(s: Stage): void {
+  const g = bookLayer(s, "ground", s.aim);
+  const at = worldToScreen(s.aim.x, s.aim.y);
+  g.setPosition(at.x, at.y);
+  const reduced = prefersReducedMotion();
+  const every = HOUND_BAY.ms + 500;
+  for (let bay = 0; bay < 3; bay++)
+    for (let t = 0; t <= HOUND_BAY.ms; t += FRAME_MS) s.later(bay * every + t, () => paintHoundBay(g, t, reduced));
+  s.later(3 * every, () => g.destroy());
+}

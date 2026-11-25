@@ -946,6 +946,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		// what a delver now stands near, a secret door or a trap, is seen by
 		// the party from this tick (FS-5FZ4J §F R38, §D R30)
 		systems.NewDetectionSystem(DetectionRadius).Update(entities)
+		// and what a witchlight or tracker's eye reaches is revealed, and a
+		// hound bays at a shut secret door or a waiting ambush (FS-X2CMM §J R49)
+		systems.NewBookRevealSystem(s.bookCellSize()).Update(deltaTime, entities)
 	}
 
 	// projectile

@@ -589,7 +589,7 @@ type BarrierState struct {
 
 // TrapState is one detected trap (FS-5FZ4J §I R46): armed false while a
 // fired trap waits to re-arm and for a spent tripwire, a gas vent always
-// armed; revealed by a book page (FS-X2CMM), always false in v1. PuffedAt is
+// armed; revealed once a book page revealed it (FS-X2CMM §J R49). PuffedAt is
 // a gas vent's last puff, in seconds of the floor's simulation time, absent
 // before its first; the client reads a puff off it rising (R48).
 type TrapState struct {

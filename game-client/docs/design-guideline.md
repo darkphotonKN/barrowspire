@@ -980,7 +980,12 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   (`TRAP_FAINT`), a thing spotted and not yet set off. Its spring (spikes up, darts, a fire jet, a
   gas puff) plays at full strength, and a gas vent settles back to faint after its puff. Never on
   the minimap. *(Added by [FS-5FZ4J](../../docs/specs/5FZ4J-sealed-floors.md) §J R51,
-  2026-11-25.)*
+  2026-11-25.)* A trap a book page **revealed** (Witchlight, Tracker's Eye) waits clearer, at
+  alpha 0.8 (`TRAP_REVEALED`), under a multiply wash of light-and-finding ochre lifted toward
+  vellum (`palette.bookEffect.revealedTrap`), kept through its spring, so the page's finding reads
+  apart from a careful step. The hound's **bay** at what it bays at is rings rippling out on the
+  floor in its verdigris (`palette.bookEffect.houndBay`), once per bay, never a light. *(Added by
+  [FS-X2CMM](../../docs/specs/X2CMM-class-books.md) §J R49, 2026-11-25.)*
 - **Health bars.** Every monster's HP bar, over its head or in the target frame, wears one look,
   drawn in code by the shared `paintHealthBar` (`src/render/markers/healthBar.ts`), never by hand:
   no rim; a deep-red trough (`markerHpTrough`, oxblood taken toward pitch), so the health missing

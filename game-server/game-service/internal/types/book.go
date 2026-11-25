@@ -42,6 +42,11 @@ type BookEffectState struct {
 	Health    *int       `json:"health,omitempty"`
 	MaxHealth int        `json:"max_health,omitempty"`
 	Action    string     `json:"action,omitempty"`
+	// Bay is a hound's, while its bay shows: the point it bays toward, the
+	// nearest shut secret door, or seal piece or tripwire whose ambush has
+	// not woken, within 6 cells, absent otherwise (R49). It hints at a door or
+	// tripwire not yet detected: that is what baying is for.
+	Bay *Position `json:"bay,omitempty"`
 }
 
 // BookPageState is one offered page as its owner is told it: Cost its whole

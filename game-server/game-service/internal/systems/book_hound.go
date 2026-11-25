@@ -28,6 +28,8 @@ import (
 * (quarries) and steers it after the monsters (runHounds); combat lands its
 * bites (houndsBite); CanHit spares it every delver's hit (sparesHound). The
 * BookSystem ages it with the other book effects and takes it at no health.
+* Its bay at a shut secret door or a waiting ambush is the BookRevealSystem's
+* (book_reveal.go, R49).
 **/
 
 const (

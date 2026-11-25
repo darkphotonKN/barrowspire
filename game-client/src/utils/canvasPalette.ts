@@ -455,6 +455,13 @@ export const palette = {
     longNightEdge: BARROW_HEX.umbra,
     trackersEye: BOOK_PIGMENT.ochre,
     draughtHeal: BARROW_HEX.oxbloodText,
+    /**
+     * A trap a page revealed (FS-X2CMM §J R49): a multiply wash of light-and-finding ochre over its baked
+     * frame, lifted toward vellum so it warms the trap rather than recolours it.
+     */
+    revealedTrap: tint(BOOK_PIGMENT.ochre, 0.4),
+    /** The hound's bay at what it bays at (R49): the hound's own verdigris. */
+    houndBay: BOOK_PIGMENT.verdigris,
   },
 
   // -- Hostile wash (FS-77AB6 req 38): a multiply tint over a creature's

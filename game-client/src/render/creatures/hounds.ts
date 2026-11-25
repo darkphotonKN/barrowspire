@@ -4,6 +4,10 @@
  * built in code at `tools/bake/page/characters/hound.js`, ADR-0021) at its state position, facing the way it
  * moves, playing the clip its `action` names. It carries a small health bar over its head and a faint
  * verdigris ring on the floor under it, and never a monster's nameplate: it is the archer's, not the Spire's.
+ * While its `bay` shows (§J R49) it bays: a ripple of rings on the floor at the point it bays toward
+ * (`src/render/effects/houndBay.ts`), played once per bay and finished even when the state stops naming it.
+ * The bay has no sound: the client plays no world event's sound (its gameplay effects answer the player's
+ * own hand, FS-AND39).
  *
  * Nothing about it is client-held. The broadcast is the whole truth, diffed by id like the other book
  * effects: a hound new to it is drawn, one that leaves it (its time up, its health gone, replaced by a new
@@ -40,6 +44,7 @@ import {
   onBackingGrid,
   paintHealthBar,
 } from "@/render/markers";
+import { HOUND_BAY, paintHoundBay } from "@/render/effects/houndBay";
 import { groundEllipse } from "@/render/world/bookLook";
 import type { BookEffectState, HoundAction } from "@/types/gameState";
 import { palette } from "@/utils/canvasPalette";
@@ -127,8 +132,12 @@ export interface HoundStage {
   sprite(): HoundSprite;
   bar(): HoundMark;
   ring(): HoundMark;
+  /** Its bay's mark, laid on the floor as the ring is (R49). */
+  bay(): HoundMark;
   /** Backing px per logical unit, so the bar's edges fall on whole px; 1 if absent. */
   renderScale?(): number;
+  /** The viewer asked for less motion: the bay's rings stand still. */
+  reducedMotion?: boolean;
 }
 
 interface HoundView {
@@ -136,6 +145,10 @@ interface HoundView {
   sprite: HoundSprite;
   bar: HoundMark;
   ring: HoundMark;
+  /** Its bay's mark, and the point and set-clock time its latest bay began; undefined before its first. */
+  bay: HoundMark;
+  bayAt?: Point;
+  bayFrom?: number;
   anim: CharacterAnimator;
   chip: DamageChip;
   /** World position as drawn, eased toward the state's. */
@@ -199,6 +212,7 @@ export class HoundSet {
       const fill = healthOf(state);
       const was = healthOf(view.state);
       if (fill !== null) view.chip.set(fill, was !== null && fill < was && !fallen(state));
+      this.heardBay(view, state);
       view.state = state;
     }
   }
@@ -209,6 +223,7 @@ export class HoundSet {
     for (const [id, view] of this.views) {
       if (view.goneAt !== undefined) {
         view.bar.setVisible(false);
+        view.bay.setVisible(false);
         // its fall still drawing out: it lies as it is
         if (this.clock < view.goneAt) continue;
         const left = 1 - (this.clock - view.goneAt) / HOUND_FADE_MS;
@@ -224,6 +239,7 @@ export class HoundSet {
       this.play(view);
       view.chip.step(deltaMs);
       this.mark(view);
+      this.paintBay(view);
     }
   }
 
@@ -233,7 +249,10 @@ export class HoundSet {
       view.shown = !hidden(view.pos);
       view.sprite.setVisible(view.shown);
       view.ring.setVisible(view.shown);
-      if (!view.shown) view.bar.setVisible(false);
+      if (!view.shown) {
+        view.bar.setVisible(false);
+        view.bay.setVisible(false);
+      }
     }
   }
 
@@ -267,11 +286,14 @@ export class HoundSet {
     bar.setDepth(MARKER_DEPTH.bar);
     const ring = this.stage.ring();
     paintRing(ring);
+    const bay = this.stage.bay();
+    bay.setVisible(false);
     const view: HoundView = {
       state,
       sprite,
       bar,
       ring,
+      bay,
       anim,
       chip: new DamageChip(healthOf(state) ?? 1),
       pos: { x: state.x, y: state.y },
@@ -280,6 +302,7 @@ export class HoundSet {
       shown: true,
     };
     this.stand(view);
+    if (state.bay) this.heardBay(view, { ...state, bay: state.bay }, true);
     // one first seen fallen (a reconnect, one coming into interest) already lies where it fell
     if (fallen(state)) {
       view.fellAt = this.clock - HOUND_FALL_MS;
@@ -368,16 +391,45 @@ export class HoundSet {
     paintHealthBar(bar, { x: 0, y: 0, ...HOUND_BAR }, chip.fill, chip.chip, scale);
   }
 
+  /**
+   * A bay the state newly names (it named none, or another point) begins now; one it goes on naming is the
+   * same bay, never begun again. `fresh` begins one first seen with the hound.
+   */
+  private heardBay(view: HoundView, state: BookEffectState, fresh = false): void {
+    const bay = state.bay;
+    if (!bay) return;
+    const held = fresh ? undefined : view.state.bay;
+    if (held && held.x === bay.x && held.y === bay.y) return;
+    view.bayAt = { x: bay.x, y: bay.y };
+    view.bayFrom = this.clock;
+  }
+
+  /** Its latest bay's ripple at the point it bays toward, while it plays and the hound is shown; else nothing. */
+  private paintBay(view: HoundView): void {
+    const since = view.bayFrom === undefined ? Infinity : this.clock - view.bayFrom;
+    const playing = view.shown && view.bayAt !== undefined && since < HOUND_BAY.ms;
+    view.bay.setVisible(playing);
+    if (!playing || !view.bayAt) {
+      view.bay.clear();
+      return;
+    }
+    const at = worldToScreen(view.bayAt.x, view.bayAt.y);
+    view.bay.setPosition(at.x, at.y);
+    paintHoundBay(view.bay, since, this.stage.reducedMotion === true);
+  }
+
   private setAlpha(view: HoundView, alpha: number): void {
     view.sprite.setAlpha(alpha);
     view.ring.setAlpha(alpha);
     view.bar.setAlpha(alpha);
+    view.bay.setAlpha(alpha);
   }
 
   private destroy(view: HoundView): void {
     view.sprite.destroy();
     view.bar.destroy();
     view.ring.destroy();
+    view.bay.destroy();
   }
 }
 

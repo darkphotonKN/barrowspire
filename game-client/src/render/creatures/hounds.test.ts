@@ -8,6 +8,7 @@ import { worldDepth } from "@/render/iso/shapes";
 import { MARKER_DEPTH } from "@/render/markers";
 import type { BookEffectState } from "@/types/gameState";
 import { palette } from "@/utils/canvasPalette";
+import { HOUND_BAY } from "@/render/effects/houndBay";
 import {
   HOUND_BAR,
   HOUND_FADE_MS,
@@ -163,6 +164,7 @@ function fakeStage() {
   const sprites: ReturnType<typeof fakeSprite>[] = [];
   const bars: ReturnType<typeof fakeGraphics>[] = [];
   const rings: ReturnType<typeof fakeGraphics>[] = [];
+  const bays: ReturnType<typeof fakeGraphics>[] = [];
   const stage: HoundStage = {
     sprite: () => {
       const s = fakeSprite();
@@ -179,8 +181,13 @@ function fakeStage() {
       rings.push(g);
       return g;
     },
+    bay: () => {
+      const g = fakeGraphics();
+      bays.push(g);
+      return g;
+    },
   };
-  return { stage, sprites, bars, rings };
+  return { stage, sprites, bars, rings, bays };
 }
 
 const hound = (fields: Partial<BookEffectState> = {}): BookEffectState => ({
@@ -431,5 +438,65 @@ describe("HoundSet: the archer's hound drawn from the book effects (FS-X2CMM §I
     set.clear();
     expect([sprites[0].destroyed, bars[0].destroyed, rings[0].destroyed]).toEqual([true, true, true]);
     expect(set.size).toBe(0);
+  });
+});
+
+describe("HoundSet: the hound's bay, a mark at what it bays at (FS-X2CMM §J R49)", () => {
+  const drawn = (g: ReturnType<typeof fakeGraphics>) => g.calls.some(([c]) => c === "strokeEllipse" || c === "fillEllipse");
+
+  it("should draw no bay while the state gives none", () => {
+    const { set, bays } = onStage();
+    set.sync([hound()]);
+    set.update(16);
+    expect(bays).toHaveLength(1);
+    expect(bays[0].visible).toBe(false);
+    expect(drawn(bays[0])).toBe(false);
+  });
+
+  it("should ripple verdigris rings out on the floor at the point it bays toward, not at the hound", () => {
+    const { set, bays } = onStage();
+    set.sync([hound({ bay: { x: 640, y: 300 } })]);
+    set.update(200);
+    const bay = bays[0];
+    const at = worldToScreen(640, 300);
+    expect([bay.x, bay.y]).toEqual([at.x, at.y]);
+    expect(bay.visible).toBe(true);
+    expect(drawn(bay)).toBe(true);
+    for (const [, , color] of bay.calls.filter(([c]) => c === "lineStyle")) expect(color).toBe(palette.bookEffect.houndBay);
+  });
+
+  it("should play one bay once, its ripple gone after its time though the state still names it", () => {
+    const { set, bays } = onStage();
+    set.sync([hound({ bay: { x: 640, y: 300 } })]);
+    set.update(16);
+    set.sync([hound({ bay: { x: 640, y: 300 } })]);
+    set.update(HOUND_BAY.ms);
+    expect(bays[0].visible).toBe(false);
+  });
+
+  it("should finish a bay's ripple when the state stops naming it, and play a new bay afresh", () => {
+    const { set, bays } = onStage();
+    set.sync([hound({ bay: { x: 640, y: 300 } })]);
+    set.update(16);
+    set.sync([hound()]);
+    set.update(200);
+    expect(bays[0].visible).toBe(true);
+    set.update(HOUND_BAY.ms);
+    expect(bays[0].visible).toBe(false);
+    set.sync([hound({ bay: { x: 400, y: 500 } })]);
+    set.update(16);
+    const at = worldToScreen(400, 500);
+    expect([bays[0].visible, bays[0].x, bays[0].y]).toEqual([true, at.x, at.y]);
+  });
+
+  it("should hide its bay with the hound where the hide rule says, and destroy it with the hound", () => {
+    const { set, bays } = onStage();
+    set.sync([hound({ bay: { x: 640, y: 300 } })]);
+    set.update(16);
+    set.hideWhere(() => true);
+    set.update(16);
+    expect(bays[0].visible).toBe(false);
+    set.clear();
+    expect(bays[0].destroyed).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 import type * as Phaser from "phaser";
 import { PLACEHOLDER_TEXTURE } from "@/render/art/library";
+import { prefersReducedMotion } from "@/render/effects/mist";
 import { viewport } from "@/render/viewport/viewport";
 import type { HoundStage } from "./hounds";
 import type { MonsterStage } from "./monsters";
@@ -20,13 +21,15 @@ export function phaserMonsterStage(scene: Phaser.Scene): MonsterStage {
 
 /**
  * A Phaser scene as the hound set's stage (FS-X2CMM §I R47): the hound's sprite, its overhead bar, and its
- * ring laid on the floor at `groundDepth`, under everything that stands.
+ * ring and its bay's mark (§J R49) laid on the floor at `groundDepth`, under everything that stands.
  */
 export function phaserHoundStage(scene: Phaser.Scene, groundDepth: number): HoundStage {
   return {
     sprite: () => scene.add.sprite(0, 0, PLACEHOLDER_TEXTURE).setName("hound:body"),
     bar: () => scene.add.graphics().setName("hound:bar"),
     ring: () => scene.add.graphics().setName("hound:ring").setDepth(groundDepth),
+    bay: () => scene.add.graphics().setName("hound:bay").setDepth(groundDepth),
     renderScale: () => viewport.renderScale,
+    reducedMotion: prefersReducedMotion(),
   };
 }

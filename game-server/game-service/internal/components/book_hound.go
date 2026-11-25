@@ -39,6 +39,11 @@ type HoundComponent struct {
 	Action HoundAction
 	// Route is its path over a dungeon floor's cells, as a monster's is.
 	Route Route
+	// BayIn is the seconds before it may bay again; BayShow the seconds left
+	// that its last bay shows, toward BayAt, the thing it bays at
+	// (FS-X2CMM §J R49).
+	BayIn, BayShow float64
+	BayAt          Spot
 }
 
 func (h *HoundComponent) Type() ecs.ComponentType {

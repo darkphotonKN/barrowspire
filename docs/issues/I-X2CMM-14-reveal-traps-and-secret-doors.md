@@ -1,6 +1,6 @@
 ---
 id: I-X2CMM-14
-status: open
+status: done
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-2", "I-X2CMM-6", "I-X2CMM-8", "FS-5FZ4J (traps, secret doors and the per-recipient detection rule)", "FS-4EC7Z (ambush rooms)"]
 labels: [ready-for-agent]

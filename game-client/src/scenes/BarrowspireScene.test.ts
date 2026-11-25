@@ -14135,8 +14135,10 @@ describe("BarrowspireScene the class book's world effects and states (FS-X2CMM ย
     const hound = { ...effect("h1", "hound", 400), owner_id: "me", health: 40, max_health: 40, action: "run" as const };
     run.handleGameStateUpdate({ ...partyState(), book_effects: [hound] } as GameState);
     expect(live("book:h1:")).toEqual([]);
-    expect(live("hound:").map((m) => (m as { name?: string }).name).sort()).toEqual(["hound:bar", "hound:body", "hound:ring"]);
+    expect(live("hound:").map((m) => (m as { name?: string }).name).sort()).toEqual(["hound:bar", "hound:bay", "hound:body", "hound:ring"]);
     expect(live("hound:ring")[0].depth).toBe(TRAIL_BED_DEPTH);
+    // its bay's mark lies on the floor as its ring does (FS-X2CMM ยงJ R49)
+    expect(live("hound:bay")[0].depth).toBe(TRAIL_BED_DEPTH);
 
     run.leaveFloor();
     expect(named("hound:").every((m) => m.destroyed)).toBe(true);

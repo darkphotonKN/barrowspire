@@ -921,6 +921,8 @@ export class BarrowspireScene extends Phaser.Scene {
       sprite.setAlpha(alpha);
     },
     spring: (sprite, look, settle) => this.springTrap(sprite, look, settle),
+    // a trap a page revealed is washed in the finding's ochre (FS-X2CMM §J R49)
+    reveal: (sprite, revealed) => void (revealed ? sprite.setTint(palette.bookEffect.revealedTrap) : sprite.clearTint()),
   });
   /** The player's own statuses against the previous broadcast, a first one the baseline (FS-5FZ4J §J R53). */
   private statusWatch = new StatusWatch();

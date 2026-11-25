@@ -125,7 +125,7 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			continue
 		}
 		if tc, isTrap := entity.GetComponent(ecs.ComponentTypeTrap); isTrap {
-			backendState.Traps = append(backendState.Traps, trapState(entity.ID, tc.(*components.TrapComponent)))
+			backendState.Traps = append(backendState.Traps, trapState(entity, tc.(*components.TrapComponent)))
 			continue
 		}
 
@@ -729,14 +729,18 @@ func lorePieceState(id uuid.UUID, lore *components.LorePieceComponent, at *compo
 	}
 }
 
-// trapState is one detected trap on the wire: never revealed in v1, a gas
-// vent's last puff once it has puffed. FS-5FZ4J §I R46, R48.
-func trapState(id uuid.UUID, trap *components.TrapComponent) *types.TrapState {
+// trapState is one detected trap on the wire: revealed as its Detectable says
+// (a book page's reveal, FS-X2CMM §J R49), a gas vent's last puff once it has
+// puffed. FS-5FZ4J §I R46, R48.
+func trapState(entity *ecs.Entity, trap *components.TrapComponent) *types.TrapState {
 	state := &types.TrapState{
-		EntityID: id,
+		EntityID: entity.ID,
 		Kind:     string(trap.Kind),
 		Cell:     types.CellState{X: trap.Cell.X, Y: trap.Cell.Y},
 		Armed:    trap.Armed,
+	}
+	if dc, ok := entity.GetComponent(ecs.ComponentTypeDetectable); ok {
+		state.Revealed = dc.(*components.DetectableComponent).Revealed
 	}
 	if trap.Puffed {
 		puffedAt := trap.PuffedAt

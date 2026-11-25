@@ -101,6 +101,13 @@ export function glowsWhileActive(kind: SealPieceKind): boolean {
  */
 export const TRAP_FAINT = 0.45;
 
+/**
+ * The alpha a trap a book page revealed (FS-X2CMM §J R49: Witchlight, Tracker's Eye) is drawn at while it
+ * waits: clearer than one only come upon, and washed in `palette.bookEffect.revealedTrap` by the scene, so
+ * the page's finding reads apart from a careful step. Its spring still shows at full strength.
+ */
+export const TRAP_REVEALED = 0.8;
+
 /** A trap's frame: `armed` waiting, `sprung` set off, and a gas vent's `puff`. */
 export type TrapFrame = "armed" | "sprung" | "puff";
 

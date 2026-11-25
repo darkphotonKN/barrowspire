@@ -26,7 +26,9 @@ import (
 const witchlightSeconds = 20.0
 
 // resolveWitchlight sets down a witchlight at the cast's point. It does not
-// move on the server (its drift is drawn); any number may stand (R21).
+// move on the server (its drift is drawn); any number may stand (R21). While
+// it burns it reveals every secret door and trap within 3 cells (R49,
+// BookRevealSystem).
 func resolveWitchlight(world *ecs.EntityManager, cast BookCast) {
 	SetDownBookEffect(world, components.BookEffectWitchlight, cast.TargetX, cast.TargetY, witchlightSeconds, cast.Caster)
 }
