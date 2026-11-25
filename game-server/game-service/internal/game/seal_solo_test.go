@@ -22,8 +22,7 @@ func TestSeal_EveryKindSolvableByOne(t *testing.T) {
 		solve func(t *testing.T) *Session
 	}{
 		{components.SealLeverOrder, func(t *testing.T) *Session {
-			forceSeal(t, components.SealLeverOrder)
-			s, ids := dungeonRun(t, 7, 1, 0)
+			s, ids := dungeonRun(t, 7, 1, 0, forcedSeal(components.SealLeverOrder))
 			clearMonsters(s)
 			for _, lever := range leversInTurn(t, s) {
 				pull(t, s, ids[0], lever)

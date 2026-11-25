@@ -17,7 +17,15 @@ import (
 	there over that time, as long again. A touch shorter than that moves nothing,
 	two pushes along different ways on one tick cancel, and a push into a cell a
 	block may not enter is refused: the block stays and the delver is blocked.
-	Blocks never move on their own; monsters never push them.
+	Monsters never push them.
+
+	A block keeps to its plates room: a push that would take it out of the
+	room's cells is refused. A block left alone drifts home: off its home cell,
+	on no plate, unmoved by a push for BlockDrift.After seconds and with no
+	delver within BlockDrift.ClearCells cells, it slides back toward its home
+	cell, a cell at a time at the push speed, round whatever stands in the
+	room, while that cell is free. So no block is ever lost to a wall or a
+	corner and the plates stay solvable by one (§C R19 as amended, ADR-0092).
 
 	A block is no wall to the static wall index, which is built once per set of
 	walls and doors and never sees one move: the walk tests the floor's few
@@ -47,15 +55,26 @@ type CellMask interface {
 	SetWalkable(x, y int, walkable bool)
 }
 
-// StoneBlockSystem builds the pushes on a floor's stone blocks and slides
-// them, after the walk each tick, over the floor's grid.
-type StoneBlockSystem struct {
-	grid CellMask
+// BlockDrift is when a block left alone drifts home: After seconds unmoved
+// by a push, with no delver within ClearCells cells of it. The zero drift
+// never drifts. FS-5FZ4J §C R19 as amended.
+type BlockDrift struct {
+	After      float64
+	ClearCells float64
 }
 
-// NewStoneBlockSystem is the block system over a dungeon floor's grid.
-func NewStoneBlockSystem(grid CellMask) *StoneBlockSystem {
-	return &StoneBlockSystem{grid: grid}
+// StoneBlockSystem builds the pushes on a floor's stone blocks, drifts the
+// ones left alone home and slides them, after the walk each tick, over the
+// floor's grid.
+type StoneBlockSystem struct {
+	grid  CellMask
+	drift BlockDrift
+}
+
+// NewStoneBlockSystem is the block system over a dungeon floor's grid,
+// drifting blocks home by drift.
+func NewStoneBlockSystem(grid CellMask, drift BlockDrift) *StoneBlockSystem {
+	return &StoneBlockSystem{grid: grid, drift: drift}
 }
 
 // stoneBlock is one block as the system reads it.
@@ -79,8 +98,9 @@ type push struct {
 	by     uuid.UUID
 }
 
-// Update builds, cancels, refuses or lands this tick's pushes and slides
-// every sliding block on. NOTE: this runs every game tick, after the walk.
+// Update builds, cancels, refuses or lands this tick's pushes, drifts the
+// blocks left alone and slides every sliding block on. NOTE: this runs every
+// game tick, after the walk.
 func (s *StoneBlockSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 	blocks := stoneBlocksOf(entities)
 	if len(blocks) == 0 {
@@ -98,23 +118,24 @@ func (s *StoneBlockSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 		}
 	}
 
+	plates := plateCellsOf(entities)
 	for i, b := range blocks {
-		if b.block.Sliding {
+		switch {
+		case b.block.Sliding:
 			s.slide(b, deltaTime)
-			continue
+		case len(pushes[i]) > 0:
+			s.build(b, pushes[i], deltaTime, entities, blocks)
+		default:
+			b.block.Pushed = 0
+			s.driftHome(b, deltaTime, entities, blocks, plates)
 		}
-		s.build(b, pushes[i], deltaTime, entities, blocks)
 	}
 }
 
-// build adds this tick's push to the block's, or starts it over: with no
-// push, two along different ways, a push along a new way or one refused. A
-// push built whole lands: the block's cell moves on and its slide begins.
+// build adds this tick's pushes to the block's, or starts it over: with two
+// along different ways, a push along a new way or one refused. A push built
+// whole lands: the block's cell moves on and its slide begins.
 func (s *StoneBlockSystem) build(b stoneBlock, pushes []push, deltaTime float64, entities []*ecs.Entity, blocks []stoneBlock) {
-	if len(pushes) == 0 {
-		b.block.Pushed = 0
-		return
-	}
 	lead := pushes[0]
 	for _, p := range pushes[1:] {
 		if p.dx != lead.dx || p.dy != lead.dy {
@@ -141,12 +162,121 @@ func (s *StoneBlockSystem) build(b stoneBlock, pushes []push, deltaTime float64,
 		return
 	}
 	b.block.Pushed = 0
-	b.block.PushedBy = lead.by
+	b.block.Still = 0
+	s.land(b, target, lead.by, 1/rate)
+}
+
+// land moves the block's cell on to target and starts its slide there over
+// slideFor seconds: target is shut on the grid from this tick, the cell it
+// leaves the tick the slide ends. by is the delver whose push moved it,
+// uuid.Nil for a drift home.
+func (s *StoneBlockSystem) land(b stoneBlock, target components.Cell, by uuid.UUID, slideFor float64) {
+	b.block.PushedBy = by
 	b.piece.Cell = target
 	s.grid.SetWalkable(target.X, target.Y, false)
 	b.block.Sliding = true
 	b.block.FromX, b.block.FromY = b.at.X, b.at.Y
-	b.block.Slid, b.block.SlideFor = 0, 1/rate
+	b.block.Slid, b.block.SlideFor = 0, slideFor
+}
+
+/*
+driftHome counts a block left alone this tick and, once it has been left
+alone long enough, steps it one cell toward its home cell (FS-5FZ4J §C R19 as
+amended): a block with a room to keep to, off its home, on no plate, with no
+delver near and its home cell free, slides one cell along the shortest way
+home through its room that crosses no other block or plate, at the push speed
+of a delver at the walk's default speed. A step is a slide as a push's is,
+the grid following it; it does not count as a push, so the next step follows
+on the tick the slide ends.
+*/
+func (s *StoneBlockSystem) driftHome(b stoneBlock, deltaTime float64, entities []*ecs.Entity, blocks []stoneBlock, plates map[components.Cell]bool) {
+	b.block.Still += deltaTime
+	switch {
+	case s.drift.After <= 0 || b.block.Room.W <= 0 || b.piece.Cell == b.block.Home:
+		return
+	case b.block.Still < s.drift.After, plates[b.piece.Cell]:
+		return
+	case s.delverNear(b, entities), s.refused(b.block.Home, b, entities, blocks):
+		return
+	}
+	next, ok := s.stepHome(b, blocks, plates)
+	if !ok || s.refused(next, b, entities, blocks) {
+		return
+	}
+	s.land(b, next, uuid.Nil, b.block.Size/(constants.DefaultSpeed*BlockPushSpeedShare))
+}
+
+// delverNear is whether a delver in play stands within the drift's clear
+// cells of the block's centre.
+func (s *StoneBlockSystem) delverNear(b stoneBlock, entities []*ecs.Entity) bool {
+	reach := s.drift.ClearCells * b.block.Size
+	for _, entity := range entities {
+		if BodyKindOf(entity) != BodyDelver {
+			continue
+		}
+		if tc, ok := entity.GetComponent(ecs.ComponentTypeTransform); ok {
+			at := tc.(*components.TransformComponent)
+			if math.Hypot(at.X-b.at.X, at.Y-b.at.Y) <= reach {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// stepHome is the first cell of the shortest 4-neighbour way from the
+// block's cell to its home cell inside its room, over ground the grid holds
+// open and no other block's cell or plate's: breadth first, a room of a few
+// dozen cells. false when no such way exists this tick.
+func (s *StoneBlockSystem) stepHome(b stoneBlock, blocks []stoneBlock, plates map[components.Cell]bool) (components.Cell, bool) {
+	taken := map[components.Cell]bool{}
+	for _, other := range blocks {
+		if other.entity.ID != b.entity.ID {
+			taken[other.piece.Cell] = true
+		}
+	}
+	from, home := b.piece.Cell, b.block.Home
+	firstStep := map[components.Cell]components.Cell{from: from}
+	queue := []components.Cell{from}
+	for len(queue) > 0 {
+		at := queue[0]
+		queue = queue[1:]
+		if at == home {
+			return firstStep[at], true
+		}
+		for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+			next := components.Cell{X: at.X + d[0], Y: at.Y + d[1]}
+			if _, seen := firstStep[next]; seen || !inRect(b.block.Room, next) || taken[next] || plates[next] ||
+				!s.grid.Walkable(next.X, next.Y) {
+				continue
+			}
+			first := firstStep[at]
+			if at == from {
+				first = next
+			}
+			firstStep[next] = first
+			queue = append(queue, next)
+		}
+	}
+	return components.Cell{}, false
+}
+
+// plateCellsOf is the cells the floor's plates cover.
+func plateCellsOf(entities []*ecs.Entity) map[components.Cell]bool {
+	plates := map[components.Cell]bool{}
+	for _, entity := range entities {
+		if pc, ok := entity.GetComponent(ecs.ComponentTypeSealPiece); ok {
+			if piece := pc.(*components.SealPieceComponent); piece.Kind == components.SealPiecePlate {
+				plates[piece.Cell] = true
+			}
+		}
+	}
+	return plates
+}
+
+// inRect is whether cell lies in rect.
+func inRect(rect components.CellRect, cell components.Cell) bool {
+	return cell.X >= rect.X && cell.Y >= rect.Y && cell.X < rect.X+rect.W && cell.Y < rect.Y+rect.H
 }
 
 // slide moves a sliding block on toward its cell's centre; the tick it
@@ -169,12 +299,15 @@ func (s *StoneBlockSystem) slide(b stoneBlock, deltaTime float64) {
 
 /*
 refused is whether a block may not be pushed onto target (FS-5FZ4J §C R19):
-off the floor, rock or shut on the grid (a shell wall, a shut gate or secret
-door, a pit, another block), any barrier's cell even open (a block never enters
-the gate's cells or a pit, Edge States), another block's cell, a shut door's,
-or a cell a body overlaps.
+out of its plates room's cells (as amended), off the floor, rock or shut on the
+grid (a shell wall, a shut gate or secret door, a pit, another block), any
+barrier's cell even open (a block never enters the gate's cells or a pit, Edge
+States), another block's cell, a shut door's, or a cell a body overlaps.
 */
 func (s *StoneBlockSystem) refused(target components.Cell, self stoneBlock, entities []*ecs.Entity, blocks []stoneBlock) bool {
+	if self.block.Room.W > 0 && !inRect(self.block.Room, target) {
+		return true
+	}
 	if !s.grid.Walkable(target.X, target.Y) {
 		return true
 	}
@@ -186,7 +319,6 @@ func (s *StoneBlockSystem) refused(target components.Cell, self stoneBlock, enti
 	size := self.block.Size
 	x0, y0 := float64(target.X)*size, float64(target.Y)*size
 	x1, y1 := x0+size, y0+size
-	r := constants.PlayerRadius
 	for _, entity := range entities {
 		if bc, ok := entity.GetComponent(ecs.ComponentTypeBarrier); ok {
 			for _, c := range bc.(*components.BarrierComponent).Cells {
@@ -201,8 +333,19 @@ func (s *StoneBlockSystem) refused(target components.Cell, self stoneBlock, enti
 			if overlaps(dx0, dy0, dx1, dy1, x0, y0, x1, y1) {
 				return true
 			}
-			continue
 		}
+	}
+	return BodyOverlapsCell(target, size, entities)
+}
+
+// BodyOverlapsCell is whether a body the ground counts (a delver in play, a
+// live monster) overlaps cell, of side size px: a block may not be pushed,
+// drift or be laid there (FS-5FZ4J §C R19).
+func BodyOverlapsCell(cell components.Cell, size float64, entities []*ecs.Entity) bool {
+	x0, y0 := float64(cell.X)*size, float64(cell.Y)*size
+	x1, y1 := x0+size, y0+size
+	r := constants.PlayerRadius
+	for _, entity := range entities {
 		if BodyKindOf(entity) == BodyNone {
 			continue
 		}

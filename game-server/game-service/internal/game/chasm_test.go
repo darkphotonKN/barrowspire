@@ -17,9 +17,8 @@ import (
 // the floor's seal.
 func chasmRun(t *testing.T, seed uint64, delvers int) (*Session, []uuid.UUID, *ecs.Entity) {
 	t.Helper()
-	forceSeal(t, components.SealChasm)
 	for ; seed < 200; seed++ {
-		s, ids := dungeonRun(t, seed, delvers, 0)
+		s, ids := dungeonRun(t, seed, delvers, 0, forcedSeal(components.SealChasm))
 		if s.dungeon == nil || s.dungeon.chasm == nil {
 			continue
 		}

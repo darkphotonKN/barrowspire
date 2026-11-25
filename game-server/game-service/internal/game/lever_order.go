@@ -61,7 +61,7 @@ func (leverOrder) plan(s *Session, d *dungeonFloor, depth int) ([]plannedPiece, 
 			pieces = append(pieces, plannedPiece{kind: components.SealPieceLever, at: at, glyph: glyphs[i], turn: turns[i], wakes: true})
 			continue
 		}
-		pieces = append(pieces, plannedPiece{kind: components.SealPieceMural, at: at})
+		pieces = append(pieces, plannedPiece{lore: components.LoreMural, at: at})
 	}
 	if len(pieces) < levers+1 {
 		return nil, fmt.Errorf("%d levers and a mural need %d rooms with a spot, found %d", levers, levers+1, len(pieces))
@@ -69,13 +69,10 @@ func (leverOrder) plan(s *Session, d *dungeonFloor, depth int) ([]plannedPiece, 
 	return pieces, nil
 }
 
-// work answers a pull on a lever or a look at the mural.
+// work answers a pull on a lever. The mural is a lore piece, read by
+// readLore.
 func (leverOrder) work(s *Session, w pieceWork) {
 	levers := s.leversOf(w.seal.ID)
-	if w.pc.Kind == components.SealPieceMural {
-		readMural(s, w.playerID, levers)
-		return
-	}
 	if w.pc.Active {
 		s.sendRefusalToPlayer(w.playerID, string(constants.ActionInteract), "the lever is already down",
 			RefusalLeverDown, nil)

@@ -176,9 +176,9 @@ func newClimb(t *testing.T) *climb {
 }
 
 // newSealedClimb is a climb whose floor's seals still hold.
-func newSealedClimb(t *testing.T) *climb {
+func newSealedClimb(t *testing.T, opts ...sessionOption) *climb {
 	t.Helper()
-	s := newRun(t, &countingItemsClient{})
+	s := newRun(t, &countingItemsClient{}, opts...)
 	sender := &recordingSender{}
 	s.sender = sender
 	c := &climb{s: s, sender: sender}

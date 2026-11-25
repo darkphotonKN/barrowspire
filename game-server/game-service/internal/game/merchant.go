@@ -18,13 +18,13 @@ import (
 **/
 
 // merchantFor is whether the floor at depth holds the merchant: drawn at
-// MerchantFloorChance on floors 2+ below the top; floor 1 and the top floor
-// draw nothing. FS-9JV5K §A R1.
-func merchantFor(rng populationRand, depth int, top bool) bool {
+// chance (MerchantFloorChance by default) on floors 2+ below the top; floor 1
+// and the top floor draw nothing. FS-9JV5K §A R1.
+func merchantFor(rng populationRand, depth int, top bool, chance float64) bool {
 	if depth <= firstFloor || top {
 		return false
 	}
-	return rng.Float64() < MerchantFloorChance
+	return rng.Float64() < chance
 }
 
 // merchantRoomOpen is the merchant's own rule on top of the respite room's:
@@ -120,7 +120,7 @@ func (s *Session) offerTome(depth int) bool {
 	if !ok || depth >= floor.Count-1 {
 		return false
 	}
-	if s.spawnRand.Float64() >= MerchantTomeChance {
+	if s.spawnRand.Float64() >= s.tuning.merchantTomeChance {
 		return false
 	}
 	altarFloor := depth + 1 + s.spawnRand.IntN(floor.Count-1-depth)

@@ -498,8 +498,9 @@ type SealState struct {
 	Stage  int    `json:"stage"`
 	Stages int    `json:"stages"`
 	Broken bool   `json:"broken"`
-	// KeyCarried is true while the party carries the floor's stair key
-	// (§E R32), absent otherwise
+	// KeyCarried is true while the party carries the floor's stair key and
+	// its seal is unbroken (§E R32; amended 2026-11-25: false once the key
+	// has turned the gate), absent otherwise
 	KeyCarried bool `json:"key_carried,omitempty"`
 	// WindowEndsIn is the seconds left of a Braziers window while one runs
 	// (§E R34), absent otherwise

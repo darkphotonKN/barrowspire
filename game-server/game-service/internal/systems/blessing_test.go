@@ -33,19 +33,20 @@ func TestResourceSystem_BlessedRegensFivePercentMore(t *testing.T) {
 	assert.Equal(t, 20, resourceOf(plain).Current)
 }
 
-// FS-5FZ4J §G R44: the Blessing's 5% is summed beside the passive tree's
-// bonus, never written into it: 10% from the tree and the Blessing's 5% read
-// 23 of 20 a second, and the passive bonus still says 10.
-func TestResourceSystem_BlessingSumsBesideThePassiveBonus(t *testing.T) {
+// FS-5FZ4J §G R44: the Blessing multiplies the rate the passive tree's bonus
+// leaves (rates x 1.05), never adds five points to it, and is never written
+// into it: 20 a second raised 100% by the tree reads 42 a second blessed (not
+// 41), and the passive bonus still says 100.
+func TestResourceSystem_BlessingMultipliesOnTopOfThePassiveBonus(t *testing.T) {
 	em := ecs.NewEntityManager()
-	d := pooled(em, components.ResourceStamina, 0, 100, 20)
-	d.AddComponent(&components.PassiveBonusComponent{RegenPercent: 10})
+	d := pooled(em, components.ResourceStamina, 0, 1000, 20)
+	d.AddComponent(&components.PassiveBonusComponent{RegenPercent: 100})
 	Bless(d)
 
 	blessedRegenTicks(em, 30)
 
-	assert.Equal(t, 23, resourceOf(d).Current)
-	assert.InDelta(t, 10, passiveBonus(d).RegenPercent, 1e-9, "the passive bonus is untouched")
+	assert.Equal(t, 42, resourceOf(d).Current)
+	assert.InDelta(t, 100, passiveBonus(d).RegenPercent, 1e-9, "the passive bonus is untouched")
 }
 
 // FS-5FZ4J §G R44: blessing a blessed delver changes nothing, it never stacks.

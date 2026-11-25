@@ -101,6 +101,9 @@ const (
 	// and the barriers the seals hold shut (FS-5FZ4J §B, §C, §A R4)
 	ComponentTypeSeal      ComponentType = "Seal"
 	ComponentTypeSealPiece ComponentType = "SealPiece"
+	// a lore piece, a mural or a shrine: read, part of no seal (FS-5FZ4J §C
+	// R15, §F R39)
+	ComponentTypeLorePiece ComponentType = "LorePiece"
 	ComponentTypeAmbush    ComponentType = "Ambush"
 	ComponentTypeBarrier   ComponentType = "Barrier"
 	// a stone block's push and slide, beside its seal piece (FS-5FZ4J §C R19)

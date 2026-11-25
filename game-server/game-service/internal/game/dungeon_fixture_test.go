@@ -75,9 +75,9 @@ func tightened(layout levelgen.DungeonLayout, room int, keep *levelgen.Cell) lev
 
 // runFrom builds a run's first floor for one seated delver, its layouts from
 // gen and its spawns from rng.
-func runFrom(t *testing.T, gen *scriptedGenerator, rng populationRand) *Session {
+func runFrom(t *testing.T, gen *scriptedGenerator, rng populationRand, opts ...sessionOption) *Session {
 	t.Helper()
-	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds())
+	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds(), opts...)
 	s.spawnRand = rng
 	s.generateDungeon = gen.generate
 	s.InitialSystems()
@@ -140,9 +140,7 @@ func TestDungeonFloor1_FixtureRoomWithNoSpot_FreshSeedBuilt(t *testing.T) {
 	fresh := escapeFloorLayout(t, 12)
 	gen := &scriptedGenerator{layouts: []levelgen.DungeonLayout{tight, fresh}}
 	// a seal that needs no hidden room: the scripted layouts have none
-	forceSeal(t, components.SealLeverOrder)
-
-	s := runFrom(t, gen, seededSpawns(5))
+	s := runFrom(t, gen, seededSpawns(5), forcedSeal(components.SealLeverOrder))
 
 	require.NotNil(t, s.dungeon, "the fresh seed's layout is built")
 	assert.Equal(t, 2, gen.calls, "the tight layout, then a fresh seed")

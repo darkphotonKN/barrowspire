@@ -4,8 +4,10 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,7 +18,6 @@ import (
 // seals by stage.
 func chainedRun(t *testing.T, first, second components.SealKind) (*Session, uuid.UUID, []*ecs.Entity) {
 	t.Helper()
-	drawNothingForced(t)
 	for seed := uint64(1); seed < 400; seed++ {
 		s, ids := dungeonRun(t, seed, 1, 0)
 		floor := currentFloor(t, s)
@@ -120,4 +121,47 @@ func TestChainedSeals_HiddenKeySecond_KeyLaidConcealed(t *testing.T) {
 	for _, p := range runState(t, s, player).SealPieces {
 		assert.NotEqual(t, "stair_key", p.Kind, "not sent while concealed")
 	}
+}
+
+// FS-5FZ4J §B R9, §C R19: a chained Weighted Plates' block laid on the
+// first's break never lands on a body: a delver standing on a block's planned
+// cell has the block laid on a free cell of the room beside it instead, its
+// home still the planned cell, and once left alone it drifts home.
+func TestChainedSeals_PlatesSecond_BlockLaidOffABody_ThenDriftsHome(t *testing.T) {
+	s, player, seals := chainedRun(t, components.SealLeverOrder, components.SealWeightedPlates)
+	var planned []components.Cell
+	for _, p := range s.dungeon.seals[1].pieces {
+		if p.kind == components.SealPieceBlock {
+			planned = append(planned, s.dungeon.cellOf(p.at))
+		}
+	}
+	require.NotEmpty(t, planned)
+	delver := delverEntity(t, s, player)
+	standOn(t, s, delver, planned[0])
+
+	s.breakSeal(seals[0])
+
+	blocks := piecesOfKind(s, components.SealPieceBlock)
+	require.Len(t, blocks, len(planned), "every block is laid")
+	var nudged *ecs.Entity
+	for _, b := range blocks {
+		if stoneOf(b).Home == planned[0] {
+			nudged = b
+		}
+		assert.False(t, systems.BodyOverlapsCell(pieceOf(b).Cell, s.dungeon.layout.CellSize, s.EntityManager.GetAllEntities()),
+			"no block laid on a body")
+	}
+	require.NotNil(t, nudged, "the block keeps its planned cell as its home")
+	assert.NotEqual(t, planned[0], pieceOf(nudged).Cell, "laid beside the delver")
+	c := pieceOf(nudged).Cell
+	assert.False(t, s.navGrid.Walkable(c.X, c.Y), "its cell is shut to paths")
+	assert.Equal(t, roomOfPieces(t, s, []*ecs.Entity{nudged}), roomOfPieces(t, s, blocks), "in the plates room")
+
+	start := s.dungeon.roomCentre(s.dungeon.layout.Roles.Start)
+	transformOf(t, delver).X, transformOf(t, delver).Y = start.x, start.y
+	for range int(BlockDriftAfter+10) * constants.GameFrameRate {
+		keepStanding(s.EntityManager)
+		tick(s)
+	}
+	assert.Equal(t, planned[0], pieceOf(nudged).Cell, "home once left alone")
 }

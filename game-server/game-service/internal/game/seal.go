@@ -67,9 +67,12 @@ func (s *Session) watchSeals(dt float64, entities []*ecs.Entity) {
 	}
 }
 
-// plannedPiece is one piece of a seal, where it will stand, not laid yet.
+// plannedPiece is one piece of a seal, where it will stand, not laid yet; or,
+// with lore set, a lore piece laid beside the seal's (a mural) that is no
+// piece of it.
 type plannedPiece struct {
 	kind  components.SealPieceKind
+	lore  components.LoreKind
 	at    point
 	glyph string
 	turn  int
@@ -111,27 +114,28 @@ const (
 * chained, the first from sealChainFirst and the second from all five but the
 * first's kind. Each is drawn uniformly from rng, the session's spawn source.
 * With alive, the delvers alive at the floor's build, at one, a two-body kind
-* never rolls (R10). ForcedSealKind, when set, is every floor's one seal.
+* never rolls (R10). The tuning's forced kind, when set, is every floor's one
+* seal.
 **/
-func sealKindsFor(rng populationRand, depth, alive int) []components.SealKind {
-	if ForcedSealKind != "" {
-		return []components.SealKind{ForcedSealKind}
+func (t floorTuning) sealKindsFor(rng populationRand, depth, alive int) []components.SealKind {
+	if t.forcedSealKind != "" {
+		return []components.SealKind{t.forcedSealKind}
 	}
 	switch {
 	case depth <= SealLowFloorsMax:
-		return []components.SealKind{drawSealKind(rng, sealBandLow, alive)}
+		return []components.SealKind{t.drawSealKind(rng, sealBandLow, alive)}
 	case depth <= SealMidFloorsMax:
-		return []components.SealKind{drawSealKind(rng, sealBandAll, alive)}
+		return []components.SealKind{t.drawSealKind(rng, sealBandAll, alive)}
 	}
-	first := drawSealKind(rng, sealChainFirst, alive)
-	return []components.SealKind{first, drawSealKind(rng, sealBandAll, alive, first)}
+	first := t.drawSealKind(rng, sealChainFirst, alive)
+	return []components.SealKind{first, t.drawSealKind(rng, sealBandAll, alive, first)}
 }
 
 // drawSealKind is one kind drawn uniformly from set, less but and, with one
 // delver alive, less every two-body kind (FS-5FZ4J §B R9-R10).
-func drawSealKind(rng populationRand, set []components.SealKind, alive int, but ...components.SealKind) components.SealKind {
+func (t floorTuning) drawSealKind(rng populationRand, set []components.SealKind, alive int, but ...components.SealKind) components.SealKind {
 	kinds := slices.DeleteFunc(slices.Clone(set), func(k components.SealKind) bool {
-		return slices.Contains(but, k) || (alive <= 1 && twoBodyKinds[k])
+		return slices.Contains(but, k) || (alive <= 1 && t.twoBodyKinds[k])
 	})
 	return kinds[rng.IntN(len(kinds))]
 }
@@ -166,7 +170,7 @@ func (s *Session) laySeals(d *dungeonFloor, plans []sealPlan) {
 	if len(plans) == 0 {
 		return
 	}
-	if slices.ContainsFunc(plans, func(p sealPlan) bool { return p.kind.HoldsGate() }) {
+	if slices.ContainsFunc(plans, func(p sealPlan) bool { return holdsGate(p.kind) }) {
 		s.layBarrier(d, components.BarrierGate, d.layout.Stairs.Barrier)
 	}
 	for stage, plan := range plans {
@@ -178,27 +182,93 @@ func (s *Session) laySeals(d *dungeonFloor, plans []sealPlan) {
 	s.layChasm(d)
 }
 
-// layPieces stands seal's planned pieces. One laid in a hidden room whose
-// secret door is still shut is concealed by it, as the room's contents are
-// (FS-5FZ4J §F R37): a chained Hidden Key's key, laid after the build.
+// layPieces stands seal's planned pieces, and the lore pieces planned beside
+// them, telling seal. One laid in a hidden room whose secret door is still
+// shut is concealed by it, as the room's contents are (FS-5FZ4J §F R37): a
+// chained Hidden Key's key, laid after the build. A block laid mid-floor (a
+// chained Weighted Plates') whose cell a body stands on is laid on the
+// nearest free cell of its room instead, its home still the planned cell, to
+// which it drifts once left alone (§C R19).
 func (s *Session) layPieces(d *dungeonFloor, seal uuid.UUID, pieces []plannedPiece) {
-	for _, piece := range pieces {
+	for i, piece := range pieces {
+		if piece.lore != "" {
+			entity := CreateLorePieceEntity(s.EntityManager, LorePieceConfig{
+				Kind: piece.lore, Tells: seal, X: piece.at.x, Y: piece.at.y, Cell: d.cellOf(piece.at),
+			})
+			s.concealInShutRoom(d, entity, piece.at)
+			continue
+		}
+		home, at := d.cellOf(piece.at), piece.at
+		if piece.kind == components.SealPieceBlock {
+			at = d.cellCentre(s.blockFooting(d, home, pieces[i+1:]))
+		}
 		entity := CreateSealPieceEntity(s.EntityManager, SealPieceConfig{
 			Seal:  seal,
 			Kind:  piece.kind,
-			X:     piece.at.x,
-			Y:     piece.at.y,
-			Cell:  d.cellOf(piece.at),
+			X:     at.x,
+			Y:     at.y,
+			Cell:  d.cellOf(at),
 			Glyph: piece.glyph,
 			Turn:  piece.turn,
 			Wakes: piece.wakes,
 		})
 		if piece.kind == components.SealPieceBlock {
-			s.standBlock(d, entity)
+			s.standBlock(d, entity, home)
 		}
-		if door := s.shutSecretDoorOf(d, d.roomAt(piece.at.x, piece.at.y)); door != nil {
-			entity.AddComponent(&components.ConcealedComponent{By: door.ID})
+		s.concealInShutRoom(d, entity, piece.at)
+	}
+}
+
+/**
+* blockFooting is the cell a block planned on home is laid on: home itself
+* unless a body overlaps it (the push's own body test), else the free cell of
+* its room's footing nearest home, one no body overlaps, no laid piece or
+* still-to-be-laid piece holds and the grid holds open. With none free, home:
+* the walk then moves the body out of the block, loudly logged.
+**/
+func (s *Session) blockFooting(d *dungeonFloor, home components.Cell, rest []plannedPiece) components.Cell {
+	entities := s.EntityManager.GetAllEntities()
+	size := d.layout.CellSize
+	if !systems.BodyOverlapsCell(home, size, entities) {
+		return home
+	}
+	taken := map[components.Cell]bool{}
+	for _, p := range rest {
+		taken[d.cellOf(p.at)] = true
+	}
+	for _, e := range entities {
+		if pc, ok := e.GetComponent(ecs.ComponentTypeSealPiece); ok {
+			taken[pc.(*components.SealPieceComponent).Cell] = true
 		}
+	}
+	centre := d.cellCentre(home)
+	room := d.roomAt(centre.x, centre.y)
+	if room < 0 {
+		return home
+	}
+	footing := d.plateFooting(room)
+	slices.SortStableFunc(footing, func(a, b components.Cell) int {
+		return cellSteps(a, home) - cellSteps(b, home)
+	})
+	for _, c := range footing {
+		if !taken[c] && (s.navGrid == nil || s.navGrid.Walkable(c.X, c.Y)) && !systems.BodyOverlapsCell(c, size, entities) {
+			return c
+		}
+	}
+	slog.Warn("A block laid on a body: its room has no free cell", "sessionID", s.ID, "cell", home)
+	return home
+}
+
+// cellSteps is the 4-neighbour steps between two cells.
+func cellSteps(a, b components.Cell) int {
+	return max(a.X-b.X, b.X-a.X) + max(a.Y-b.Y, b.Y-a.Y)
+}
+
+// concealInShutRoom conceals entity, laid at at, by the shut secret door of
+// the hidden room it stands in; nothing outside one.
+func (s *Session) concealInShutRoom(d *dungeonFloor, entity *ecs.Entity, at point) {
+	if door := s.shutSecretDoorOf(d, d.roomAt(at.x, at.y)); door != nil {
+		entity.AddComponent(&components.ConcealedComponent{By: door.ID})
 	}
 }
 
@@ -237,13 +307,20 @@ func (s *Session) layNextStage(stage int) {
 	}
 }
 
-// standBlock makes a laid piece a stone block, one cell in size, and shuts
-// its cell on the floor's grid: monster paths go round it while it stands
-// there (FS-5FZ4J §C R19, §D R22).
-func (s *Session) standBlock(d *dungeonFloor, piece *ecs.Entity) {
-	piece.AddComponent(&components.StoneBlockComponent{Size: d.layout.CellSize})
+// standBlock makes a laid piece a stone block, one cell in size, at home on
+// home and kept to the plates room it stands in, and shuts its cell on the
+// floor's grid: monster paths go round it while it stands there (FS-5FZ4J §C
+// R19 as amended, §D R22).
+func (s *Session) standBlock(d *dungeonFloor, piece *ecs.Entity, home components.Cell) {
 	pc, _ := piece.GetComponent(ecs.ComponentTypeSealPiece)
-	s.setWalkable([]components.Cell{pc.(*components.SealPieceComponent).Cell}, false)
+	cell := pc.(*components.SealPieceComponent).Cell
+	block := &components.StoneBlockComponent{Size: d.layout.CellSize, Home: home}
+	if room := d.roomAt(d.cellCentre(cell).x, d.cellCentre(cell).y); room >= 0 {
+		r := d.layout.Rooms[room].Rect
+		block.Room = components.CellRect{X: r.X, Y: r.Y, W: r.W, H: r.H}
+	}
+	piece.AddComponent(block)
+	s.setWalkable([]components.Cell{cell}, false)
 }
 
 // layBarrier stands a shut barrier of kind over rect's cells and blocks them
@@ -327,10 +404,14 @@ func (s *Session) sealHolds() bool {
 	return slices.ContainsFunc(s.seals(), func(sc *components.SealComponent) bool { return !sc.Broken })
 }
 
+// holdsGate is whether a seal of kind keeps the stairs room's gate shut:
+// every kind but the Chasm, whose chasm is its barrier. FS-5FZ4J §B R13.
+func holdsGate(kind components.SealKind) bool { return kind != components.SealChasm }
+
 // gateHeld is whether an unbroken seal of the floor holds its gate (§B R13).
 func (s *Session) gateHeld() bool {
 	return slices.ContainsFunc(s.seals(), func(sc *components.SealComponent) bool {
-		return !sc.Broken && sc.Kind.HoldsGate()
+		return !sc.Broken && holdsGate(sc.Kind)
 	})
 }
 
@@ -381,12 +462,6 @@ func (s *Session) workSealPiece(playerID uuid.UUID, delver *ecs.Entity, body *co
 	}
 	pc, _ := piece.GetComponent(ecs.ComponentTypeSealPiece)
 	w := pieceWork{playerID: playerID, delver: delver, piece: piece, pc: pc.(*components.SealPieceComponent)}
-	// a lore shrine belongs to no seal (FS-5FZ4J §F R39)
-	if w.pc.Kind == components.SealPieceShrine {
-		s.readShrine(playerID)
-		return nil
-	}
-
 	seal, ok := s.EntityManager.GetEntity(w.pc.Seal)
 	if !ok {
 		return fmt.Errorf("seal piece %s names no seal: %w", piece.ID, ErrEntityNotFound)
@@ -403,6 +478,27 @@ func (s *Session) workSealPiece(playerID uuid.UUID, delver *ecs.Entity, body *co
 }
 
 /**
+* readLore answers a delver's interact on a lore piece, on the tick: in reach,
+* a mural answers with its seal's glyphs in order, a shrine with its lore. A
+* lore piece belongs to no seal's working: it wakes nothing. FS-5FZ4J §C R15,
+* §F R39, §I R49.
+**/
+func (s *Session) readLore(playerID uuid.UUID, body *components.TransformComponent, piece *ecs.Entity) error {
+	if err := s.inReachOf(playerID, body, piece); err != nil {
+		return err
+	}
+	lc, _ := piece.GetComponent(ecs.ComponentTypeLorePiece)
+	lore := lc.(*components.LorePieceComponent)
+	switch lore.Kind {
+	case components.LoreMural:
+		readMural(s, playerID, s.leversOf(lore.Tells))
+	case components.LoreShrine:
+		s.readShrine(playerID)
+	}
+	return nil
+}
+
+/**
 * reachBarrier answers a delver's interact on a barrier, on the tick. A shut
 * gate is refused gate_sealed (FS-5FZ4J §B R13); it opens only with its seals,
 * or breaks a Hidden Key seal whose key the party carries (§E R32). A secret
@@ -413,7 +509,7 @@ func (s *Session) reachBarrier(playerID uuid.UUID, delver *ecs.Entity, body *com
 	// an undetected secret door is no target: the client has no id for it,
 	// and one sent anyway is not found (FS-5FZ4J §F R38)
 	if isSecretDoor(barrier) && !detected(barrier) {
-		return ErrEntityNotFound
+		return ErrUndetected
 	}
 	if nx, ny := nearestOnRect(barrier, body.X, body.Y); !s.calcWithinDistance(body.X, body.Y, nx, ny) {
 		s.sendErrorToPlayer(playerID, string(commonconstants.ActionInteract), "too far away to interact")

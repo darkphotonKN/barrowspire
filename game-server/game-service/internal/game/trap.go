@@ -150,6 +150,9 @@ func (s *Session) trapGround(d *dungeonFloor) (off, on []components.Cell) {
 		if pc, ok := e.GetComponent(ecs.ComponentTypeSealPiece); ok {
 			barred[pc.(*components.SealPieceComponent).Cell] = true
 		}
+		if lc, ok := e.GetComponent(ecs.ComponentTypeLorePiece); ok {
+			barred[lc.(*components.LorePieceComponent).Cell] = true
+		}
 	}
 
 	start := d.layout.Rooms[d.layout.Roles.Start].Rect

@@ -18,11 +18,10 @@ import (
 // beside the test catalogue's potion.
 func merchantRun(t *testing.T, seed uint64, delvers, height int, tomeChance float64) (*Session, []uuid.UUID) {
 	t.Helper()
-	setChance(t, &MerchantFloorChance, 1)
-	setChance(t, &MerchantTomeChance, tomeChance)
-	setChance(t, &FountainFloorChance, 1)
-	setChance(t, &HallowedAltarRunChance, 0)
-	s, ids := dungeonRun(t, seed, delvers, 0)
+	s, ids := dungeonRun(t, seed, delvers, 0, withTuning(func(t *floorTuning) {
+		t.merchantFloorChance, t.merchantTomeChance = 1, tomeChance
+		t.fountainFloorChance, t.hallowedAltarRunChance = 1, 0
+	}))
 	// a seeded run may have rolled a tome plan; none here
 	if runLevel, ok := runLevelEntity(s.EntityManager.GetAllEntities()); ok {
 		runLevel.RemoveComponent(ecs.ComponentTypeTomePlan)
@@ -61,9 +60,9 @@ func TestMerchant_FloorOddsOverASeedSweep(t *testing.T) {
 	held := 0
 	for seed := uint64(1); seed <= runs; seed++ {
 		rng := seededSpawns(seed)
-		assert.False(t, merchantFor(rng, firstFloor, false), "never on floor 1")
-		assert.False(t, merchantFor(rng, 5, true), "never on the top floor")
-		if merchantFor(rng, 4, false) {
+		assert.False(t, merchantFor(rng, firstFloor, false, MerchantFloorChance), "never on floor 1")
+		assert.False(t, merchantFor(rng, 5, true, MerchantFloorChance), "never on the top floor")
+		if merchantFor(rng, 4, false, MerchantFloorChance) {
 			held++
 		}
 	}
@@ -228,7 +227,7 @@ func TestOfferTome_OddsAndWhenItMayBeOffered(t *testing.T) {
 	}
 	assert.InDelta(t, MerchantTomeChance, float64(offered)/merchants, 0.015)
 
-	setChance(t, &MerchantTomeChance, 1)
+	s.tuning.merchantTomeChance = 1
 	dropTomePlan(s)
 	assert.False(t, s.offerTome(5), "height - 1 has no floor above it for the altar")
 	assert.True(t, s.offerTome(4))

@@ -360,6 +360,26 @@ func CreateSealPieceEntity(em *ecs.EntityManager, config SealPieceConfig) *ecs.E
 	return entity
 }
 
+// LorePieceConfig is one lore piece: its kind, the seal a mural tells, where
+// it stands and the cell that holds it.
+type LorePieceConfig struct {
+	Kind  components.LoreKind
+	Tells uuid.UUID
+	X, Y  float64
+	Cell  components.Cell
+}
+
+// CreateLorePieceEntity stands a mural or a lore shrine, read by interact; a
+// piece of no seal, it wakes nothing (FS-5FZ4J §C R15, §F R39). It has no
+// Openable, so the interaction system never flips it.
+func CreateLorePieceEntity(em *ecs.EntityManager, config LorePieceConfig) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(&components.LorePieceComponent{Kind: config.Kind, Tells: config.Tells, Cell: config.Cell})
+	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
+	entity.AddComponent(components.NewInteractableComponent(commonconstants.DefaultInteractableRange))
+	return entity
+}
+
 // TrapConfig is one trap: its kind, the cell it lies on and that cell's
 // centre in px.
 type TrapConfig struct {

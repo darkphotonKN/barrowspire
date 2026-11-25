@@ -124,13 +124,13 @@ func (s *Session) planRespite(d *dungeonFloor, kind respiteKind, rw, rh float64,
 }
 
 // fountainFor is whether the floor at depth holds a fountain: drawn at
-// FountainFloorChance on floors 2+ below the top; floor 1 and the top floor
-// draw nothing. FS-5FZ4J §G R40.
-func fountainFor(rng populationRand, depth int, top bool) bool {
+// chance (FountainFloorChance by default) on floors 2+ below the top; floor 1
+// and the top floor draw nothing. FS-5FZ4J §G R40.
+func fountainFor(rng populationRand, depth int, top bool, chance float64) bool {
 	if depth <= firstFloor || top {
 		return false
 	}
-	return rng.Float64() < FountainFloorChance
+	return rng.Float64() < chance
 }
 
 /**
@@ -170,14 +170,14 @@ func CreateFountainEntity(em *ecs.EntityManager, x, y float64, pool int) *ecs.En
 
 // rollHallowedAltarPlan draws whether a run of height floors holds a hallowed
 // altar, at chance, and if so its floor, uniform in [2, height - 1], and
-// whether it stands hidden, at HallowedAltarHiddenShare. A run too short for
-// a floor between its first and its top has none. FS-5FZ4J §G R42.
-func rollHallowedAltarPlan(rng populationRand, height int, chance float64) (floor int, hidden, ok bool) {
+// whether it stands hidden, at hiddenShare. A run too short for a floor
+// between its first and its top has none. FS-5FZ4J §G R42.
+func rollHallowedAltarPlan(rng populationRand, height int, chance, hiddenShare float64) (floor int, hidden, ok bool) {
 	if rng.Float64() >= chance || height < 3 {
 		return 0, false, false
 	}
 	floor = firstFloor + 1 + rng.IntN(height-2)
-	hidden = rng.Float64() < HallowedAltarHiddenShare
+	hidden = rng.Float64() < hiddenShare
 	return floor, hidden, true
 }
 

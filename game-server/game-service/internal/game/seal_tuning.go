@@ -13,8 +13,42 @@ import "github.com/darkphotonKN/barrowspire-server/game-service/internal/compone
 // draw, as TomeRunChance lets a developer force a tome (FS-5FZ4J
 // §Requirements, FS-3103M R5). Unset, the floor draws (§B R9). A forced Chasm
 // is never redrawn: a layout whose stairs room cannot hold it fails, and the
-// floor's next seed is tried.
-var ForcedSealKind components.SealKind
+// floor's next seed is tried. A local build forces one by setting it here.
+const ForcedSealKind components.SealKind = ""
+
+/*
+floorTuning is a world's own copy of the floor build's overridable tunables:
+the forced seal kind, the two-body kinds and the respites' and merchant's odds.
+newSession starts every world from defaultFloorTuning, the constants here, and
+a test overrides them on its own world (withTuning), so no tunable is mutable
+state shared by every world (game-service CLAUDE.md).
+*/
+type floorTuning struct {
+	forcedSealKind components.SealKind
+	// twoBodyKinds are the kinds that need two bodies at once: none rolls
+	// when one delver is alive at the floor's build (FS-5FZ4J §B R10,
+	// ADR-0092). No v1 kind does, so the default is empty; a test marks one
+	// on its own world to hold the rule.
+	twoBodyKinds             map[components.SealKind]bool
+	fountainFloorChance      float64
+	hallowedAltarRunChance   float64
+	hallowedAltarHiddenShare float64
+	merchantFloorChance      float64
+	merchantTomeChance       float64
+}
+
+// defaultFloorTuning is the floor build's tunables as this file sets them.
+func defaultFloorTuning() floorTuning {
+	return floorTuning{
+		forcedSealKind:           ForcedSealKind,
+		twoBodyKinds:             map[components.SealKind]bool{},
+		fountainFloorChance:      FountainFloorChance,
+		hallowedAltarRunChance:   HallowedAltarRunChance,
+		hallowedAltarHiddenShare: HallowedAltarHiddenShare,
+		merchantFloorChance:      MerchantFloorChance,
+		merchantTomeChance:       MerchantTomeChance,
+	}
+}
 
 // The seal draw's floor bands: one seal from sealBandLow on floors up to
 // SealLowFloorsMax, one from all five up to SealMidFloorsMax, two chained
@@ -30,11 +64,6 @@ var (
 	sealBandAll    = []components.SealKind{components.SealLeverOrder, components.SealWeightedPlates, components.SealHiddenKey, components.SealChasm, components.SealBraziers}
 	sealChainFirst = []components.SealKind{components.SealLeverOrder, components.SealWeightedPlates, components.SealHiddenKey, components.SealBraziers}
 )
-
-// twoBodyKinds are the kinds that need two bodies at once: none rolls when
-// one delver is alive at the floor's build (FS-5FZ4J §B R10, ADR-0092). No v1
-// kind does; a test marks one to hold the rule.
-var twoBodyKinds = map[components.SealKind]bool{}
 
 // Lever Order's levers: LeverCountLow on floors up to LeverLowFloorsMax, else
 // LeverCountMin..LeverCountMax drawn uniformly. FS-5FZ4J §C R15.
@@ -57,6 +86,15 @@ const (
 	PlateCountLow     = 2
 	PlateCountMin     = 2
 	PlateCountMax     = 3
+)
+
+// A stone block left alone drifts home: off its home cell, on no plate,
+// unmoved by a push for BlockDriftAfter seconds and with no delver within
+// BlockDriftClearCells cells of it, it slides back to the cell it was laid on
+// at the push speed. FS-5FZ4J §C R19 as amended (ADR-0092).
+const (
+	BlockDriftAfter      = 20.0
+	BlockDriftClearCells = 2.0
 )
 
 // A Weighted Plates room is at least PlateRoomLong x PlateRoomShort cells,
@@ -167,7 +205,7 @@ const (
 // floor in a local build. MerchantTomeChance is the chance a merchant offers
 // the Tome of Filth, when the run has no tome plan and a floor above his can
 // hold the altar. FS-9JV5K §A R1, §E R18.
-var (
+const (
 	MerchantFloorChance = 0.33
 	MerchantTomeChance  = 0.10
 )
@@ -186,7 +224,7 @@ const (
 // FountainFloorChance is the chance a floor 2+ below the top holds a healing
 // fountain, drawn with its seals; 1 forces one onto every such floor in a
 // local build. FS-5FZ4J §G R40.
-var FountainFloorChance = 0.5
+const FountainFloorChance = 0.5
 
 // A fountain heals each delver in play within FountainRadius px, 2 cells of
 // 80 px, of its centre FountainPercentPerSecond of their max health a second,
@@ -202,7 +240,7 @@ const (
 // once at its creation; 1 forces one into every run in a local build.
 // HallowedAltarHiddenShare is the share of those whose altar stands in a
 // hidden room of its floor. FS-5FZ4J §G R42.
-var (
+const (
 	HallowedAltarRunChance   = 0.3
 	HallowedAltarHiddenShare = 0.5
 )
@@ -212,8 +250,9 @@ var (
 const PrayDuration = 2.0
 
 // The Blessing: a blessed delver's kills roll their drop chance times
-// BlessingDropFactor, and their class resource regenerates
-// BlessingRegenPercent faster. FS-5FZ4J §G R44.
+// BlessingDropFactor, and their class resource regen rates, the passive
+// tree's bonus applied, are multiplied by 1 + BlessingRegenPercent / 100.
+// FS-5FZ4J §G R44.
 const (
 	BlessingDropFactor   = 1.10
 	BlessingRegenPercent = 5.0

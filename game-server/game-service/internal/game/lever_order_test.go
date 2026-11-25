@@ -50,9 +50,8 @@ func pull(t *testing.T, s *Session, playerID uuid.UUID, piece *ecs.Entity) {
 // permutation of them, and one mural in another room; no piece stands in the
 // start room or the stairs room. Checked over many seeds.
 func TestLeverOrder_Floor1_ThreeLeversAndAMuralInRoomsOfTheirOwn(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
 	for seed := uint64(1); seed <= 40; seed++ {
-		s, _ := dungeonRun(t, seed, 1, 0)
+		s, _ := dungeonRun(t, seed, 1, 0, forcedSeal(components.SealLeverOrder))
 		require.NotNil(t, s.dungeon, "seed %d", seed)
 		seals := sealsOf(t, s)
 		require.Len(t, seals, 1, "seed %d: one seal", seed)
@@ -60,7 +59,7 @@ func TestLeverOrder_Floor1_ThreeLeversAndAMuralInRoomsOfTheirOwn(t *testing.T) {
 		assert.Equal(t, 1, seals[0].Stage)
 
 		levers := leversInTurn(t, s)
-		murals := piecesOfKind(s, components.SealPieceMural)
+		murals := loreOfKind(s, components.LoreMural)
 		require.Len(t, levers, LeverCountLow, "seed %d", seed)
 		require.Len(t, murals, 1, "seed %d", seed)
 
@@ -74,8 +73,8 @@ func TestLeverOrder_Floor1_ThreeLeversAndAMuralInRoomsOfTheirOwn(t *testing.T) {
 			rooms[room] = true
 			assert.NotEqual(t, s.dungeon.layout.Roles.Start, room, "seed %d: not the start room", seed)
 			assert.NotEqual(t, s.dungeon.layout.Roles.Stairs, room, "seed %d: not the stairs room", seed)
-			assert.Equal(t, s.dungeon.cellOf(point{at.X, at.Y}), pieceOf(e).Cell)
 			if i < len(levers) {
+				assert.Equal(t, s.dungeon.cellOf(point{at.X, at.Y}), pieceOf(e).Cell)
 				assert.Equal(t, i+1, pieceOf(e).Turn, "seed %d: the turns are 1..n", seed)
 				assert.Contains(t, LeverGlyphs, pieceOf(e).Glyph)
 				glyphs = append(glyphs, pieceOf(e).Glyph)
@@ -105,8 +104,7 @@ func TestLeverCount_ByFloor(t *testing.T) {
 // last breaks the seal, which opens the gate and the stairs, and the party
 // climbs.
 func TestLeverOrder_InTurnPullsStayDown_TheLastBreaksTheSealAndOpensTheWayUp(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
-	c := newSealedClimb(t)
+	c := newSealedClimb(t, forcedSeal(components.SealLeverOrder))
 	levers := leversInTurn(t, c.s)
 
 	for i, lever := range levers {
@@ -135,8 +133,7 @@ func TestLeverOrder_InTurnPullsStayDown_TheLastBreaksTheSealAndOpensTheWayUp(t *
 // FS-5FZ4J §C R16, §I R49: a lever already down refuses quietly, lever_down,
 // and nothing changes.
 func TestLeverOrder_LeverAlreadyDown_RefusesLeverDown(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
-	s, player, sender := sealedRun(t, 7)
+	s, player, sender := sealedRun(t, 7, forcedSeal(components.SealLeverOrder))
 	first := leversInTurn(t, s)[0]
 	pull(t, s, player, first)
 	health := currentHealth(delverEntity(t, s, player))
@@ -154,15 +151,14 @@ func TestLeverOrder_LeverAlreadyDown_RefusesLeverDown(t *testing.T) {
 // FS-5FZ4J §C R15, §I R49: the mural answers mural with the levers' glyphs
 // in the order they are pulled, and wakes nothing.
 func TestLeverOrder_Mural_AnswersTheGlyphsInOrder(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
-	s, player, sender := sealedRun(t, 7)
+	s, player, sender := sealedRun(t, 7, forcedSeal(components.SealLeverOrder))
 	var want []interface{}
 	for _, lever := range leversInTurn(t, s) {
 		want = append(want, pieceOf(lever).Glyph)
 	}
 	monsters := len(monstersInWorld(s.EntityManager))
 
-	pull(t, s, player, piecesOfKind(s, components.SealPieceMural)[0])
+	pull(t, s, player, loreOfKind(s, components.LoreMural)[0])
 
 	reply := lastReply(t, sender, player)
 	assert.Equal(t, true, reply["success"])
@@ -191,8 +187,7 @@ func toAnys(v interface{}) []interface{} {
 // every lever of the seal back up; the reply is lever_wrong. The order starts
 // again: the first lever pulled in turn then stays down.
 func TestLeverOrder_OutOfTurn_DartHitsThePullerAndEveryLeverResets(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
-	s, player, sender := sealedRun(t, 7)
+	s, player, sender := sealedRun(t, 7, forcedSeal(components.SealLeverOrder))
 	for _, m := range monstersInWorld(s.EntityManager) {
 		s.EntityManager.RemoveEntity(m.ID)
 	}
@@ -232,5 +227,23 @@ func TestTrapHit_IsTheFloorsFodderHitTimesItsFactor(t *testing.T) {
 		assert.Equal(t, uuid.Nil, hit.AttackerMemberID)
 		assert.False(t, hit.FromMonster)
 		assert.Zero(t, hit.CritChance)
+	}
+}
+
+// FS-5FZ4J §C R15, CONTEXT.md "Seal piece": the mural is a lore piece, not a
+// seal piece: it carries no seal piece at all, so nothing walking the seal's
+// pieces meets it, and it names the seal whose order it tells.
+func TestLeverOrder_MuralIsALorePiece_NotASealPiece(t *testing.T) {
+	s, _, _ := sealedRun(t, 7, forcedSeal(components.SealLeverOrder))
+	seals := entitiesWith(s, ecs.ComponentTypeSeal)
+	require.Len(t, seals, 1)
+
+	murals := loreOfKind(s, components.LoreMural)
+	require.Len(t, murals, 1, "one mural")
+	assert.False(t, murals[0].HasComponent(ecs.ComponentTypeSealPiece), "the mural is no seal piece")
+	assert.Equal(t, seals[0].ID, loreOf(murals[0]).Tells, "it tells its seal's order")
+	assert.Equal(t, s.dungeon.cellOf(point{transformOf(t, murals[0]).X, transformOf(t, murals[0]).Y}), loreOf(murals[0]).Cell)
+	for _, piece := range s.piecesOf(seals[0].ID) {
+		assert.Equal(t, components.SealPieceLever, piece.Kind, "the seal's pieces are its levers alone")
 	}
 }

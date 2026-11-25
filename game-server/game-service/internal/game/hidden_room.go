@@ -65,18 +65,19 @@ type floorDraw struct {
 func (s *Session) drawFloor(depth, alive int, also ...hiddenUse) floorDraw {
 	var draw floorDraw
 	if s.hasStairs(depth) {
-		draw.seals = sealKindsFor(s.spawnRand, depth, alive)
+		draw.seals = s.tuning.sealKindsFor(s.spawnRand, depth, alive)
 	}
 	draw.hidden = hiddenRoomsFor(s.spawnRand, depth, draw.seals, also...)
-	draw.fountain = fountainFor(s.spawnRand, depth, s.isTopFloor(depth))
-	draw.merchant = merchantFor(s.spawnRand, depth, s.isTopFloor(depth))
+	draw.fountain = fountainFor(s.spawnRand, depth, s.isTopFloor(depth), s.tuning.fountainFloorChance)
+	draw.merchant = merchantFor(s.spawnRand, depth, s.isTopFloor(depth), s.tuning.merchantFloorChance)
 	return draw
 }
 
 // chasmMisfits is whether the draw has a Chasm that layout's stairs room
-// cannot hold, and may draw again: a forced Chasm never is (FS-5FZ4J §E R33).
-func (draw floorDraw) chasmMisfits(layout levelgen.DungeonLayout) bool {
-	return !layout.ChasmCapable && ForcedSealKind == "" && slices.Contains(draw.seals, components.SealChasm)
+// cannot hold, and may draw again; never when forced, the seal kind being
+// forced (FS-5FZ4J §E R33).
+func (draw floorDraw) chasmMisfits(layout levelgen.DungeonLayout, forced bool) bool {
+	return !layout.ChasmCapable && !forced && slices.Contains(draw.seals, components.SealChasm)
 }
 
 /**
@@ -88,7 +89,7 @@ func (s *Session) redrawChasm(alive int, draw floorDraw) floorDraw {
 	seals := slices.Clone(draw.seals)
 	for i, kind := range seals {
 		if kind == components.SealChasm {
-			seals[i] = drawSealKind(s.spawnRand, sealBandAll, alive, seals...)
+			seals[i] = s.tuning.drawSealKind(s.spawnRand, sealBandAll, alive, seals...)
 		}
 	}
 	hidden := slices.Clone(draw.hidden)
@@ -194,7 +195,7 @@ func (s *Session) layHiddenRooms(d *dungeonFloor) {
 				s.layBetterChest(at)
 				break
 			}
-			CreateSealPieceEntity(s.EntityManager, SealPieceConfig{Kind: components.SealPieceShrine, X: at.x, Y: at.y, Cell: d.cellOf(at)})
+			CreateLorePieceEntity(s.EntityManager, LorePieceConfig{Kind: components.LoreShrine, X: at.x, Y: at.y, Cell: d.cellOf(at)})
 		case hiddenHallowedAltar:
 			at, ok := s.placeFixture(d, h.Room, constants.ContainerWidthRadius, constants.ContainerHeightRadius)
 			if !ok {

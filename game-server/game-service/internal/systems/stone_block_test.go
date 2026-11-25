@@ -38,7 +38,7 @@ func newPushWorld(t *testing.T) *pushWorld {
 	}
 	w := &pushWorld{em: ecs.NewEntityManager(), grid: navigation.NewGrid(12, 12, blockCell, walkable)}
 	w.move = &MovementSystem{MapWidth: 12 * blockCell, MapHeight: 12 * blockCell, Grid: w.grid}
-	w.blocks = NewStoneBlockSystem(w.grid)
+	w.blocks = NewStoneBlockSystem(w.grid, BlockDrift{})
 	w.block = w.addBlock(5, 5)
 	return w
 }
@@ -303,4 +303,218 @@ func TestStoneBlock_TwoPushes_MoveItTwoCells_ItsPusherNamed(t *testing.T) {
 	assert.Equal(t, delver.ID, bc.(*components.StoneBlockComponent).PushedBy)
 	assert.True(t, w.grid.Walkable(6, 5))
 	assert.False(t, w.grid.Walkable(7, 5))
+}
+
+// driftAfter and driftClear are the drift rule's numbers, FS-5FZ4J §C R19 as
+// amended: 20 s unmoved, no delver within 2 cells.
+const (
+	driftAfter = 20.0
+	driftClear = 2.0
+)
+
+// newRoomWorld is a push world whose block system drifts blocks home and
+// whose (5, 5) block stands in a plates room of cells (2, 2) to (9, 8),
+// laid on its home cell: the rest of the floor is open ground too, a
+// corridor's.
+func newRoomWorld(t *testing.T) *pushWorld {
+	t.Helper()
+	w := newPushWorld(t)
+	w.blocks = NewStoneBlockSystem(w.grid, BlockDrift{After: driftAfter, ClearCells: driftClear})
+	w.inRoom(w.block)
+	return w
+}
+
+// inRoom makes block a plates room's, laid on the cell it stands on.
+func (w *pushWorld) inRoom(block *ecs.Entity) {
+	bc, _ := block.GetComponent(ecs.ComponentTypeStoneBlock)
+	stone := bc.(*components.StoneBlockComponent)
+	stone.Home = cellOf(block)
+	stone.Room = components.CellRect{X: 2, Y: 2, W: 8, H: 7}
+}
+
+// moveBlock stands block on cell, as a push would have left it: its old
+// cell open on the grid, its new one shut.
+func (w *pushWorld) moveBlock(block *ecs.Entity, cell components.Cell) {
+	was := cellOf(block)
+	w.grid.SetWalkable(was.X, was.Y, true)
+	pc, _ := block.GetComponent(ecs.ComponentTypeSealPiece)
+	pc.(*components.SealPieceComponent).Cell = cell
+	tc, _ := block.GetComponent(ecs.ComponentTypeTransform)
+	tc.(*components.TransformComponent).X = (float64(cell.X) + 0.5) * blockCell
+	tc.(*components.TransformComponent).Y = (float64(cell.Y) + 0.5) * blockCell
+	w.grid.SetWalkable(cell.X, cell.Y, false)
+}
+
+// stoneOf is a block's stone block component.
+func stoneOf(block *ecs.Entity) *components.StoneBlockComponent {
+	bc, _ := block.GetComponent(ecs.ComponentTypeStoneBlock)
+	return bc.(*components.StoneBlockComponent)
+}
+
+// FS-5FZ4J §C R19 (amended, ADR-0092): a push that would take a block out of
+// its plates room's cells is refused, the block staying on the room's edge
+// and the delver blocked, though the ground beyond is open: no block reaches
+// a corridor, so none jams one.
+func TestStoneBlock_PushOutOfItsRoom_IsRefused(t *testing.T) {
+	w := newRoomWorld(t)
+	w.moveBlock(w.block, components.Cell{X: 9, Y: 5}) // the room's east edge
+	require.True(t, w.grid.Walkable(10, 5), "open ground beyond, a corridor's")
+	delver := w.addDelver(9*blockCell-constants.PlayerRadius-4, 5.5*blockCell, 1, 0)
+
+	w.run(3 * pushTime())
+
+	assert.Equal(t, components.Cell{X: 9, Y: 5}, cellOf(w.block), "it stays in its room")
+	assert.True(t, w.grid.Walkable(10, 5))
+	dx, _ := centreOf(delver)
+	assert.LessOrEqual(t, dx, 9*blockCell-constants.PlayerRadius+1e-6, "the delver is blocked")
+
+	// pushed along the edge, it moves as ever
+	vc, _ := delver.GetComponent(ecs.ComponentTypeVelocity)
+	vc.(*components.VelocityComponent).VX = 0
+	tc, _ := delver.GetComponent(ecs.ComponentTypeTransform)
+	tc.(*components.TransformComponent).X, tc.(*components.TransformComponent).Y = 9.5*blockCell, 6*blockCell+constants.PlayerRadius+4
+	vc.(*components.VelocityComponent).VY = -1
+	w.run(2*pushTime() + 0.2)
+	assert.Equal(t, components.Cell{X: 9, Y: 4}, cellOf(w.block))
+}
+
+// FS-5FZ4J §C R19 (amended): a block off its home cell, on no plate, unmoved
+// for 20 s with no delver within 2 cells, slides back to its home cell at the
+// push speed, a cell at a time, the grid following it as a push's does.
+func TestStoneBlock_LeftAlone20s_DriftsHome(t *testing.T) {
+	w := newRoomWorld(t)
+	w.moveBlock(w.block, components.Cell{X: 8, Y: 7})
+
+	w.run(driftAfter - 0.5)
+	require.Equal(t, components.Cell{X: 8, Y: 7}, cellOf(w.block), "not before 20 s")
+
+	// 3 cells west and 2 north, a cell each push time
+	w.run(0.5 + 5*pushTime() + 0.5)
+
+	assert.Equal(t, components.Cell{X: 5, Y: 5}, cellOf(w.block), "home")
+	assert.False(t, stoneOf(w.block).Sliding)
+	bx, by := centreOf(w.block)
+	assert.InDelta(t, 5.5*blockCell, bx, 1e-9)
+	assert.InDelta(t, 5.5*blockCell, by, 1e-9)
+	assert.False(t, w.grid.Walkable(5, 5), "its home is shut to paths")
+	assert.True(t, w.grid.Walkable(8, 7), "where it lay is ground again")
+	for y := 2; y <= 8; y++ {
+		for x := 2; x <= 9; x++ {
+			if x != 5 || y != 5 {
+				assert.True(t, w.grid.Walkable(x, y), "cell (%d, %d) is ground", x, y)
+			}
+		}
+	}
+}
+
+// FS-5FZ4J §C R19 (amended): a step home takes a push's time: a block one
+// cell from home is still sliding after half of it.
+func TestStoneBlock_DriftStep_TakesAPushTime(t *testing.T) {
+	w := newRoomWorld(t)
+	w.moveBlock(w.block, components.Cell{X: 6, Y: 5})
+	stoneOf(w.block).Still = driftAfter
+
+	w.run(pushTime() / 2)
+	assert.True(t, stoneOf(w.block).Sliding, "mid-slide")
+	bx, _ := centreOf(w.block)
+	assert.Greater(t, bx, 5.5*blockCell)
+	assert.Less(t, bx, 6.5*blockCell)
+
+	w.run(pushTime()/2 + 0.1)
+	assert.Equal(t, components.Cell{X: 5, Y: 5}, cellOf(w.block))
+	assert.False(t, stoneOf(w.block).Sliding)
+}
+
+// FS-5FZ4J §C R19 (amended): a block stays where it is while a delver stands
+// within 2 cells of it, or it rests on a plate, or its home cell is taken, or
+// it moved less than 20 s ago; once the delver walks off it drifts.
+func TestStoneBlock_Drift_HeldBack(t *testing.T) {
+	away := components.Cell{X: 8, Y: 5}
+	cases := []struct {
+		name  string
+		setup func(w *pushWorld)
+	}{
+		{"a delver within 2 cells", func(w *pushWorld) { w.addDelver(8.5*blockCell, 7.4*blockCell, 0, 0) }},
+		{"resting on a plate", func(w *pushWorld) {
+			plate := w.em.CreateEntity()
+			plate.AddComponent(&components.SealPieceComponent{Kind: components.SealPiecePlate, Cell: away})
+			plate.AddComponent(components.NewTransformComponent(8.5*blockCell, 5.5*blockCell))
+		}},
+		{"its home taken by a body", func(w *pushWorld) { w.addMonster(5.5*blockCell, 5.5*blockCell, 0, 0) }},
+		{"its home taken by a block", func(w *pushWorld) { w.inRoom(w.addBlock(5, 5)) }},
+		{"moved a moment ago", func(w *pushWorld) { stoneOf(w.block).Still = -10 }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newRoomWorld(t)
+			w.moveBlock(w.block, away)
+			tc.setup(w)
+
+			w.run(driftAfter + 3*pushTime())
+
+			assert.Equal(t, away, cellOf(w.block), "it stays")
+		})
+	}
+
+	t.Run("until the delver walks off", func(t *testing.T) {
+		w := newRoomWorld(t)
+		w.moveBlock(w.block, away)
+		delver := w.addDelver(8.5*blockCell, 7.4*blockCell, 0, 0)
+		w.run(driftAfter + 1)
+		require.Equal(t, away, cellOf(w.block))
+
+		tc, _ := delver.GetComponent(ecs.ComponentTypeTransform)
+		tc.(*components.TransformComponent).X, tc.(*components.TransformComponent).Y = 11.5*blockCell, 11.5*blockCell
+		w.run(3*pushTime() + 0.5)
+		assert.Equal(t, components.Cell{X: 5, Y: 5}, cellOf(w.block), "home once no one is near")
+	})
+}
+
+// FS-5FZ4J §C R19 (amended): a push resets the 20 s: a block pushed 15 s
+// after it last moved waits 20 s from the push.
+func TestStoneBlock_APush_StartsThe20sAgain(t *testing.T) {
+	w := newRoomWorld(t)
+	w.moveBlock(w.block, components.Cell{X: 6, Y: 5})
+	w.run(15)
+	delver := w.addDelver(6*blockCell-constants.PlayerRadius-4, 5.5*blockCell, 1, 0)
+	w.run(2*pushTime() + 0.2)
+	require.Equal(t, components.Cell{X: 7, Y: 5}, cellOf(w.block), "pushed east")
+	w.em.RemoveEntity(delver.ID)
+
+	w.run(driftAfter - 1)
+	assert.Equal(t, components.Cell{X: 7, Y: 5}, cellOf(w.block), "20 s from the push, not from before it")
+	w.run(1 + 2*pushTime() + 0.5)
+	assert.Equal(t, components.Cell{X: 5, Y: 5}, cellOf(w.block))
+}
+
+// FS-5FZ4J §C R19 (amended): the way home goes round another block in its
+// path, never through it.
+func TestStoneBlock_DriftHome_GoesRoundABlock(t *testing.T) {
+	w := newRoomWorld(t)
+	w.moveBlock(w.block, components.Cell{X: 8, Y: 5})
+	other := w.addBlock(6, 5)
+	w.inRoom(other)
+	stoneOf(w.block).Still = driftAfter
+	stoneOf(other).Still = -1000 // it stays where it is
+
+	for range int(math.Round(10 / blockTick)) {
+		entities := w.em.GetAllEntities()
+		w.move.Update(blockTick, entities)
+		w.blocks.Update(blockTick, entities)
+		assert.NotEqual(t, cellOf(other), cellOf(w.block), "never on the other block's cell")
+	}
+
+	assert.Equal(t, components.Cell{X: 5, Y: 5}, cellOf(w.block), "home round it")
+	assert.Equal(t, components.Cell{X: 6, Y: 5}, cellOf(other))
+}
+
+// A body on a cell is in a block's way, the one test a push and a laid block
+// share (FS-5FZ4J §C R19).
+func TestBodyOverlapsCell(t *testing.T) {
+	w := newPushWorld(t)
+	w.addMonster(7*blockCell+constants.PlayerRadius-2, 5.5*blockCell, 0, 0)
+	entities := w.em.GetAllEntities()
+	assert.True(t, BodyOverlapsCell(components.Cell{X: 6, Y: 5}, blockCell, entities), "overlapping its edge")
+	assert.True(t, BodyOverlapsCell(components.Cell{X: 7, Y: 5}, blockCell, entities))
+	assert.False(t, BodyOverlapsCell(components.Cell{X: 5, Y: 5}, blockCell, entities))
 }

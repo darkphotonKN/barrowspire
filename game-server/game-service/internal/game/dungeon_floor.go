@@ -141,7 +141,7 @@ func (s *Session) generateDungeonFloor(depth, arriving int) (*dungeonFloor, dung
 				"sessionID", s.ID, "floor", depth, "seed", seed, "try", try+1, "error", err)
 			continue
 		}
-		if draw.chasmMisfits(layout) {
+		if draw.chasmMisfits(layout, s.tuning.forcedSealKind != "") {
 			// a stairs room too small for its drawn Chasm: the Chasm is drawn
 			// again (FS-5FZ4J §E R33); a Hidden Key in its place asks for its
 			// key's room, on a layout of the same seed

@@ -14,21 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setChance sets a tunable chance for the test, put back after.
-func setChance(t testing.TB, chance *float64, to float64) {
-	t.Helper()
-	was := *chance
-	*chance = to
-	t.Cleanup(func() { *chance = was })
-}
-
 // respiteRun is a seeded run of height floors for delvers, climbed to floor 2,
 // every floor's fountain forced and no hallowed altar unless the test sets one.
 func respiteRun(t *testing.T, seed uint64, delvers, height int) (*Session, []uuid.UUID) {
 	t.Helper()
-	setChance(t, &FountainFloorChance, 1)
-	setChance(t, &HallowedAltarRunChance, 0)
-	s, ids := dungeonRun(t, seed, delvers, 0)
+	s, ids := dungeonRun(t, seed, delvers, 0, withTuning(func(t *floorTuning) {
+		t.fountainFloorChance, t.hallowedAltarRunChance = 1, 0
+	}))
 	s.sender = &recordingSender{}
 	currentFloor(t, s).Count = height
 	require.NoError(t, s.regenerateFloor())
@@ -53,9 +45,9 @@ func TestFountain_FloorOddsOverASeedSweep(t *testing.T) {
 	held := 0
 	for seed := uint64(1); seed <= runs; seed++ {
 		rng := seededSpawns(seed)
-		assert.False(t, fountainFor(rng, firstFloor, false), "never on floor 1")
-		assert.False(t, fountainFor(rng, 5, true), "never on the top floor")
-		if fountainFor(rng, 4, false) {
+		assert.False(t, fountainFor(rng, firstFloor, false, FountainFloorChance), "never on floor 1")
+		assert.False(t, fountainFor(rng, 5, true, FountainFloorChance), "never on the top floor")
+		if fountainFor(rng, 4, false, FountainFloorChance) {
 			held++
 		}
 	}
@@ -166,7 +158,7 @@ func TestHallowedAltarPlan_OddsFloorsAndHiddenShare(t *testing.T) {
 	planned, hidden := 0, 0
 	floors := map[int]int{}
 	for seed := uint64(1); seed <= runs; seed++ {
-		floor, inHidden, ok := rollHallowedAltarPlan(seededSpawns(seed), 6, HallowedAltarRunChance)
+		floor, inHidden, ok := rollHallowedAltarPlan(seededSpawns(seed), 6, HallowedAltarRunChance, HallowedAltarHiddenShare)
 		if !ok {
 			continue
 		}
@@ -186,8 +178,7 @@ func TestHallowedAltarPlan_OddsFloorsAndHiddenShare(t *testing.T) {
 // FS-5FZ4J §G R42: the plan is rolled at run creation beside the tome plan
 // and kept on the run-level entity.
 func TestInitialSystems_RollsTheHallowedAltarPlan(t *testing.T) {
-	setChance(t, &HallowedAltarRunChance, 1)
-	s, _ := dungeonRun(t, 7, 1, 0)
+	s, _ := dungeonRun(t, 7, 1, 0, withTuning(func(t *floorTuning) { t.hallowedAltarRunChance = 1 }))
 	plan, ok := s.hallowedAltarPlan()
 	require.True(t, ok, "a forced chance rolls a plan")
 	assert.GreaterOrEqual(t, plan.Floor, 2)
@@ -197,9 +188,9 @@ func TestInitialSystems_RollsTheHallowedAltarPlan(t *testing.T) {
 // altar stands on floor 2, hidden or not, climbed to floor 2; no fountain.
 func hallowedRun(t *testing.T, seed uint64, delvers, height int, hidden bool) (*Session, []uuid.UUID) {
 	t.Helper()
-	setChance(t, &FountainFloorChance, 0)
-	setChance(t, &HallowedAltarRunChance, 0)
-	s, ids := dungeonRun(t, seed, delvers, 0)
+	s, ids := dungeonRun(t, seed, delvers, 0, withTuning(func(t *floorTuning) {
+		t.fountainFloorChance, t.hallowedAltarRunChance = 0, 0
+	}))
 	s.sender = &recordingSender{}
 	currentFloor(t, s).Count = height
 	s.setHallowedAltarPlan(2, hidden)

@@ -104,11 +104,11 @@ func fixSpireHeight(t *testing.T, s *Session) {
 
 // newRun builds a run the way the server does, without starting its loops, so
 // the test is the only thing touching the world. Its chest point holds a chest.
-func newRun(t *testing.T, client *countingItemsClient) *Session {
+func newRun(t *testing.T, client *countingItemsClient, opts ...sessionOption) *Session {
 	t.Helper()
 
 	em := ecs.NewEntityManager()
-	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, client, RunBounds())
+	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, client, RunBounds(), opts...)
 	s.containerKindRand = chestsOnly
 	s.InitialMapObjects(nil)
 	s.InitialSystems()
@@ -411,9 +411,10 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 		len(entityIDsWith(s, ecs.ComponentTypeMerchant))
 
 	total := len(s.EntityManager.GetAllEntities())
-	// a sealed floor's gate, seals and their pieces (FS-5FZ4J §B)
+	// a sealed floor's gate, seals, their pieces and its lore pieces, a mural
+	// or a shrine (FS-5FZ4J §B, §C R15, §F R39)
 	sealed := len(entityIDsWith(s, ecs.ComponentTypeBarrier)) + len(entityIDsWith(s, ecs.ComponentTypeSeal)) +
-		len(entityIDsWith(s, ecs.ComponentTypeSealPiece))
+		len(entityIDsWith(s, ecs.ComponentTypeSealPiece)) + len(entityIDsWith(s, ecs.ComponentTypeLorePiece))
 	// a dungeon floor's traps (FS-5FZ4J §D R23); a floor of buildings has none
 	traps := len(entityIDsWith(s, ecs.ComponentTypeTrap))
 	if s.dungeon != nil {

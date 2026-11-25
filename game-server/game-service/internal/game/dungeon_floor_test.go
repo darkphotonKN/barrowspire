@@ -24,10 +24,11 @@ import (
 // dungeonRun builds a run's first floor in the server's order, from seed:
 // seated delvers first, then the floor for them and the expected members still
 // connecting (FS-K2HKP R18).
-func dungeonRun(t *testing.T, seed uint64, seated, expected int) (*Session, []uuid.UUID) {
+// opts tune the world before its first floor is built (forcedSeal, withTuning).
+func dungeonRun(t *testing.T, seed uint64, seated, expected int, opts ...sessionOption) (*Session, []uuid.UUID) {
 	t.Helper()
 
-	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds())
+	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds(), opts...)
 	s.spawnRand = seededSpawns(seed)
 	s.InitialSystems()
 	fixSpireHeight(t, s)
@@ -450,8 +451,7 @@ func dist(ax, ay, bx, by float64) float64 { return math.Hypot(ax-bx, ay-by) }
 // A climbed floor's map carries the cell size and regions of its own layout,
 // not the floor below's. FS-M8CSE §C Requirement 14.
 func TestDungeonFloors_ClimbedFloorMapCarriesItsOwnRegions(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
-	s, _ := dungeonRun(t, 9, 2, 0)
+	s, _ := dungeonRun(t, 9, 2, 0, forcedSeal(components.SealLeverOrder))
 	require.NoError(t, s.regenerateFloor())
 	require.NotNil(t, s.dungeon)
 
@@ -600,9 +600,8 @@ func TestDungeonFloor1_FallbackOnlyOnError(t *testing.T) {
 
 	// the seed logged is the seed the layout came from, on floor 1's own
 	// parameters: a seal that asks for no hidden room
-	forceSeal(t, components.SealLeverOrder)
 	log.Reset()
-	s, _ := dungeonRun(t, 77, 1, 0)
+	s, _ := dungeonRun(t, 77, 1, 0, forcedSeal(components.SealLeverOrder))
 	var logged struct {
 		Msg  string `json:"msg"`
 		Seed uint64 `json:"seed"`

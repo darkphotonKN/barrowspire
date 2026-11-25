@@ -32,7 +32,8 @@ func sealedFloor(em *ecs.EntityManager) (seal, lever, mural, gate *ecs.Entity) {
 	other.AddComponent(components.NewTransformComponent(760, 200))
 
 	mural = em.CreateEntity()
-	mural.AddComponent(&components.SealPieceComponent{Seal: seal.ID, Kind: components.SealPieceMural, Cell: components.Cell{X: 1, Y: 1}})
+	// a lore piece, no seal piece, sent with the seal's pieces all the same
+	mural.AddComponent(&components.LorePieceComponent{Kind: components.LoreMural, Tells: seal.ID, Cell: components.Cell{X: 1, Y: 1}})
 	mural.AddComponent(components.NewTransformComponent(120, 120))
 
 	gate = em.CreateEntity()

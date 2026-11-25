@@ -25,10 +25,6 @@ const (
 	SealBraziers       SealKind = "braziers"
 )
 
-// HoldsGate is whether a seal of this kind keeps the stairs room's gate shut:
-// every kind but the Chasm, whose chasm is its barrier. FS-5FZ4J §B R13.
-func (k SealKind) HoldsGate() bool { return k != SealChasm }
-
 // SealComponent is one seal of a floor. Stage is its 1-based place in the
 // floor's chain (FS-5FZ4J §B R9). Broken is set once, for the whole party, and
 // never cleared (R11). What breaks it is its kind's rule, read off its pieces.
@@ -62,8 +58,6 @@ const (
 	SealPieceBrazier     SealPieceKind = "brazier"
 	SealPieceStairKey    SealPieceKind = "stair_key"
 	SealPieceBridgeLever SealPieceKind = "bridge_lever"
-	SealPieceMural       SealPieceKind = "mural"
-	SealPieceShrine      SealPieceKind = "shrine"
 )
 
 // Cell is a cell's column and row on the floor's grid.
@@ -71,8 +65,14 @@ type Cell struct {
 	X, Y int
 }
 
-// SealPieceComponent is one piece of a seal, or a lore piece beside it (a
-// mural). Seal is the seal entity it belongs to; Cell the floor cell it stands
+// CellRect is a rect of the floor's cells: X, Y its top-left cell, W x H
+// cells. The zero rect holds no cell.
+type CellRect struct {
+	X, Y, W, H int
+}
+
+// SealPieceComponent is one piece of a seal. Seal is the seal entity it
+// belongs to; Cell the floor cell it stands
 // on. Glyph and Turn are a lever's: the glyph it bears and its 1-based place
 // in the order. Active is a lever down, a plate held, a brazier lit, a bridge
 // lowered; never set on the others. FS-5FZ4J §C R15-R16, §I R46.
@@ -87,6 +87,29 @@ type SealPieceComponent struct {
 
 func (p *SealPieceComponent) Type() ecs.ComponentType {
 	return ecs.ComponentTypeSealPiece
+}
+
+// LoreKind is what a lore piece is. Its values are the wire's seal piece
+// kinds for it: a lore piece rides seal_pieces (FS-5FZ4J §I R46).
+type LoreKind string
+
+const (
+	LoreMural  LoreKind = "mural"
+	LoreShrine LoreKind = "shrine"
+)
+
+// LorePieceComponent is a lore piece: a mural (FS-5FZ4J §C R15) or a lore
+// shrine (§F R39), read by an interact, a piece of no seal, waking nothing
+// (CONTEXT.md "Seal piece"). Tells is the seal whose order a mural shows,
+// uuid.Nil on a shrine; Cell is the floor cell it stands on.
+type LorePieceComponent struct {
+	Kind  LoreKind
+	Tells uuid.UUID
+	Cell  Cell
+}
+
+func (l *LorePieceComponent) Type() ecs.ComponentType {
+	return ecs.ComponentTypeLorePiece
 }
 
 // AmbushComponent marks something whose first work wakes an ambush, a seal
@@ -134,9 +157,18 @@ A push builds while one face is walked against along one axis: PushX, PushY is
 its unit step and Pushed how far it has built, 0 to 1. Once it is built the
 block's cell moves on, and it slides there from FromX, FromY over SlideFor
 seconds, Slid of them gone. PushedBy is the delver whose push last moved it.
+
+Home is the cell it was laid on and Room the plates room's cells it stands
+in: a push never takes it out of Room, and left alone it drifts back to Home
+(R19 as amended, ADR-0092). Still is the seconds since a push last moved it.
+A block with the zero Room has no room to keep to and never drifts.
 */
 type StoneBlockComponent struct {
 	Size float64
+
+	Home  Cell
+	Room  CellRect
+	Still float64
 
 	PushX, PushY int
 	Pushed       float64

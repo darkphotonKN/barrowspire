@@ -15,8 +15,7 @@ import (
 // forced and no monster on it, the delvers' ids and the floor's seal.
 func braziersRun(t *testing.T, seed uint64, delvers int) (*Session, []uuid.UUID, *ecs.Entity) {
 	t.Helper()
-	forceSeal(t, components.SealBraziers)
-	s, ids := dungeonRun(t, seed, delvers, 0)
+	s, ids := dungeonRun(t, seed, delvers, 0, forcedSeal(components.SealBraziers))
 	require.NotNil(t, s.dungeon, "seed %d: a dungeon floor", seed)
 	clearMonsters(s)
 	seals := entitiesWith(s, ecs.ComponentTypeSeal)

@@ -213,6 +213,9 @@ type Session struct {
 	// seed: levelgen.GenerateDungeon, injected so a test can make it fail
 	// (FS-KE075 §B R17).
 	generateDungeon dungeonGenerator
+	// tuning is this world's own floor-build tunables, defaultFloorTuning
+	// unless a test overrides them (withTuning): never shared between worlds.
+	tuning floorTuning
 
 	// players waiting to connect via handoff
 	// playerID - Player struct
@@ -365,6 +368,13 @@ func withSpecializationGained(gained func(entity *ecs.Entity, spec string)) sess
 	return func(s *Session) { s.specializationGained = gained }
 }
 
+// withTuning has the world's floor build read its tunables as tune leaves
+// them, from defaultFloorTuning: a test forces a seal kind or a respite on
+// its own world, never on every world.
+func withTuning(tune func(*floorTuning)) sessionOption {
+	return func(s *Session) { tune(&s.tuning) }
+}
+
 // newSession builds a world without starting its loops, so a test can step its
 // tick by hand. opts replace its default dependencies.
 func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds, opts ...sessionOption) *Session {
@@ -423,6 +433,7 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		// the same goroutine-safe global source loot rolls with
 		spawnRand:         sharedLootRand{},
 		generateDungeon:   levelgen.GenerateDungeon,
+		tuning:            defaultFloorTuning(),
 		chestRand:         sharedLootRand{},
 		containerKindRand: sharedLootRand{},
 
@@ -599,12 +610,11 @@ func (s *Session) manageClientMessages() {
 
 				s.queueIntent(func() {
 					if err := s.handleInteract(playerID, entityIDUUID); err != nil {
-						// the client pre-checks the bag; a stale one is refused quietly (FS-HRH2J R37);
-						// a guarded chest is play, not a fault (FS-KE075 §J R60)
-						if errors.Is(err, ErrBagFull) || errors.Is(err, ErrContainerGuarded) {
-							slog.Debug("Pickup refused into a full bag.",
+						if interactRefusedQuietly(err) {
+							slog.Debug("Interact refused.",
 								"player_id", playerID,
 								"entity_id", entityIDUUID,
+								"error", err,
 							)
 						} else {
 							slog.Error("handleInteract failed to process on entity.",
@@ -821,15 +831,7 @@ func (s *Session) manageGameLoop() {
 			// loop runs: the build and a tick hold this in turn, never together
 			s.buildMu.Lock()
 
-			// between ticks: a floor change lands before the tick reads the world
-			s.applyRequestedFloorChange()
-
-			entities := s.EntityManager.GetAllEntities()
-
-			s.step(1.0/float64(constants.GameFrameRate), entities)
-
-			// broadcast state update to all players
-			err := s.broadcastFullState(entities)
+			entities, err := s.advanceTick(1.0 / float64(constants.GameFrameRate))
 			s.buildMu.Unlock()
 			if err != nil {
 				slog.Error("Error broadcasting state", "error", err)
@@ -849,6 +851,26 @@ func (s *Session) manageGameLoop() {
 			return
 		}
 	}
+}
+
+/**
+* advanceTick is one tick of the loop, deltaTime seconds long, under buildMu:
+* a requested floor change lands, the tick steps the world, and every member
+* is sent the world as the step left it. The broadcast reads the world again
+* rather than reuse the step's list, so what the step removed (a stair key
+* taken, a block's seal laid over) is not sent once more and what it created
+* (an ambush, a chained seal's pieces) is sent on its own tick. It returns
+* the entities it sent.
+**/
+func (s *Session) advanceTick(deltaTime float64) ([]*ecs.Entity, error) {
+	// between ticks: a floor change lands before the tick reads the world
+	s.applyRequestedFloorChange()
+
+	s.step(deltaTime, s.EntityManager.GetAllEntities())
+
+	// broadcast state update to all players
+	entities := s.EntityManager.GetAllEntities()
+	return entities, s.broadcastFullState(entities)
 }
 
 // step advances the simulation one tick. Damage happens in exactly one place on
@@ -891,11 +913,12 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	s.mu.RUnlock()
 	s.movementSystem.Update(deltaTime, entities)
 
-	// a dungeon floor's stone blocks take the walk's pushes and slide, over
-	// its grid, and its plates weigh what then stands on them (FS-5FZ4J §C
-	// R17-R19, §D R22)
+	// a dungeon floor's stone blocks take the walk's pushes, the ones left
+	// alone drift home, and they slide, over its grid; its plates weigh what
+	// then stands on them (FS-5FZ4J §C R17-R19, §D R22)
 	if s.worldType == types.WorldTypeRun && s.navGrid != nil {
-		systems.NewStoneBlockSystem(s.navGrid).Update(deltaTime, entities)
+		drift := systems.BlockDrift{After: BlockDriftAfter, ClearCells: BlockDriftClearCells}
+		systems.NewStoneBlockSystem(s.navGrid, drift).Update(deltaTime, entities)
 		s.watchSeals(deltaTime, entities)
 		// a trap a delver stepped onto fires, its hit queued for this tick's
 		// combat (FS-5FZ4J §D R25-R28)
@@ -1979,6 +2002,14 @@ func unitIntent(vx, vy float64) (float64, float64) {
 	return vx / length, vy / length
 }
 
+// interactRefusedQuietly is whether an interact's error is play, not a fault,
+// and is logged quietly: a stale bag check refused into a full bag (FS-HRH2J
+// R37), a guarded chest (FS-KE075 §J R60), a secret door the party has not
+// detected (FS-5FZ4J §F R38).
+func interactRefusedQuietly(err error) bool {
+	return errors.Is(err, ErrBagFull) || errors.Is(err, ErrContainerGuarded) || errors.Is(err, ErrUndetected)
+}
+
 /**
 * handles player interacting with x object with target entity id.
 **/
@@ -2055,8 +2086,10 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// is a door to the walk, never one a delver toggles
 	isBarrier := targetEntity.HasComponent(ecs.ComponentTypeBarrier)
 	isSealPiece := targetEntity.HasComponent(ecs.ComponentTypeSealPiece)
+	// a mural or a lore shrine, read, part of no seal (FS-5FZ4J §C R15, §F R39)
+	isLorePiece := targetEntity.HasComponent(ecs.ComponentTypeLorePiece)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isSealPiece {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isBarrier && !isSealPiece && !isLorePiece {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -2117,6 +2150,9 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	}
 	if isSealPiece {
 		return s.workSealPiece(playerID, playerEntity, playerTransform, targetEntity)
+	}
+	if isLorePiece {
+		return s.readLore(playerID, playerTransform, targetEntity)
 	}
 
 	// --- door entity ---
@@ -3391,7 +3427,7 @@ func (s *Session) InitialSystems() {
 		s.setTomePlan(tomeFloor, altarFloor)
 	}
 	// and the hallowed altar's beside it (FS-5FZ4J §G R42)
-	if floor, hidden, ok := rollHallowedAltarPlan(s.spawnRand, height, HallowedAltarRunChance); ok {
+	if floor, hidden, ok := rollHallowedAltarPlan(s.spawnRand, height, s.tuning.hallowedAltarRunChance, s.tuning.hallowedAltarHiddenShare); ok {
 		s.setHallowedAltarPlan(floor, hidden)
 	}
 }

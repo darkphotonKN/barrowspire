@@ -106,6 +106,14 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			}
 			continue
 		}
+		// a lore piece, a mural or a shrine, rides with the seal's pieces
+		// though it is none of them (FS-5FZ4J §I R46)
+		if lc, isLore := entity.GetComponent(ecs.ComponentTypeLorePiece); isLore {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				backendState.SealPieces = append(backendState.SealPieces, lorePieceState(entity.ID, lc.(*components.LorePieceComponent), tc.(*components.TransformComponent)))
+			}
+			continue
+		}
 		if bc, isBarrier := entity.GetComponent(ecs.ComponentTypeBarrier); isBarrier {
 			backendState.Barriers = append(backendState.Barriers, barrierState(entity, bc.(*components.BarrierComponent)))
 			continue
@@ -641,7 +649,7 @@ func sealState(seals []*components.SealComponent) *types.SealState {
 		Stage:      current.Stage,
 		Stages:     len(ordered),
 		Broken:     !slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return !sc.Broken }),
-		KeyCarried: slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return sc.KeyCarried }),
+		KeyCarried: slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return sc.KeyCarried && !sc.Broken }),
 	}
 	// a Braziers window runs on the current seal alone (§E R34)
 	if !current.Broken && current.WindowLeft > 0 {
@@ -659,6 +667,17 @@ func sealPieceState(id uuid.UUID, piece *components.SealPieceComponent, at *comp
 		Cell:     types.CellState{X: piece.Cell.X, Y: piece.Cell.Y},
 		Glyph:    piece.Glyph,
 		Active:   piece.Active,
+	}
+}
+
+// lorePieceState is one lore piece on the wire, as a seal piece of its kind:
+// never active, no glyph. FS-5FZ4J §I R46.
+func lorePieceState(id uuid.UUID, lore *components.LorePieceComponent, at *components.TransformComponent) *types.SealPieceState {
+	return &types.SealPieceState{
+		EntityID: id,
+		Kind:     string(lore.Kind),
+		Position: &types.Position{X: at.X, Y: at.Y},
+		Cell:     types.CellState{X: lore.Cell.X, Y: lore.Cell.Y},
 	}
 }
 

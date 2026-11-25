@@ -1,6 +1,7 @@
 package game
 
 import (
+	"context"
 	"slices"
 	"testing"
 
@@ -27,8 +28,7 @@ type keyRun struct {
 
 func newKeyRun(t *testing.T, seed uint64, delvers int) *keyRun {
 	t.Helper()
-	forceSeal(t, components.SealHiddenKey)
-	s, ids := dungeonRun(t, seed, delvers, 0)
+	s, ids := dungeonRun(t, seed, delvers, 0, forcedSeal(components.SealHiddenKey))
 	require.NotNil(t, s.dungeon, "seed %d: a dungeon floor", seed)
 	for _, m := range monstersInWorld(s.EntityManager) {
 		s.EntityManager.RemoveEntity(m.ID)
@@ -117,12 +117,17 @@ func TestSecretDoor_DetectedWithinTwoCells_SentToEveryMember(t *testing.T) {
 }
 
 // An interact on an undetected secret door finds nothing to work: the client
-// has no id for it (FS-5FZ4J §F R38).
-func TestSecretDoor_UndetectedIsNoTarget(t *testing.T) {
+// has no id for it (FS-5FZ4J §F R38). It is answered as a target not found,
+// and refused quietly: play, not a fault, so never logged as an error.
+func TestSecretDoor_UndetectedIsNoTarget_RefusedQuietly(t *testing.T) {
 	k := newKeyRun(t, 7, 1)
 	k.standOff(t, k.delvers[0], 1)
-	assert.ErrorIs(t, k.s.handleInteract(k.delvers[0], k.door.ID), ErrEntityNotFound)
+	err := k.s.handleInteract(k.delvers[0], k.door.ID)
+	assert.ErrorIs(t, err, ErrEntityNotFound)
+	assert.ErrorIs(t, err, ErrUndetected)
+	assert.True(t, interactRefusedQuietly(err), "a quiet refusal")
 	assert.False(t, delverEntity(t, k.s, k.delvers[0]).HasComponent(ecs.ComponentTypeTimedOpen))
+	assert.False(t, interactRefusedQuietly(ErrEntityNotFound), "a target that is not there at all is a fault")
 }
 
 // searchTicks is a 2 s search's ticks at 30 a second: it completes on the
@@ -497,10 +502,9 @@ func countsOf(m map[int]int) []int {
 * concealed.
 **/
 func TestHiddenRooms_PerFloor_DoorsAndContents(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
 	seen := map[int]bool{}
 	for seed := uint64(1); seed <= 12; seed++ {
-		s, _ := dungeonRun(t, seed, 1, 0)
+		s, _ := dungeonRun(t, seed, 1, 0, forcedSeal(components.SealLeverOrder))
 		for depth := firstFloor; depth <= testSpireHeight; depth++ {
 			d := s.dungeon
 			require.NotNil(t, d, "seed %d floor %d", seed, depth)
@@ -552,9 +556,15 @@ func assertHiddenRoomHoldsOnlyItsOwn(t *testing.T, s *Session, h levelgen.Barred
 			held++
 			continue
 		}
+		if lc, ok := e.GetComponent(ecs.ComponentTypeLorePiece); ok {
+			assert.Equal(t, components.LoreShrine, lc.(*components.LorePieceComponent).Kind)
+			assert.False(t, e.HasComponent(ecs.ComponentTypeSealPiece), "a shrine is no seal piece")
+			held++
+			continue
+		}
 		pc, ok := e.GetComponent(ecs.ComponentTypeSealPiece)
 		require.True(t, ok, "seed %d floor %d: a hidden room holds a chest, a shrine, the key or the hallowed altar", seed, depth)
-		assert.Contains(t, []components.SealPieceKind{components.SealPieceShrine, components.SealPieceStairKey}, pc.(*components.SealPieceComponent).Kind)
+		assert.Equal(t, components.SealPieceStairKey, pc.(*components.SealPieceComponent).Kind)
 		held++
 	}
 	assert.Equal(t, 1, held, "seed %d floor %d: one thing in the hidden room", seed, depth)
@@ -565,7 +575,7 @@ func assertHiddenRoomHoldsOnlyItsOwn(t *testing.T, s *Session, h levelgen.Barred
 func TestShrine_RepliesShrine(t *testing.T) {
 	s, player, sender := sealedRun(t, 7)
 	at := transformOf(t, delverEntity(t, s, player))
-	shrine := CreateSealPieceEntity(s.EntityManager, SealPieceConfig{Kind: components.SealPieceShrine, X: at.X + 20, Y: at.Y})
+	shrine := CreateLorePieceEntity(s.EntityManager, LorePieceConfig{Kind: components.LoreShrine, X: at.X + 20, Y: at.Y})
 	before := len(monstersInWorld(s.EntityManager))
 
 	require.NoError(t, s.handleInteract(player, shrine.ID))
@@ -574,4 +584,59 @@ func TestShrine_RepliesShrine(t *testing.T) {
 	assert.Equal(t, true, reply["success"])
 	assert.Equal(t, ReasonShrine, reply["reason"])
 	assert.Len(t, monstersInWorld(s.EntityManager), before, "it wakes nothing")
+}
+
+// loreOfKind is the floor's lore pieces of kind.
+func loreOfKind(s *Session, kind components.LoreKind) []*ecs.Entity {
+	var out []*ecs.Entity
+	for _, e := range s.EntityManager.GetAllEntities() {
+		if lc, ok := e.GetComponent(ecs.ComponentTypeLorePiece); ok && lc.(*components.LorePieceComponent).Kind == kind {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// loreOf is a lore piece entity's lore piece.
+func loreOf(e *ecs.Entity) *components.LorePieceComponent {
+	lc, _ := e.GetComponent(ecs.ComponentTypeLorePiece)
+	return lc.(*components.LorePieceComponent)
+}
+
+// capturingSerializer records the entities each broadcast serialized.
+type capturingSerializer struct {
+	mockStateSerializer
+	sent [][]*ecs.Entity
+}
+
+func (c *capturingSerializer) SerializeBackendState(_ context.Context, _ uuid.UUID, _ types.WorldType, entities []*ecs.Entity) (*types.BackendGameState, error) {
+	c.sent = append(c.sent, entities)
+	return nil, nil
+}
+
+// A tick's broadcast is of the world as the tick left it: the stair key taken
+// on the tick, and so gone from the world, is not sent once more (FS-5FZ4J
+// §E R32, §I R46); nothing created on the tick waits a tick to be sent.
+func TestTick_EntityRemovedMidTick_IsNotBroadcast(t *testing.T) {
+	k := newKeyRun(t, 7, 1)
+	k.search(t, k.delvers[0])
+	ticks(k.s, searchTicks)
+	key, _ := stairKeyOf(k.s)
+	keyAt := transformOf(t, key)
+	delver := transformOf(t, delverEntity(t, k.s, k.delvers[0]))
+	delver.X, delver.Y = keyAt.X+20, keyAt.Y
+	capture := &capturingSerializer{}
+	k.s.stateSerializer = capture
+
+	k.s.queueIntent(func() { require.NoError(t, k.s.handleInteract(k.delvers[0], key.ID)) })
+	_, err := k.s.advanceTick(1.0 / float64(constants.GameFrameRate))
+	require.NoError(t, err)
+
+	require.Len(t, capture.sent, 1, "one broadcast a tick")
+	for _, e := range capture.sent[0] {
+		assert.NotEqual(t, key.ID, e.ID, "the taken key is not broadcast")
+	}
+	woken := monstersInWorld(k.s.EntityManager)
+	require.NotEmpty(t, woken, "the taking woke an ambush")
+	assert.Contains(t, capture.sent[0], woken[0], "created on the tick, sent on the tick")
 }

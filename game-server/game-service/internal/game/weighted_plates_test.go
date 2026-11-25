@@ -17,20 +17,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// forceSeal has every sealed floor built in this test take kind's seal.
-func forceSeal(t testing.TB, kind components.SealKind) {
-	t.Helper()
-	was := ForcedSealKind
-	ForcedSealKind = kind
-	t.Cleanup(func() { ForcedSealKind = was })
+// forcedSeal has every sealed floor the world builds take kind's seal; ""
+// draws by the table.
+func forcedSeal(kind components.SealKind) sessionOption {
+	return withTuning(func(t *floorTuning) { t.forcedSealKind = kind })
 }
 
 // platesRun is floor 1 of a seeded run of one delver with Weighted Plates
 // forced and no monster on it, the delver's id and the floor's seal.
 func platesRun(t *testing.T, seed uint64) (*Session, uuid.UUID, *ecs.Entity) {
 	t.Helper()
-	forceSeal(t, components.SealWeightedPlates)
-	s, ids := dungeonRun(t, seed, 1, 0)
+	s, ids := dungeonRun(t, seed, 1, 0, forcedSeal(components.SealWeightedPlates))
 	require.NotNil(t, s.dungeon, "seed %d: a dungeon floor", seed)
 	for _, m := range monstersInWorld(s.EntityManager) {
 		s.EntityManager.RemoveEntity(m.ID)
@@ -86,8 +83,7 @@ func roomOfPieces(t *testing.T, s *Session, pieces []*ecs.Entity) int {
 // plate carries the seal's one ambush. Checked over many seeds.
 func TestWeightedPlates_Floor1_PlatesAndBlocksInOneQuietRoom(t *testing.T) {
 	for seed := uint64(1); seed <= 25; seed++ {
-		forceSeal(t, components.SealWeightedPlates)
-		s, _ := dungeonRun(t, seed, 1, 0)
+		s, _ := dungeonRun(t, seed, 1, 0, forcedSeal(components.SealWeightedPlates))
 		d := s.dungeon
 		require.NotNil(t, d, "seed %d", seed)
 		seals := sealsOf(t, s)
@@ -159,8 +155,7 @@ func TestWeightedPlates_PlacementSearch_PassesOnEverySeed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("the 500-seed sweep")
 	}
-	forceSeal(t, components.SealWeightedPlates)
-	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds())
+	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds(), forcedSeal(components.SealWeightedPlates))
 	for _, depth := range []int{1, 5} {
 		params, _ := dungeonParams(depth)
 		for seed := uint64(1); seed <= 500; seed++ {
@@ -170,7 +165,7 @@ func TestWeightedPlates_PlacementSearch_PassesOnEverySeed(t *testing.T) {
 			s.spawnRand = seededSpawns(seed)
 			s.objectOccupiedPlaceAreas = nil
 
-			fixtures, err := s.placeFixtures(depth, d, sealKindsFor(s.spawnRand, depth, 1))
+			fixtures, err := s.placeFixtures(depth, d, s.tuning.sealKindsFor(s.spawnRand, depth, 1))
 			require.NoError(t, err, "floor %d seed %d: the plates fit", depth, seed)
 			require.Len(t, fixtures.seals, 1)
 
@@ -410,4 +405,156 @@ func TestWeightedPlates_Wire_BlocksMidSlideAndHeldPlates(t *testing.T) {
 	assert.True(t, frame.SealPieces[byID[plates[0].ID]].Active, "a held plate")
 	assert.False(t, frame.SealPieces[byID[plates[1].ID]].Active)
 	assert.True(t, math.Abs(wire.Position.Y-stone.FromY) < 1e-9)
+}
+
+// stoneOf is a block entity's stone block.
+func stoneOf(e *ecs.Entity) *components.StoneBlockComponent {
+	bc, _ := e.GetComponent(ecs.ComponentTypeStoneBlock)
+	return bc.(*components.StoneBlockComponent)
+}
+
+// coverable is whether, from the blocks' cells now, one delver entering the
+// plates room could still push a block onto every plate: the build's own
+// search (FS-5FZ4J §C R20).
+func coverable(s *Session, room int, plates, blocks []*ecs.Entity) bool {
+	cells := func(es []*ecs.Entity) []components.Cell {
+		out := make([]components.Cell, len(es))
+		for i, e := range es {
+			out[i] = pieceOf(e).Cell
+		}
+		return out
+	}
+	r := s.dungeon.layout.Rooms[room].Rect
+	return platesCoverable(r.W, r.H, s.dungeon.inRoom(room, cells(plates)), s.dungeon.inRoom(room, cells(blocks)), s.dungeon.roomEntry(room))
+}
+
+/**
+* FS-5FZ4J §C R19 as amended, ADR-0092: the solo brick. One delver on floor 1
+* pushes both blocks against the plates room's border row, where no push can
+* bring them off it again: no plate can be covered. Left alone, the delver
+* walked back to the start room, both blocks drift home after 20 s, each to
+* the cell it was laid on, and one delver can break the seal again.
+**/
+func TestWeightedPlates_SoloBrick_BlocksDriftHome_TheSealStaysBreakable(t *testing.T) {
+	s, player, seal := platesRun(t, 7)
+	plates := piecesOfKind(s, components.SealPiecePlate)
+	blocks := piecesOfKind(s, components.SealPieceBlock)
+	delver := delverEntity(t, s, player)
+	room := roomOfPieces(t, s, slices.Concat(plates, blocks))
+	r := s.dungeon.layout.Rooms[room].Rect
+	homes := make([]components.Cell, len(blocks))
+	for i, b := range blocks {
+		homes[i] = pieceOf(b).Cell
+		require.Equal(t, homes[i], stoneOf(b).Home, "laid at home")
+	}
+
+	// each block pushed north onto the border row, in a column of its own
+	// clear of every piece
+	used := map[int]bool{}
+	for _, b := range blocks {
+		pushed := false
+		for x := r.X + 1; x < r.X+r.W-1 && !pushed; x++ {
+			clear := !used[x]
+			for _, other := range slices.Concat(plates, blocks) {
+				c := pieceOf(other).Cell
+				clear = clear && (other.ID == b.ID || c.X != x || c.Y > r.Y+2)
+			}
+			if !clear {
+				continue
+			}
+			used[x] = true
+			pushOnto(t, s, delver, b, components.Cell{X: x, Y: r.Y})
+			pushed = true
+		}
+		require.True(t, pushed, "a free column for the block")
+	}
+	require.False(t, coverable(s, room, plates, blocks), "bricked: both blocks on the border row")
+
+	start := s.dungeon.roomCentre(s.dungeon.layout.Roles.Start)
+	transformOf(t, delver).X, transformOf(t, delver).Y = start.x, start.y
+	home := func() bool {
+		for i, b := range blocks {
+			if pieceOf(b).Cell != homes[i] || stoneOf(b).Sliding {
+				return false
+			}
+		}
+		return true
+	}
+	for range int((BlockDriftAfter - 1) * constants.GameFrameRate) {
+		keepStanding(s.EntityManager)
+		tick(s)
+	}
+	require.False(t, home(), "not before 20 s")
+	for range 30 * constants.GameFrameRate {
+		if home() {
+			break
+		}
+		keepStanding(s.EntityManager)
+		tick(s)
+	}
+
+	require.True(t, home(), "both blocks drifted home")
+	for _, b := range blocks {
+		c := pieceOf(b).Cell
+		assert.False(t, s.navGrid.Walkable(c.X, c.Y), "a block's home is shut to paths again")
+	}
+	for x := r.X; x < r.X+r.W; x++ {
+		assert.True(t, s.navGrid.Walkable(x, r.Y), "the border row is ground again")
+	}
+	assert.True(t, coverable(s, room, plates, blocks), "one delver can cover every plate again")
+	require.False(t, sealComponentOf(seal).Broken)
+
+	for i := range plates {
+		pushOnto(t, s, delver, blocks[i], pieceOf(plates[i]).Cell)
+	}
+	transformOf(t, delver).X, transformOf(t, delver).Y = start.x, start.y
+	tick(s)
+	assert.True(t, sealComponentOf(seal).Broken, "and the seal breaks, solo")
+}
+
+/**
+* FS-5FZ4J §C R19 as amended, Edge States: a block on the plates room's
+* doorway pushed out toward its corridor is refused, the block staying in the
+* room and the corridor open: no block reaches a corridor, the stairs' gate
+* corridor among them, so none can be jammed.
+**/
+func TestWeightedPlates_BlockPushedOutOfThePlatesRoom_IsRefused(t *testing.T) {
+	s, player, _ := platesRun(t, 7)
+	plates := piecesOfKind(s, components.SealPiecePlate)
+	blocks := piecesOfKind(s, components.SealPieceBlock)
+	room := roomOfPieces(t, s, slices.Concat(plates, blocks))
+	r := s.dungeon.layout.Rooms[room].Rect
+	inRoom := func(c components.Cell) bool {
+		return c.X >= r.X && c.Y >= r.Y && c.X < r.X+r.W && c.Y < r.Y+r.H
+	}
+	block, delver := blocks[0], delverEntity(t, s, player)
+
+	door := s.dungeon.layout.Rooms[room].Doorways[0]
+	doorway := components.Cell{X: door.X, Y: door.Y}
+	var dir [2]int
+	for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+		out := offset(doorway, d[0], d[1])
+		if !inRoom(out) && s.navGrid.Walkable(out.X, out.Y) {
+			dir = d
+		}
+	}
+	require.NotEqual(t, [2]int{}, dir, "the doorway opens onto a corridor")
+	corridor := offset(doorway, dir[0], dir[1])
+
+	s.navGrid.SetWalkable(pieceOf(block).Cell.X, pieceOf(block).Cell.Y, true)
+	pieceOf(block).Cell = doorway
+	standOn(t, s, block, doorway)
+	s.navGrid.SetWalkable(doorway.X, doorway.Y, false)
+	standOn(t, s, delver, offset(doorway, -dir[0], -dir[1]))
+	vc, _ := delver.GetComponent(ecs.ComponentTypeVelocity)
+	vc.(*components.VelocityComponent).VX, vc.(*components.VelocityComponent).VY = float64(dir[0]), float64(dir[1])
+
+	for range 4 * constants.GameFrameRate {
+		keepStanding(s.EntityManager)
+		tick(s)
+	}
+
+	assert.Equal(t, doorway, pieceOf(block).Cell, "the block stays in its room")
+	assert.False(t, stoneOf(block).Sliding)
+	assert.True(t, s.navGrid.Walkable(corridor.X, corridor.Y), "the corridor stays open")
 }

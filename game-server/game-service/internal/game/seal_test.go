@@ -149,9 +149,9 @@ func TestGate_ShutBlocksBodiesAndPaths_OpenLetsBothThrough(t *testing.T) {
 
 // sealedRun is floor 1 of a seeded run with one delver, its sender
 // recording, ticked once so the delver's gear has counted.
-func sealedRun(t *testing.T, seed uint64) (*Session, uuid.UUID, *recordingSender) {
+func sealedRun(t *testing.T, seed uint64, opts ...sessionOption) (*Session, uuid.UUID, *recordingSender) {
 	t.Helper()
-	s, ids := dungeonRun(t, seed, 1, 0)
+	s, ids := dungeonRun(t, seed, 1, 0, opts...)
 	sender := &recordingSender{}
 	s.sender = sender
 	tick(s)
@@ -182,12 +182,41 @@ func TestGate_InteractWhileSealed_RefusesGateSealed(t *testing.T) {
 	assert.False(t, barrierOpen(gate), "the gate stays shut")
 }
 
-// FS-5FZ4J §H R45: a seal piece, a lever or a mural, is kept out of every
-// monster's spawn, as every fixture is; so is the gate.
-func TestMapKeepOut_CoversSealPiecesAndTheGate(t *testing.T) {
-	for _, kind := range []components.SealPieceKind{components.SealPieceLever, components.SealPieceMural} {
+// FS-5FZ4J §B R13: the interact's type guard knows a barrier for one: a gate
+// that is no door to the walk is refused gate_sealed all the same, never
+// turned away as no interactable.
+func TestGate_WithoutADoor_IsStillABarrierToInteract(t *testing.T) {
+	s, player, sender := sealedRun(t, 7)
+	gate := gateOf(t, s)
+	gate.RemoveComponent(ecs.ComponentTypeDoor)
+	// with no door's size, reach is measured to its corner
+	at, corner := transformOf(t, delverEntity(t, s, player)), transformOf(t, gate)
+	_, _, dx, dy := gateApproach(s)
+	at.X, at.Y = corner.X-dx*20, corner.Y-dy*20
+
+	require.NoError(t, s.handleInteract(player, gate.ID))
+
+	assert.Equal(t, RefusalGateSealed, lastReply(t, sender, player)["reason"])
+}
+
+// FS-5FZ4J §H R45: a seal piece, a lever, and a lore piece, a mural or a
+// shrine, are kept out of every monster's spawn, as every fixture is; so is
+// the gate.
+func TestMapKeepOut_CoversSealPiecesLorePiecesAndTheGate(t *testing.T) {
+	lay := map[string]func(em *ecs.EntityManager){
+		"lever": func(em *ecs.EntityManager) {
+			CreateSealPieceEntity(em, SealPieceConfig{Kind: components.SealPieceLever, X: 500, Y: 400})
+		},
+		"mural": func(em *ecs.EntityManager) {
+			CreateLorePieceEntity(em, LorePieceConfig{Kind: components.LoreMural, X: 500, Y: 400})
+		},
+		"shrine": func(em *ecs.EntityManager) {
+			CreateLorePieceEntity(em, LorePieceConfig{Kind: components.LoreShrine, X: 500, Y: 400})
+		},
+	}
+	for kind, piece := range lay {
 		em := ecs.NewEntityManager()
-		CreateSealPieceEntity(em, SealPieceConfig{Kind: kind, X: 500, Y: 400})
+		piece(em)
 		covered := false
 		for _, area := range mapKeepOut(em.GetAllEntities()) {
 			if area.overlapsBody(500, 400, constants.PlayerRadius) {
@@ -212,8 +241,7 @@ func TestMapKeepOut_CoversSealPiecesAndTheGate(t *testing.T) {
 // has no seal, no gate and no pieces, and its stairs climb; the top floor has
 // no stairs and no seal; a sealed floor's state carries all three keys.
 func TestSeal_OnlyOnASealedDungeonFloor(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
-	c := newSealedClimb(t)
+	c := newSealedClimb(t, forcedSeal(components.SealLeverOrder))
 	s := c.s
 	ser := serializer.NewStateSerializer(s.EntityManager, nil)
 	frame := func() *types.ClientGameState {
@@ -255,8 +283,7 @@ func TestSeal_OnlyOnASealedDungeonFloor(t *testing.T) {
 // FS-5FZ4J §A R1, R4: a dungeon top floor has no stairs, so no seal and no
 // gate; every floor below it is sealed.
 func TestSeal_DungeonTopFloorHasNone(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
-	s, _ := dungeonRun(t, 5, 1, 0)
+	s, _ := dungeonRun(t, 5, 1, 0, forcedSeal(components.SealLeverOrder))
 	for depth := firstFloor; depth < testSpireHeight; depth++ {
 		require.NotNil(t, s.dungeon)
 		assert.Len(t, sealsOf(t, s), 1, "floor %d is sealed", depth)

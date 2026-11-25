@@ -26,7 +26,7 @@ func TestSerialize_UndetectedAndConcealedAreSentToNoOne(t *testing.T) {
 	door.AddComponent(detection)
 
 	shrine := em.CreateEntity()
-	shrine.AddComponent(&components.SealPieceComponent{Kind: components.SealPieceShrine, Cell: components.Cell{X: 7, Y: 5}})
+	shrine.AddComponent(&components.LorePieceComponent{Kind: components.LoreShrine, Cell: components.Cell{X: 7, Y: 5}})
 	shrine.AddComponent(components.NewTransformComponent(600, 440))
 	shrine.AddComponent(&components.ConcealedComponent{By: door.ID})
 	chest := em.CreateEntity()
@@ -57,15 +57,19 @@ func TestSerialize_UndetectedAndConcealedAreSentToNoOne(t *testing.T) {
 	assert.Len(t, asList(wire["containers"]), 1)
 }
 
-// FS-5FZ4J §I R46: key_carried is set while the party carries the stair key,
-// absent otherwise.
-func TestSerialize_SealKeyCarried(t *testing.T) {
+// FS-5FZ4J §I R46 (amended 2026-11-25): key_carried is set while the party
+// carries the stair key and its seal is unbroken, absent otherwise: once the
+// key has turned the gate it is carried no more.
+func TestSerialize_SealKeyCarried_UntilItsSealBreaks(t *testing.T) {
 	em := ecs.NewEntityManager()
 	seal, _, _, _ := sealedFloor(em)
 	require.NotContains(t, sealWireOf(t, em, types.WorldTypeRun)["seal"], "key_carried")
 	sc, _ := seal.GetComponent(ecs.ComponentTypeSeal)
 	sc.(*components.SealComponent).KeyCarried = true
 	assert.Equal(t, true, sealWireOf(t, em, types.WorldTypeRun)["seal"].(map[string]any)["key_carried"])
+
+	sc.(*components.SealComponent).Broken = true
+	assert.NotContains(t, sealWireOf(t, em, types.WorldTypeRun)["seal"], "key_carried", "the key has turned the gate")
 }
 
 func asList(v any) []any {

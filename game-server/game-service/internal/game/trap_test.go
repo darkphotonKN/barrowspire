@@ -325,9 +325,8 @@ func assertTrapRules(t *testing.T, s *Session, want int, what string) {
 // its 3 traps by the cell rules.
 func TestTraps_Floor1_PlacementRulesOverASeedSweep(t *testing.T) {
 	for _, kind := range []components.SealKind{components.SealLeverOrder, components.SealWeightedPlates, components.SealHiddenKey} {
-		forceSeal(t, kind)
 		for seed := uint64(1); seed <= 60; seed++ {
-			s, _ := dungeonRun(t, seed, 2, 1)
+			s, _ := dungeonRun(t, seed, 2, 1, forcedSeal(kind))
 			require.NotNil(t, s.dungeon, "seed %d", seed)
 			assertTrapRules(t, s, trapCount(1), fmt.Sprintf("%s seed %d", kind, seed))
 		}
@@ -337,9 +336,8 @@ func TestTraps_Floor1_PlacementRulesOverASeedSweep(t *testing.T) {
 // FS-5FZ4J §D R23: floor 10 lays 8 by the same rules; a floor change builds
 // new traps (§D R31).
 func TestTraps_Floor10_EightByTheRules(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
 	for seed := uint64(1); seed <= 12; seed++ {
-		s, _ := dungeonRun(t, seed, 1, 0)
+		s, _ := dungeonRun(t, seed, 1, 0, forcedSeal(components.SealLeverOrder))
 		floor := currentFloor(t, s)
 		floor.Count = 12
 		old := trapsOf(s)

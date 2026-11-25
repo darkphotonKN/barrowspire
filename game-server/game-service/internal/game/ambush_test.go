@@ -57,9 +57,8 @@ func newMonsters(s *Session, before []*ecs.Entity) []*ecs.Entity {
 // MonsterDelverExclusion from the delver and hunting the puller. Pulled again
 // after a reset, that lever wakes nothing.
 func TestAmbush_FirstInTurnPullWakesOnePack_ASecondWakesNothing(t *testing.T) {
-	forceSeal(t, components.SealLeverOrder)
 	for _, seed := range []uint64{3, 7, 11, 19} {
-		s, player, _ := sealedRun(t, seed)
+		s, player, _ := sealedRun(t, seed, forcedSeal(components.SealLeverOrder))
 		d := s.dungeon
 		levers := leversInTurn(t, s)
 		lever := levers[0]
