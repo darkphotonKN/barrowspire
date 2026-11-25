@@ -57,6 +57,31 @@ export function rgba(color: number, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/** One reliquary bar's liquid ramp (`palette.hudBarRamp`): every tone from its channel's colour and a darker anchor in its family. */
+export interface BarRamp {
+  light: number;
+  lit: number;
+  body: number;
+  deep: number;
+  foot: number;
+  trough: number;
+  chip: number;
+  spark: number;
+}
+
+function barRamp(lit: number, anchor: number): BarRamp {
+  return {
+    light: tint(lit, 0.38),
+    lit,
+    body: mix(lit, anchor, 0.32),
+    deep: mix(lit, anchor, 0.68),
+    foot: shade(anchor, 0.35),
+    trough: shade(anchor, 0.68),
+    chip: tint(lit, 0.5),
+    spark: tint(lit, 0.62),
+  };
+}
+
 // ── The canvas palette ────────────────────────────────────────────────────
 
 /** Slate warmed a little toward barrow earth: grey stone, neither cold nor brown. */
@@ -211,7 +236,8 @@ export const palette = {
   minimapEdge: tint(BARROW_HEX.slateLight, 0.3),
   levelUp: BARROW_HEX.brassBright,
   /**
-   * The resource bars (FS-8AY7S req 23), on a dark track in a brass rim. Health is the oxblood
+   * The resource bars' channel colours (FS-8AY7S req 23): the party frames' compact bars fill in them,
+   * and each is the `lit` tone of its reliquary ramp (`hudBarRamp`) on the player's own bars. Health is the oxblood
    * channel, lifted as the marker HP bar is, since raw oxblood vanishes on the dark track. Mana
    * keeps the necrotic blue-green the old MP bar had. Stamina is worn parchment-gold: the neutral
    * HUD family, apart from health, mana and the bright-brass XP bar, never amber (not actionable)
@@ -237,6 +263,34 @@ export const palette = {
    * hovered) nor as arcane green's ally.
    */
   blessed: mix(BARROW_HEX.brassBright, BARROW_HEX.vellum, 0.35),
+  /**
+   * The reliquary bars: the player's own Health and resource bars as a carved plate with a sunken,
+   * brass-bezelled channel per bar, each filled like a vial and set into an emblem socket. One ramp
+   * per channel, every tone from that channel's own colour (`lit`, the colour the HUD has always
+   * filled in) and a darker anchor in its family, so the channel's hue still reads: `light` the
+   * liquid's specular top and leading edge, `body` its middle, `deep` and `foot` its underside,
+   * `trough` the channel's empty run (the missing reads in the channel's own dark, never black),
+   * `chip` what a loss just took, `spark` motes, bubbles and glints.
+   */
+  hudBarRamp: {
+    health: barRamp(BARROW_HEX.oxbloodText, BARROW_HEX.oxblood),
+    mana: barRamp(BARROW_HEX.necrotic, shade(BARROW_HEX.necrotic, 0.5)),
+    stamina: barRamp(mix(BARROW_HEX.vellum, BARROW_HEX.brass, 0.35), BARROW_HEX.brass),
+    parry: barRamp(BARROW_HEX.brassBright, BARROW_HEX.brass),
+    unknown: barRamp(BARROW_HEX.vellumDark, BARROW_HEX.barrowDeep),
+    poisoned: barRamp(
+      mix(mix(BARROW_HEX.arcane, BARROW_HEX.brassBright, 0.45), BARROW_HEX.vellumDark, 0.35),
+      shade(BARROW_HEX.arcaneDeep, 0.2),
+    ),
+  },
+  /** The reliquary plate and its brass: the stone, its lit and shadowed edges, the bezel's three tones and a socket's well. */
+  hudPlate: BARROW_HEX.umber,
+  hudPlateLit: tint(BARROW_HEX.umber, 0.1),
+  hudPlateDeep: BARROW_HEX.pitch,
+  hudBezel: BARROW_HEX.brass,
+  hudBezelLit: BARROW_HEX.brassBright,
+  hudBezelShade: shade(BARROW_HEX.brass, 0.55),
+  hudSocket: BARROW_HEX.pitch,
   /**
    * Contract Settled's status mark (FS-4EC7Z §G R34): the mercenary's blood-price, an ember steel
    * paled toward vellum, so the two crossed blades read as a damage boon held, apart from the

@@ -2585,6 +2585,7 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
   const withMe = (self: ReturnType<typeof me>, ally = player("ally", "Wenna", 160)): GameState =>
     ({ ...floorState(1), current_player: self, other_players: [ally] }) as GameState;
 
+  // the plate engraves each label in caps without its colon (the reliquary bars): "Health:" reads HEALTH
   function barsOnStage() {
     const scene = sceneOnStage();
     const cam = (scene.run.cameras as { main: { width: number; height: number } }).main;
@@ -2592,7 +2593,7 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
     const labels = () =>
       live()
         .map((m) => String(m.args[2]))
-        .filter((t) => /^(Health|Mana|Stamina|Parry):$/.test(t));
+        .filter((t) => /^(HEALTH|MANA|STAMINA|PARRY)$/.test(t));
     const label = (content: string) => live().find((m) => m.args[2] === content);
     return { ...scene, cam, labels, label };
   }
@@ -2600,8 +2601,8 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
   it("should show Health: and Mana: at the very top left in a run, in the body serif", () => {
     const { run, cam, labels, label } = barsOnStage();
     run.handleGameStateUpdate(withMe(me()));
-    expect(labels()).toEqual(["Health:", "Mana:"]);
-    for (const name of ["Health:", "Mana:"]) {
+    expect(labels()).toEqual(["HEALTH", "MANA"]);
+    for (const name of ["HEALTH", "MANA"]) {
       const text = label(name)!;
       expect(text.args[0] as number).toBeLessThan(cam.width / 2);
       expect(text.args[1] as number).toBeLessThan(cam.height / 2);
@@ -2609,7 +2610,7 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
       expect((text.args[3] as { fontFamily?: string }).fontFamily).toBe(CANVAS_FONT.body);
     }
     // the resource bar sits under the health bar
-    expect(label("Mana:")!.args[1] as number).toBeGreaterThan(label("Health:")!.args[1] as number);
+    expect(label("MANA")!.args[1] as number).toBeGreaterThan(label("HEALTH")!.args[1] as number);
   });
 
   // FS-5FZ4J §J R55 (I-5FZ4J-10)
@@ -2629,15 +2630,15 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
   it("should label a stamina resource Stamina:, and parry charges Parry:", () => {
     const { run, labels } = barsOnStage();
     run.handleGameStateUpdate(withMe(me({ resource: { kind: "stamina", current: 5, max: 10, ability_cost: 5 } })));
-    expect(labels()).toEqual(["Health:", "Stamina:"]);
+    expect(labels()).toEqual(["HEALTH", "STAMINA"]);
     run.handleGameStateUpdate(withMe(me({ resource: { kind: "parry_charges", current: 2, max: 3, ability_cost: 0 } })));
-    expect(labels()).toEqual(["Health:", "Parry:"]);
+    expect(labels()).toEqual(["HEALTH", "PARRY"]);
   });
 
   it("should show the health bar alone when the state carries no resource", () => {
     const { run, labels } = barsOnStage();
     run.handleGameStateUpdate(withMe(me({ resource: undefined })));
-    expect(labels()).toEqual(["Health:"]);
+    expect(labels()).toEqual(["HEALTH"]);
   });
 
   // the owner, 2026-11-14: 「左上角的個人血量魔量不用隱藏 就顯示死亡時的狀態就好了」 (FS-QPDKN § Change: The party
@@ -2665,11 +2666,11 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
       const hud = heardHud(run);
       run.handleGameStateUpdate(withMe(me()));
       run.handleGameStateUpdate(withMe(me(fields)));
-      expect(labels()).toEqual(["Health:", "Mana:"]);
+      expect(labels()).toEqual(["HEALTH", "MANA"]);
       expect(hud.bars()).toEqual(want);
       // later states, whatever they say, change nothing
       run.handleGameStateUpdate(withMe(me({ ...fields, resource: { ...mana, current: 120 } })));
-      expect(labels()).toEqual(["Health:", "Mana:"]);
+      expect(labels()).toEqual(["HEALTH", "MANA"]);
       expect(hud.bars()).toEqual(want);
     });
 
@@ -2679,7 +2680,7 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
       run.handleGameStateUpdate(withMe(me()));
       run.handleGameStateUpdate(withMe(me({ escape: true })));
       run.handleGameStateUpdate({ ...floorState(1), current_player: null, other_players: [player("ally", "Wenna", 160)] } as GameState);
-      expect(labels()).toEqual(["Health:", "Mana:"]);
+      expect(labels()).toEqual(["HEALTH", "MANA"]);
       expect(hud.bars()).toEqual([["health", 1], ["mana", 0.25]]);
     });
 
@@ -2753,7 +2754,7 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
     run.handleGameStateUpdate(withMe(me()));
     (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
     run.handleGameStateUpdate(withMe(me()));
-    expect(labels().filter((l) => l === "Health:").length).toBeGreaterThanOrEqual(1);
+    expect(labels().filter((l) => l === "HEALTH").length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -8735,9 +8736,9 @@ describe("the run's top-left stack, closed up (FS-77DVN §E)", () => {
     return [bars, ...partyFramesFrame(4, x, top).map((f) => f.row)];
   }
 
-  it("should stand the bars at (10, 16), as a field's, and the frames from y 92", () => {
+  it("should stand the bars at (10, 16), as a field's, and the frames from y 111 (the reliquary bars' taller plate; was 92)", () => {
     expect(RESOURCE_HUD_AT.run).toEqual({ x: 10, y: 16 });
-    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 92 });
+    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 111 });
   });
 
   it.each([1080, 1280])(

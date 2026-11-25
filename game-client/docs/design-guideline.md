@@ -931,6 +931,32 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   bar stands over it, from 6 px over the bar's top.
   *(Added by [FS-77DVN](../../docs/specs/77DVN-xp-bar-along-the-bottom.md), 2026-11-14; the cue over
   the ability bar by [FS-Q18Q3](../../docs/specs/Q18Q3-ability-bar.md), 2026-11-21.)*
+- **Resource bars (the reliquary bars).** The player's own Health and class resource bars at the top
+  left of a run or a field (`src/ui/ResourceHud.ts`, the art in `src/ui/reliquaryBar.ts`), one 180 px
+  column with the party frames. A carved stone plate (`hudPlate`, a lit top edge, a dark foot, a brass
+  hairline and a brass stud at each corner) holds one row per bar. Each row is a **sunken channel** in a
+  brass bezel lit along its top, with a brass finial at its far end, run out of an **emblem socket** at
+  its left: a bevelled brass ring around a dark well holding the channel's glyph in its own colour, a
+  blood drop for Health, a waning moon cradling a mote for Mana, twin rising chevrons for Stamina, a
+  ribbed heater shield for Parry, a dot for a kind the client does not know. The bar's name is
+  **engraved on the plate above its channel**, never over the liquid (vellum on a mid-tone fill is
+  illegible under any outline): 11 px body-serif caps, letter-spaced, in `hudLabel` with a 1 px dark
+  drop, "HEALTH", not "Health:". Health's channel is 12 px, a resource's 10, both on the socket's line.
+  The channel fills like a vial, every tone from that channel's ramp (`palette.hudBarRamp`, built from
+  its HUD colour and a darker anchor in its own family, so the hue still reads): the empty run in the
+  channel's own dark, never black; the liquid lit at its top, darker at its foot, a bright meniscus at
+  its edge, engraved quarter marks over it. **It lives:** a soft sheen walks along it; a loss drops at
+  once and leaves the chip, the monster bars' `DamageChip` (held, then drained); a gain rises in over a
+  moment under a pale glow. Each channel has one texture: Health beats lub-dub, faint and slow when
+  hale, quicker and harder below a third, its socket glowing oxblood as it runs out; Mana carries
+  drifting motes; Stamina is corded sinew flowing toward the fill's end; a poisoned Health takes the
+  poison ramp and bubbles. Parry charges are faceted bright-brass **lozenge studs**, a spent one an
+  empty socket, a glint running across the held ones now and then and a charge just won flaring.
+  Fills only, never strokes. The still layers draw when the rows change; the liquid repaints at most
+  30 times a second. The party frames' compact bars keep their own plain look (`drawHudBar`). Every
+  state is on the dev gallery's Resource bars card. *(Added 2026-11-26, the owner's ask for health
+  and resource bars "custom to fit the lore"; the plate grew from 52 to 71 px for two rows, so the
+  party frames stand from y 111.)*
 - **Ability bar.** Three squares in one row directly above the Experience bar, centred on the canvas
   (`src/ui/AbilityBar.ts`, placed by `src/ui/abilityBarLayout.ts`): **1** the health potion,
   **right-click** the class ability, **3** the tree ability, each 44 px, 10 apart, the cost slots' foot
