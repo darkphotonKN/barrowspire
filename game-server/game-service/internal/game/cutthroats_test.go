@@ -209,16 +209,21 @@ func TestCutthroats_PeacefulDraw_PassesAnOpenedDoor(t *testing.T) {
 	assert.True(t, detectableOf(t, byNear[1]).Detected)
 }
 
-// FS-4EC7Z §D R14: with no unopened secret door on the floor, the tip is a
-// lore line only: said, and nothing revealed.
+// FS-4EC7Z §D R14, §F R26 (amended 2026-11-25): with no unopened secret door
+// on the floor, the tip is lore: `cutthroat_lore` said, nothing revealed, and
+// lore again on a later talk.
 func TestCutthroats_PeacefulDraw_NoDoor_TheTipIsLore(t *testing.T) {
 	s, ids, bodies := cutthroatsRun(t, 3, 1, 0)
 	require.Empty(t, secretDoors(s), "seed 3's floor 2 holds no secret door")
 
 	speaker := parley(t, s, ids[0], bodies[0])
 	assert.Equal(t, components.FatePeaceful, cutthroatsOf(t, s).Fate)
-	assert.Equal(t, components.LineCutthroatTip, npcOf(t, speaker).Line)
+	assert.Equal(t, components.LineCutthroatLore, npcOf(t, speaker).Line)
 	assert.Empty(t, turnedCutthroats(s))
+
+	other := npcsOf(s)[1]
+	talkTo(t, s, ids[0], bodies[0], other)
+	assert.Equal(t, components.LineCutthroatLore, npcOf(t, other).Line, "lore again")
 }
 
 // FS-4EC7Z §D R14, §A R4: a talk while the draw is due greets again and does
@@ -235,8 +240,10 @@ func TestCutthroats_TalkingAgain(t *testing.T) {
 
 	ticks(s, seconds(CutthroatParleyDelay))
 	require.Equal(t, components.FatePeaceful, cutthroatsOf(t, s).Fate)
+	given := npcOf(t, npcs[0]).Line
+	require.Contains(t, []components.EncounterLine{components.LineCutthroatTip, components.LineCutthroatLore}, given)
 	talkTo(t, s, ids[0], bodies[0], npcs[2])
-	assert.Equal(t, components.LineCutthroatTip, npcOf(t, npcs[2]).Line)
+	assert.Equal(t, given, npcOf(t, npcs[2]).Line, "the tip the draw gave, again")
 }
 
 // FS-4EC7Z §D R14: the draw is one draw at 50% from the world's spawn

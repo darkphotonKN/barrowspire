@@ -2,12 +2,14 @@ package game
 
 import (
 	"math"
+	"math/rand/v2"
 	"slices"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -165,6 +167,7 @@ func TestEncounter_RoomRulesOverASeedSweep(t *testing.T) {
 				assert.Equal(t, room, d.roomAt(at.X, at.Y), "a pilgrim stands in the encounter room")
 				assert.Equal(t, components.EncounterNPCPilgrim, npc.Kind)
 				assert.Equal(t, components.StancePeaceful, npc.Stance)
+				assert.Equal(t, components.EncounterActionCower, npc.Action, "a pilgrim cowers from the start (§B R6)")
 				assert.Contains(t, PilgrimLooks, npc.Look)
 				assert.Greater(t, npcHealth(e).MaxHealth, 0)
 				assert.True(t, e.HasComponent(ecs.ComponentTypeVelocity), "a body that collides")
@@ -177,6 +180,14 @@ func TestEncounter_RoomRulesOverASeedSweep(t *testing.T) {
 				}
 				at := tc.(*components.TransformComponent)
 				assert.NotEqual(t, room, d.roomAt(at.X, at.Y), "seed %d floor %d: no rolled monster in its room", seed, depth)
+			}
+			// amended 2026-11-25: no trap is laid in it
+			for _, trap := range entityIDsWith(s, ecs.ComponentTypeTrap) {
+				e, _ := s.EntityManager.GetEntity(trap)
+				tc, _ := e.GetComponent(ecs.ComponentTypeTrap)
+				cell := tc.(*components.TrapComponent).Cell
+				assert.NotEqual(t, d.roomRegion(room), d.region[cell.Y*d.layout.Cols+cell.X],
+					"seed %d floor %d: no trap in the encounter room", seed, depth)
 			}
 		}
 	}
@@ -326,6 +337,20 @@ func TestPilgrims_TalkSetsTheLineAndStartsThePlea(t *testing.T) {
 	assert.True(t, waveOf(t, s).Pleaded)
 }
 
+// FS-4EC7Z §A R3-R4: an interact on a dead encounter NPC is play, not a
+// fault: refused quietly, starting nothing.
+func TestEncounterNPC_InteractOnTheDead_IsAQuietRefusal(t *testing.T) {
+	s, bodies := pilgrimsRun(t, 5, 1)
+	ids := delverIDs(s)
+	p := npcsOf(s)[0]
+	standBeside(t, s, bodies[0], p, 45)
+	npcHealth(p).CurrentHealth = 0
+	err := s.handleInteract(ids[0], p.ID)
+	assert.ErrorIs(t, err, ErrEncounterNPCDead)
+	assert.True(t, interactRefusedQuietly(err), "a quiet refusal")
+	assert.False(t, waveOf(t, s).Pleaded)
+}
+
 // delverIDs is the run's delvers' member ids, in roster order.
 func delverIDs(s *Session) []uuid.UUID {
 	var ids []uuid.UUID
@@ -388,6 +413,56 @@ func TestPilgrims_TheWave(t *testing.T) {
 			assert.Contains(t, enc.NPCs, mc.(*components.MonsterComponent).Target, "%d delvers: hunting a pilgrim", delvers)
 		}
 	}
+}
+
+// FS-4EC7Z §B R7, §A R5: the wave's spots skip corridor cells within
+// MonsterDelverExclusion of any delver, as every spawn does; with none of
+// those left, the wave still comes, on the cells farthest from them.
+func TestPilgrims_TheWaveSpawnsClearOfTheDelvers(t *testing.T) {
+	s, _ := pilgrimsRun(t, 6, 1)
+	_, enc, _ := theEncounter(s)
+	d := s.dungeon
+	openings := d.roomOpenings(enc.Room)
+	require.NotEmpty(t, openings)
+	mouth, barred := openings[0], d.barrierCells()
+	open := func(int) float64 { return math.Inf(1) }
+	walk := d.walkOut(mouth, 1000, barred, map[int]bool{}, open)
+	require.GreaterOrEqual(t, len(walk), 4, "seed 6: a corridor of 4 cells or more")
+	index := func(c components.Cell) int { return c.Y*d.layout.Cols + c.X }
+	rank := map[int]int{}
+	for r, c := range walk {
+		rank[index(c)] = r
+	}
+
+	t.Run("the cells near a delver are skipped", func(t *testing.T) {
+		crowded := map[int]bool{index(walk[0]): true, index(walk[1]): true}
+		clearance := func(i int) float64 {
+			if crowded[i] {
+				return MonsterDelverExclusion - 1
+			}
+			return MonsterDelverExclusion
+		}
+		got := d.walkOut(mouth, 2, barred, map[int]bool{}, clearance)
+		require.Len(t, got, 2)
+		for _, c := range got {
+			assert.False(t, crowded[index(c)], "a cell within the exclusion is passed over")
+		}
+	})
+	t.Run("none clear: the farthest", func(t *testing.T) {
+		clearance := func(i int) float64 { return float64(rank[i]) }
+		got := d.walkOut(mouth, 2, barred, map[int]bool{}, clearance)
+		assert.ElementsMatch(t, walk[len(walk)-2:], got, "the two farthest from the delvers")
+	})
+	t.Run("through waveSpots, delvers in every corridor", func(t *testing.T) {
+		var delvers []point
+		for i, region := range d.region {
+			if region != 0 && d.layout.Regions[region-1].Kind == levelgen.RegionCorridor {
+				delvers = append(delvers, d.cellCentre(components.Cell{X: i % d.layout.Cols, Y: i / d.layout.Cols}))
+			}
+		}
+		n := PilgrimWaveBase + PilgrimWavePerDelver*3
+		assert.Len(t, d.waveSpots(rand.New(rand.NewPCG(1, 2)), enc.Room, n, delvers), n, "the wave still comes")
+	})
 }
 
 // poolRoleOf is the role of archetype on the roster.

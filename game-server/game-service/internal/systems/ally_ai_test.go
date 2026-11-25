@@ -8,6 +8,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // allyCell is the cell side the ally tests measure by: follow within 2-4
@@ -174,4 +175,80 @@ func TestAllyAISystem_PathsRoundTheRock(t *testing.T) {
 func allyOf(e *ecs.Entity) *components.AllyComponent {
 	ac, _ := e.GetComponent(ecs.ComponentTypeAlly)
 	return ac.(*components.AllyComponent)
+}
+
+// shutGate shuts (or opens) a gate over behindAWall's gap, the one way
+// between its halls, on grid.
+func shutGate(grid interface{ SetWalkable(x, y int, walkable bool) }, shut bool) {
+	grid.SetWalkable(7, 3, !shut)
+	grid.SetWalkable(8, 3, !shut)
+}
+
+// FS-4EC7Z §C R9 (amended 2026-11-25): an ally engages only a monster its
+// route search can reach. A monster within 6 cells behind a shut gate is left
+// alone; once the gate opens, it is engaged.
+func TestAllyAISystem_AMonsterBehindAShutGate_IsNotEngaged(t *testing.T) {
+	em := ecs.NewEntityManager()
+	grid, move := floorOf(t, em, behindAWall)
+	move.Grid = grid
+	shutGate(grid, true)
+	_, hirer := hirerAt(em, 3.5*navCell, 1.5*navCell)
+	a := fightingAlly(em, 1.5*navCell, 1.5*navCell, hirer, 10)
+	m := hunter(em, 1.5*navCell, 4.5*navCell)
+	ai := NewAllyAISystem(grid, AllyReach{Near: 2 * navCell, Far: 4 * navCell, Engage: 6 * navCell, Leash: 8 * navCell})
+
+	march(em, ai, move, 1)
+	assert.Equal(t, uuid.Nil, allyOf(a).Target, "3 cells off, but behind a shut gate")
+	assert.Equal(t, 40, health(m))
+
+	shutGate(grid, false)
+	march(em, ai, move, 1)
+	assert.Equal(t, m.ID, allyOf(a).Target, "the gate open, it is reached")
+}
+
+// FS-4EC7Z §C R9 (amended 2026-11-25): an ally drops an engagement that would
+// take it more than 8 cells from its hirer and walks back to following.
+func TestAllyAISystem_ChasingPastEightCellsFromTheHirer_TurnsBack(t *testing.T) {
+	em := ecs.NewEntityManager()
+	h, hirer := hirerAt(em, 1000, 1000)
+	a := fightingAlly(em, 1000+6*allyCell, 1000, hirer, 0)
+	m := hunter(em, 1000+7*allyCell, 1000)
+	ai := NewAllyAISystem(nil, AllyReach{Near: 2 * allyCell, Far: 4 * allyCell, Engage: 6 * allyCell, Leash: 8 * allyCell})
+
+	march(em, ai, openField(), 0.1)
+	require.Equal(t, m.ID, allyOf(a).Target, "7 cells from the hirer: engaged")
+
+	// the monster backs off east, slower than the ally, so it keeps up with
+	// it until the monster is past the leash
+	healthOf(m).CurrentHealth, healthOf(m).MaxHealth = 100000, 100000
+	mt, _ := m.GetComponent(ecs.ComponentTypeTransform)
+	farthest := 0.0
+	for range ticks(3) {
+		mt.(*components.TransformComponent).X += 150 * tickSeconds
+		march(em, ai, openField(), tickSeconds)
+		farthest = max(farthest, distanceBetween(t, a, h))
+		if allyOf(a).Target == uuid.Nil {
+			break
+		}
+	}
+	assert.Equal(t, uuid.Nil, allyOf(a).Target, "past 8 cells from the hirer, it lets the monster go")
+	assert.Greater(t, farthest, 7*allyCell, "it gave chase")
+	assert.LessOrEqual(t, farthest, 8*allyCell+allyOf(a).AttackRange, "never chased past the leash")
+	assert.True(t, allyOf(a).Following, "it turns back to its hirer")
+
+	march(em, ai, openField(), 4)
+	assert.LessOrEqual(t, distanceBetween(t, a, h), 4*allyCell, "back following its hirer")
+}
+
+// FS-4EC7Z §C R9 (amended 2026-11-25): a monster within 6 cells of the ally
+// but more than 8 from its hirer is not engaged.
+func TestAllyAISystem_AMonsterPastTheLeash_IsNotEngaged(t *testing.T) {
+	em := ecs.NewEntityManager()
+	_, hirer := hirerAt(em, 1000, 1000)
+	a := fightingAlly(em, 1000+3*allyCell, 1000, hirer, 10)
+	m := hunter(em, 1000+9*allyCell, 1000)
+	ai := NewAllyAISystem(nil, AllyReach{Near: 2 * allyCell, Far: 4 * allyCell, Engage: 6 * allyCell, Leash: 8 * allyCell})
+	march(em, ai, openField(), 1)
+	assert.Equal(t, uuid.Nil, allyOf(a).Target)
+	assert.Equal(t, 40, health(m))
 }

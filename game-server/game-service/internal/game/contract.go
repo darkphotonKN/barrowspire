@@ -47,24 +47,29 @@ var (
 * of FS-X2CMM's Take a Contract: it places the delve's one contract for
 * taker, a member id, spawning its mark on the taker's floor. Refused,
 * nothing changed: ErrContractTaken once a contract was taken this delve,
-* ErrDelverOutOfPlay when the taker is not in play, ErrContractNoStairs on
-* the top floor, ErrNoMarkRoom when no room holds the mark. It checks neither
+* ErrDelverOutOfPlay when the taker is not in play, ErrNoFloors in a world
+* with no floors (no run-level entity), ErrContractNoStairs on the top floor,
+* ErrNoMarkRoom when no room holds the mark. It checks neither
 * the page nor the class: the cast that calls it does. Call it on the tick,
 * as every world change is made (a queued intent).
 **/
 func (s *Session) TakeContract(taker uuid.UUID) error {
 	runLevel, ok := runLevelEntity(s.EntityManager.GetAllEntities())
 	if !ok {
-		return ErrNoMarkRoom
+		return ErrNoFloors
 	}
 	if runLevel.HasComponent(ecs.ComponentTypeContract) {
 		return ErrContractTaken
 	}
-	body, ok := s.buyerInPlay(taker)
+	body, ok := s.delverInPlayByMember(taker)
 	if !ok {
 		return ErrDelverOutOfPlay
 	}
-	floor, _ := systems.CurrentFloor(s.EntityManager.GetAllEntities())
+	fc, ok := runLevel.GetComponent(ecs.ComponentTypeFloor)
+	if !ok {
+		return ErrNoFloors
+	}
+	floor := fc.(*components.FloorComponent)
 	if !s.hasStairs(floor.Depth) {
 		return ErrContractNoStairs
 	}
@@ -173,15 +178,23 @@ func (d *dungeonFloor) markRoomOpen(room int) bool {
 
 /**
 * advanceContract runs the delve's contract a tick, after the combat and the
-* elimination (FS-4EC7Z §E R18-R21): the mark's kill by a party member or an
-* ally settles it; the mark gone with its floor (a climb), dead uncredited,
-* or the taker out of play (dead, escaped, left behind or gone) loses it;
-* else the mark's call, flight and heal, and every ContractHeadingInterval
-* the taker's heading.
+* elimination (FS-4EC7Z §E R18-R21): while it is active, the mark's kill by a
+* party member or an ally settles it; the mark gone with its floor (a climb),
+* dead uncredited, or the taker out of play (dead, escaped, left behind or
+* gone) loses it; else every ContractHeadingInterval the taker's heading.
+* Whatever the contract's state, a mark still alive on the floor calls, flees
+* and heals as its thresholds say.
 **/
 func (s *Session) advanceContract(dt float64, kills []systems.KillRecord) {
 	c, ok := s.contract()
-	if !ok || c.State != components.ContractActive {
+	if !ok {
+		return
+	}
+	mark, here := s.EntityManager.GetEntity(c.Mark)
+	if here && alive(mark) {
+		s.driveMark(mark)
+	}
+	if c.State != components.ContractActive {
 		return
 	}
 	if slices.ContainsFunc(kills, func(k systems.KillRecord) bool {
@@ -190,15 +203,13 @@ func (s *Session) advanceContract(dt float64, kills []systems.KillRecord) {
 		s.settleContract(c)
 		return
 	}
-	mark, here := s.EntityManager.GetEntity(c.Mark)
-	taker, inPlay := s.buyerInPlay(c.Taker)
+	taker, inPlay := s.delverInPlayByMember(c.Taker)
 	if !here || !alive(mark) || !inPlay {
 		c.State, c.Heading = components.ContractLost, ""
 		slog.Info("Contract lost", "sessionID", s.ID, "taker", c.Taker, "markHere", here, "takerInPlay", inPlay)
 		return
 	}
 
-	s.driveMark(mark)
 	c.HeadingIn -= dt
 	if c.HeadingIn <= headingEpsilon {
 		s.refreshHeading(c, taker, mark)
@@ -213,7 +224,7 @@ const headingEpsilon = 1e-9
 // Settled; it never stacks. FS-4EC7Z §E R19.
 func (s *Session) settleContract(c *components.ContractComponent) {
 	c.State, c.Heading = components.ContractSettled, ""
-	if body, ok := s.buyerInPlay(c.Taker); ok {
+	if body, ok := s.delverInPlayByMember(c.Taker); ok {
 		systems.SettleContract(body, ContractSettledDamageFactor)
 	}
 	slog.Info("Contract settled", "sessionID", s.ID, "taker", c.Taker)
@@ -244,8 +255,8 @@ func compassWord(dx, dy float64) string {
 * driveMark runs the mark's thresholds a tick (FS-4EC7Z §E R18): once at
 * MarkCallAt of its max health it calls its cutthroats, once at MarkFleeAt it
 * flees; both crossed by one hit fire both, the call first. Arrived where it
-* fled, it heals MarkFleeHeal of its max health, once, and makes the spot its
-* home.
+* fled, it heals MarkFleeHeal of its max health, once (it flees once), and
+* makes the spot its home.
 **/
 func (s *Session) driveMark(mark *ecs.Entity) {
 	mc, ok := mark.GetComponent(ecs.ComponentTypeMark)
@@ -271,7 +282,6 @@ func (s *Session) driveMark(mark *ecs.Entity) {
 	}
 	if monster.Flight.Arrived {
 		monster.Flight = components.Flight{}
-		m.Healed = true
 		health.CurrentHealth = min(health.CurrentHealth+int(math.Round(float64(health.MaxHealth)*MarkFleeHeal)), health.MaxHealth)
 		monster.HomeX, monster.HomeY = at.X, at.Y
 		slog.Debug("Mark healed where it fled", "sessionID", s.ID, "health", health.CurrentHealth)

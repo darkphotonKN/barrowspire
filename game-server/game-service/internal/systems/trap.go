@@ -14,10 +14,11 @@ TrapSystem springs a floor's traps (FS-5FZ4J §D R25-R28, R30). A spike plate,
 dart wall, fire jet or tripwire fires at a body whose kind FiresTraps on the
 tick its centre enters the trap's cell, while the trap is armed: it disarms,
 re-arming RearmAfter seconds later, or, a tripwire, is spent for good. A gas
-vent puffs on the tick a body whose kind Breathes first comes within
-CloudRadius of its centre, then every PuffEvery seconds while any stays, at
-every one in its cloud: a peaceful encounter NPC among them (FS-4EC7Z Edge
-States). A trap that fires is detected from that tick.
+vent puffs on the tick a body whose kind FiresTraps first comes within
+CloudRadius of its centre, then every PuffEvery seconds while any such body
+stays, at every body in its cloud whose kind Breathes: a peaceful encounter
+NPC already in it among them, though one alone never makes it puff (FS-4EC7Z
+§C R9 amended, Edge States). A trap that fires is detected from that tick.
 
 The system only says what fired at whom: what a spring does, a hit, an ambush
 or a poisoning, is the floor's (game's) to apply. Monsters fire nothing.
@@ -67,7 +68,7 @@ func (s *TrapSystem) Update(dt float64, entities []*ecs.Entity) []TrapSpring {
 		trap := tc.(*components.TrapComponent)
 		trap.Age += dt
 		if trap.Kind == components.TrapGasVent {
-			springs = append(springs, s.cloud(dt, e, trap, breathers)...)
+			springs = append(springs, s.cloud(dt, e, trap, bodies, breathers)...)
 			continue
 		}
 		s.rearm(dt, trap)
@@ -119,10 +120,10 @@ func (s *TrapSystem) fire(e *ecs.Entity, trap *components.TrapComponent) {
 }
 
 // cloud runs a gas vent's cycle: a puff on the tick its cloud is first
-// entered, then every PuffEvery while anyone stays in it, at everyone in it.
-func (s *TrapSystem) cloud(dt float64, e *ecs.Entity, vent *components.TrapComponent, bodies []*ecs.Entity) []TrapSpring {
-	in := s.inCloud(e, bodies)
-	if len(in) == 0 {
+// entered by one of firers, then every PuffEvery while one of them stays in
+// it, at every one of breathers in it.
+func (s *TrapSystem) cloud(dt float64, e *ecs.Entity, vent *components.TrapComponent, firers, breathers []*ecs.Entity) []TrapSpring {
+	if len(s.inCloud(e, firers)) == 0 {
 		vent.Clouded = false
 		return nil
 	}
@@ -137,6 +138,7 @@ func (s *TrapSystem) cloud(dt float64, e *ecs.Entity, vent *components.TrapCompo
 	}
 	vent.Puffed, vent.PuffedAt = true, vent.Age
 	detect(e)
+	in := s.inCloud(e, breathers)
 	springs := make([]TrapSpring, len(in))
 	for i, body := range in {
 		springs[i] = TrapSpring{Trap: e, Kind: vent.Kind, Body: body}

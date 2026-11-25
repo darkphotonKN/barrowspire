@@ -124,6 +124,7 @@ func (s *Session) allyAI() (*systems.AllyAISystem, bool) {
 		Near:   AllyFollowNearCells * cell,
 		Far:    AllyFollowFarCells * cell,
 		Engage: AllyEngageCells * cell,
+		Leash:  AllyLeashCells * cell,
 	}
 	return systems.NewAllyAISystem(navGridOf(s.navGrid), reach), true
 }

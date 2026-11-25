@@ -60,7 +60,10 @@ const (
 	LineCutthroatGreet EncounterLine = "cutthroat_greet"
 	LineCutthroatTurn  EncounterLine = "cutthroat_turn"
 	LineCutthroatTip   EncounterLine = "cutthroat_tip"
-	LineAllyAck        EncounterLine = "ally_ack"
+	// LineCutthroatLore is the peaceful tip on a floor with no unopened
+	// secret door to reveal (amended 2026-11-25)
+	LineCutthroatLore EncounterLine = "cutthroat_lore"
+	LineAllyAck       EncounterLine = "ally_ack"
 )
 
 /*
@@ -150,8 +153,10 @@ type AllyComponent struct {
 	AttackRange    float64
 	AttackInterval float64
 	AttackCooldown float64
-	// Target is the monster it is after, uuid.Nil with none
+	// Target is the monster it is after, uuid.Nil with none; EngageIn the
+	// seconds until it looks again for the nearest to engage
 	Target    uuid.UUID
+	EngageIn  float64
 	Following bool
 	Route     Route
 }
@@ -222,8 +227,9 @@ CutthroatsComponent is the Cutthroats' parley and hire (FS-4EC7Z §D R14-R15),
 beside their EncounterComponent. The first talk sets Parleyed, Talker (the
 delver's entity id, whom a hostile turn hunts) and Speaker (the Cutthroat
 talked to, who says the group's lines), the draw due DrawIn seconds later.
-Fate is how it fell. Hired once the group is hired, which cancels a draw
-still due; a hired group is never drawn.
+Fate is how it fell, and Tip the line a peaceful fate gave (the tip, or the
+lore with no door to reveal), said again on each later talk. Hired once the
+group is hired, which cancels a draw still due; a hired group is never drawn.
 */
 type CutthroatsComponent struct {
 	Parleyed bool
@@ -231,6 +237,7 @@ type CutthroatsComponent struct {
 	Talker   uuid.UUID
 	Speaker  uuid.UUID
 	Fate     CutthroatFate
+	Tip      EncounterLine
 	Hired    bool
 }
 

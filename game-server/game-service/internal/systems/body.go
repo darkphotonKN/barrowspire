@@ -24,8 +24,8 @@ const (
 	// BodyMonster is a live monster
 	BodyMonster
 	// BodyEncounterNPC is a live peaceful encounter NPC (FS-4EC7Z §A R3): in
-	// a block's way, hunted by monsters, breathing a gas vent's cloud,
-	// weighing and firing nothing
+	// a block's way, hunted by monsters, breathing a cloud someone else keeps
+	// puffing, weighing and firing nothing
 	BodyEncounterNPC
 	// BodyCaptive is a live encounter NPC in its cage: no monster hunts it
 	// (§A R3, §D R13)
@@ -81,10 +81,10 @@ func (k BodyKind) Detects() bool { return k == BodyDelver }
 // FS-4EC7Z §C R9).
 func (k BodyKind) FiresTraps() bool { return k == BodyDelver || k == BodyAlly }
 
-// Breathes is whether a gas vent's cloud counts a body of this kind and
-// poisons it: whoever fires a trap, and a peaceful encounter NPC too, who can
-// die of it; never a monster or a caged captive (FS-5FZ4J §D R28, FS-4EC7Z
-// §C R9, Edge States).
+// Breathes is whether a puffing gas vent's cloud poisons a body of this kind:
+// whoever fires a trap, and a peaceful encounter NPC too, who can die of it;
+// never a monster or a caged captive. Only a body that FiresTraps makes a vent
+// puff (FS-5FZ4J §D R28, FS-4EC7Z §C R9 amended, Edge States).
 func (k BodyKind) Breathes() bool { return k.FiresTraps() || k == BodyEncounterNPC }
 
 // Hunted is whether a monster's target choice counts a body of this kind:

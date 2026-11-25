@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"math"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
@@ -19,7 +20,7 @@ import (
 * on the next tick (so the line reaches the wire) every living Cutthroat is
 * replaced where it stands by a `cutthroat` monster in its look, hunting the
 * delver who talked. Peaceful, it gives the tip: the floor's unopened secret
-* door nearest them is detected and revealed, or, with none, the tip is lore.
+* door nearest them is detected and revealed, or, with none, it says the lore.
 *
 * A turn replaces each NPC with a new monster entity rather than converting it
 * in place: the one monster constructor (CreateMonsterEntity) stays the only
@@ -46,6 +47,26 @@ var (
 	ErrAlreadyHired = errors.New("this group is already allied")
 )
 
+// cutthroatsKind is the Cutthroats' entry in encounterKinds: three bodies,
+// their parley's draw on the tick, a talk that starts the parley.
+var cutthroatsKind = encounterKind{
+	spots: CutthroatCount,
+	half:  constants.PlayerRadius,
+	lay: func(s *Session, encounter *ecs.Entity, ec *components.EncounterComponent, plan *encounterPlan) {
+		s.layCutthroats(encounter, ec, plan.spots)
+	},
+	advance: func(s *Session, dt float64, encounter *ecs.Entity, ec *components.EncounterComponent) {
+		if cc, ok := encounter.GetComponent(ecs.ComponentTypeCutthroats); ok {
+			s.advanceCutthroats(dt, ec, cc.(*components.CutthroatsComponent))
+		}
+	},
+	talk: func(s *Session, encounter *ecs.Entity, _ *components.EncounterComponent, playerID uuid.UUID, target *ecs.Entity, npc *components.EncounterNPCComponent) {
+		if cc, ok := encounter.GetComponent(ecs.ComponentTypeCutthroats); ok {
+			s.talkToCutthroat(cc.(*components.CutthroatsComponent), playerID, target, npc)
+		}
+	},
+}
+
 // layCutthroats stands the Cutthroats at spots, peaceful, each with a hired
 // Cutthroat's health at the floor's monster level, in the looks by turn, their
 // parley yet to start. FS-4EC7Z §D R14.
@@ -70,20 +91,20 @@ func (s *Session) layCutthroats(encounter *ecs.Entity, ec *components.EncounterC
 * talkToCutthroat answers a talk to a peaceful Cutthroat by playerID: the
 * first starts the parley, the one talked to greeting and the talker marked as
 * the one a hostile turn hunts; while the draw is due, the greeting again;
-* once it fell peaceful, the tip again (the door is revealed once). FS-4EC7Z
-* §D R14.
+* once it fell peaceful, the tip or the lore it gave, again (the door is
+* revealed once). FS-4EC7Z §D R14.
 **/
 func (s *Session) talkToCutthroat(c *components.CutthroatsComponent, playerID uuid.UUID, target *ecs.Entity, npc *components.EncounterNPCComponent) {
 	switch {
 	case !c.Parleyed:
 		c.Parleyed, c.DrawIn, c.Speaker = true, CutthroatParleyDelay, target.ID
-		if body, ok := s.buyerInPlay(playerID); ok {
+		if body, ok := s.delverInPlayByMember(playerID); ok {
 			c.Talker = body.ID
 		}
 		systems.Say(npc, components.LineCutthroatGreet)
 		slog.Debug("Cutthroats parley", "sessionID", s.ID, "talker", playerID)
 	case c.Fate == components.FatePeaceful:
-		systems.Say(npc, components.LineCutthroatTip)
+		systems.Say(npc, c.Tip)
 	default:
 		systems.Say(npc, components.LineCutthroatGreet)
 	}
@@ -92,8 +113,9 @@ func (s *Session) talkToCutthroat(c *components.CutthroatsComponent, playerID uu
 /**
 * advanceCutthroats runs the parley a tick: once due, the draw, hostile at the
 * world's chance (the speaker's turn line now, the turn the next tick) or
-* peaceful (the tip). A hired group is never drawn; a group with none alive
-* draws nothing. FS-4EC7Z §D R14-R15.
+* peaceful (the tip with a door revealed, else the lore). A hired group is
+* never drawn; a group with none alive draws nothing. FS-4EC7Z §D R14-R15,
+* §F R26.
 **/
 func (s *Session) advanceCutthroats(dt float64, ec *components.EncounterComponent, c *components.CutthroatsComponent) {
 	if !c.Parleyed || c.Hired {
@@ -115,9 +137,11 @@ func (s *Session) advanceCutthroats(dt float64, ec *components.EncounterComponen
 			systems.Say(speaker.npc, components.LineCutthroatTurn)
 			return
 		}
-		c.Fate = components.FatePeaceful
-		systems.Say(speaker.npc, components.LineCutthroatTip)
-		s.revealNearestSecretDoor(living)
+		c.Fate, c.Tip = components.FatePeaceful, components.LineCutthroatLore
+		if s.revealNearestSecretDoor(living) {
+			c.Tip = components.LineCutthroatTip
+		}
+		systems.Say(speaker.npc, c.Tip)
 	case components.FateTurning:
 		s.turnCutthroats(ec, c)
 		c.Fate = components.FateHostile
@@ -185,10 +209,10 @@ func keepWounds(npc, monster *ecs.Entity) {
 /**
 * revealNearestSecretDoor reveals to the party the floor's unopened secret
 * door nearest any of living, measured to its cells: detected (FS-5FZ4J §F
-* R38) and marked revealed for the wire. A floor with none reveals nothing:
-* the tip is lore. FS-4EC7Z §D R14, §F R28.
+* R38) and marked revealed for the wire; false, nothing revealed, on a floor
+* with none. FS-4EC7Z §D R14, §F R28.
 **/
-func (s *Session) revealNearestSecretDoor(living []encounterNPC) {
+func (s *Session) revealNearestSecretDoor(living []encounterNPC) bool {
 	var nearest *components.DetectableComponent
 	var door uuid.UUID
 	best := math.Inf(1)
@@ -211,10 +235,11 @@ func (s *Session) revealNearestSecretDoor(living []encounterNPC) {
 	}
 	if nearest == nil {
 		slog.Debug("Cutthroats' tip is lore: no unopened secret door", "sessionID", s.ID)
-		return
+		return false
 	}
 	nearest.Detected, nearest.Revealed = true, true
 	slog.Debug("Cutthroats reveal a secret door", "sessionID", s.ID, "door", door)
+	return true
 }
 
 /**

@@ -86,6 +86,16 @@ func TestTakeContract_Refusals_NothingTaken(t *testing.T) {
 		_, taken := s.contract()
 		assert.False(t, taken)
 	})
+	t.Run("no run-level entity", func(t *testing.T) {
+		s, ids, _ := contractRun(t, 2, 1)
+		runLevel, ok := runLevelEntity(s.EntityManager.GetAllEntities())
+		require.True(t, ok)
+		s.EntityManager.RemoveEntity(runLevel.ID)
+		err := s.TakeContract(ids[0])
+		assert.ErrorIs(t, err, ErrNoFloors, "a world with no floors, not a floor short of rooms")
+		assert.NotErrorIs(t, err, ErrNoMarkRoom)
+		assert.Empty(t, contractMarks(s))
+	})
 }
 
 // theMark is the floor's one contract mark.
@@ -305,7 +315,6 @@ func TestMark_AtAQuarter_FleesToTheFarthestRoomAndHealsOnce(t *testing.T) {
 	at := transformOf(t, mark)
 	assert.Equal(t, farthest, s.dungeon.roomAt(at.X, at.Y), "it reached the far room")
 	assert.Equal(t, fledAt+int(math.Round(float64(health.MaxHealth)*MarkFleeHeal)), health.CurrentHealth, "a fifth of its max healed")
-	assert.True(t, markOf(t, mark).Healed)
 	assert.Equal(t, components.Flight{}, monster.Flight, "the flight taken up")
 	assert.Equal(t, at.X, monster.HomeX, "its new home")
 
@@ -430,6 +439,20 @@ func TestContract_LostOnAClimbOrTheTakersDeath(t *testing.T) {
 	slayMark(t, s, ids[1], bodies[1], mark)
 	assert.Equal(t, components.ContractLost, contractOf(t, s).State, "a lost contract stays lost")
 	assert.False(t, systems.ContractSettled(bodies[1]))
+}
+
+// FS-4EC7Z §E R18, R20: a lost contract's mark is still the mark while it
+// lives: at half its health it still calls its three cutthroats.
+func TestContract_Lost_TheMarkStillCallsAtHalf(t *testing.T) {
+	s, _, bodies, mark := markedRun(t, 11, 2)
+	kill(t, bodies[0])
+	tick(s)
+	require.Equal(t, components.ContractLost, contractOf(t, s).State)
+
+	setShare(mark, 0.5)
+	tick(s)
+	assert.True(t, markOf(t, mark).Called)
+	assert.Len(t, turnedCutthroats(s), MarkCallCount, "it calls whatever the contract's state")
 }
 
 // FS-4EC7Z §E R20, Edge States "The taker disconnects": the taker leaving

@@ -633,13 +633,13 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		Defense: 4, MagicResistance: 1,
 		AggroRadius: 300, LeashRadius: 560,
 	},
-	// a contract's mark (FS-4EC7Z §E R17-R18): a human duelist. Its HP and
-	// damage are a champion's at the floor's champion level (FS-C8VM7 §D
-	// R28), its mitigation this sheet's × the champion multiplier; its
-	// blades poison as a gas trap does (FS-5FZ4J §D R29). Never in a
-	// floor's pool
+	// a contract's mark (FS-4EC7Z §E R17-R18): a human duelist. It is always
+	// spawned a champion, so its HP and damage are a champion's at the
+	// floor's champion level (FS-C8VM7 §D R28) and the sheet holds none; its
+	// mitigation is this sheet's × the champion multiplier; its blades
+	// poison as a gas trap does (FS-5FZ4J §D R29). Never in a floor's pool
 	components.MonsterArchetypeContractMark: {
-		Name: "Mark", HP: 1200, Damage: 28,
+		Name:           "Mark",
 		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 55, MoveSpeed: 150,
 		Defense: 12, MagicResistance: 10,
 		AggroRadius: 320, LeashRadius: 700,

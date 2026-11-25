@@ -52,13 +52,15 @@ const (
 const EncounterCorpseLifetime = MonsterCorpseLifetime
 
 // Hired allies (FS-4EC7Z §C R9-R10): at most AllyCap a party; each keeps
-// AllyFollowNearCells to AllyFollowFarCells cells from its leader and engages
-// a monster within AllyEngageCells cells of itself.
+// AllyFollowNearCells to AllyFollowFarCells cells from its leader, engages a
+// monster within AllyEngageCells cells of itself and fights no farther than
+// AllyLeashCells cells from its leader (amended 2026-11-25).
 const (
 	AllyCap             = 3
 	AllyFollowNearCells = 2.0
 	AllyFollowFarCells  = 4.0
 	AllyEngageCells     = 6.0
+	AllyLeashCells      = 8.0
 )
 
 /*

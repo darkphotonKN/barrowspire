@@ -42,13 +42,12 @@ func (c *ContractComponent) Type() ecs.ComponentType {
 /*
 MarkComponent is a contract's mark (FS-4EC7Z §E R17-R18), beside its
 MonsterComponent: whether it has called its cutthroats (once, at half its
-health) and fled (once, at a quarter), and whether it has healed on reaching
-where it fled to.
+health) and fled (once, at a quarter). Its heal on reaching where it fled to
+is once because its flight is.
 */
 type MarkComponent struct {
 	Called bool
 	Fled   bool
-	Healed bool
 }
 
 func (m *MarkComponent) Type() ecs.ComponentType {

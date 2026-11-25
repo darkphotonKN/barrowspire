@@ -2031,9 +2031,11 @@ func unitIntent(vx, vy float64) (float64, float64) {
 // interactRefusedQuietly is whether an interact's error is play, not a fault,
 // and is logged quietly: a stale bag check refused into a full bag (FS-HRH2J
 // R37), a guarded chest (FS-KE075 §J R60), a secret door the party has not
-// detected (FS-5FZ4J §F R38).
+// detected (FS-5FZ4J §F R38), a talk to a dead encounter NPC (FS-4EC7Z §A
+// R4).
 func interactRefusedQuietly(err error) bool {
-	return errors.Is(err, ErrBagFull) || errors.Is(err, ErrContainerGuarded) || errors.Is(err, ErrUndetected)
+	return errors.Is(err, ErrBagFull) || errors.Is(err, ErrContainerGuarded) || errors.Is(err, ErrUndetected) ||
+		errors.Is(err, ErrEncounterNPCDead)
 }
 
 /**

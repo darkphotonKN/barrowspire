@@ -34,6 +34,29 @@ type cageKeyPlan struct {
 	onElite bool
 }
 
+// captivesKind is the Captives' entry in encounterKinds: one cage, its key
+// planned with the room, the key's drop on the tick. A caged or freed captive
+// only ever answers a talk with its line (talkToEncounterNPC).
+var captivesKind = encounterKind{
+	spots: 1,
+	half:  CageHalfSize,
+	plan: func(s *Session, d *dungeonFloor, plan *encounterPlan) bool {
+		key, ok := s.planCageKey(d, plan.room)
+		if !ok {
+			slog.Warn("Encounter skipped: no room holds the cage key", "sessionID", s.ID, "kind", plan.kind)
+			return false
+		}
+		plan.key = key
+		return true
+	},
+	lay: (*Session).layCaptives,
+	advance: func(s *Session, _ float64, encounter *ecs.Entity, _ *components.EncounterComponent) {
+		if cc, ok := encounter.GetComponent(ecs.ComponentTypeCaptives); ok {
+			s.advanceCaptives(encounter, cc.(*components.CaptivesComponent))
+		}
+	},
+}
+
 /**
 * planCageKey holds the cage key's spot in a room other than the encounter
 * room, the start, the stairs, a hidden room and a respite's, drawn, and

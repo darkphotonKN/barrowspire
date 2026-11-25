@@ -1,7 +1,9 @@
 package systems
 
 import (
+	"cmp"
 	"math"
+	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -10,13 +12,19 @@ import (
 
 /*
 AllyAISystem decides what each hired ally does this tick (FS-4EC7Z §C R9):
-fight, follow or stand. It engages the nearest live monster within Engage of
-itself or after its hirer, walks into its sheet's reach and strikes it on its
+fight, follow or stand. Its leader is its hirer while they are in play, else
+the nearest delver in play. It engages the nearest live monster within Engage
+of itself or after its hirer that its route search can reach and that stands
+within Leash of its leader, walks into its sheet's reach and strikes it on its
 sheet's cadence, an attack intent the CombatSystem resolves later in the same
-tick through the one hit path. With none to fight it follows its leader: its
-hirer while they are in play, else the nearest delver in play; it sets off
-once past Far of them and stops once within Near, so it keeps between the two.
-With no delver in play it stands where it is.
+tick through the one hit path. Past Leash of its leader itself, it engages
+nothing. With none to fight it follows its leader: it sets off once past Far
+of them and stops once within Near, so it keeps between the two. With no
+delver in play it stands where it is.
+
+It keeps the monster it engages while that one still qualifies, and looks
+again for the nearest every engageInterval, so an unreachable monster costs a
+route search that often, not every tick.
 
 It only sets an ally's velocity, facing and action, as the monster AI does a
 monster's: MovementSystem moves and collides it. On a dungeon floor it walks
@@ -27,12 +35,19 @@ run only, before movement.
 type AllyAISystem struct {
 	route router
 	reach AllyReach
+	// path is the scratch a reach test's route search fills
+	path []int
 }
 
-// AllyReach is how far an ally keeps from its leader, Near to Far, and how
-// near a monster must be for it to engage, all in px (FS-4EC7Z §C R9).
+// engageInterval is how often, in seconds, an ally looks again for the
+// nearest monster to engage: a route search's own repath interval.
+const engageInterval = repathInterval
+
+// AllyReach is how far an ally keeps from its leader, Near to Far, how near
+// a monster must be for it to engage, and how far from its leader it may
+// fight, all in px (FS-4EC7Z §C R9).
 type AllyReach struct {
-	Near, Far, Engage float64
+	Near, Far, Engage, Leash float64
 }
 
 // NewAllyAISystem is the ally AI for one floor: grid is the floor's cell grid
@@ -54,6 +69,16 @@ type leader struct {
 	id     uuid.UUID
 	member uuid.UUID
 	at     *components.TransformComponent
+}
+
+// company is who an ally answers to this tick: its hirer, while in play, and
+// its leader, the one it follows and is leashed to (its hirer, else the
+// nearest delver in play), while it has one.
+type company struct {
+	hirer       leader
+	hirerInPlay bool
+	lead        leader
+	led         bool
 }
 
 // NOTE: this runs every game tick of a run, before MovementSystem.
@@ -106,9 +131,15 @@ func (s *AllyAISystem) think(
 ) {
 	ally.AttackCooldown = max(ally.AttackCooldown-deltaTime, 0)
 	ally.Route.SearchIn = max(ally.Route.SearchIn-deltaTime, 0)
+	ally.EngageIn = max(ally.EngageIn-deltaTime, 0)
 
-	hirer, hirerInPlay := hirerAmong(npc.HirerID, leaders)
-	target, fighting := s.engage(at, hirer, hirerInPlay, foes)
+	var c company
+	c.hirer, c.hirerInPlay = hirerAmong(npc.HirerID, leaders)
+	c.lead, c.led = c.hirer, c.hirerInPlay
+	if !c.led {
+		c.lead, c.led = nearestLeader(at, leaders)
+	}
+	target, fighting := s.engage(ally, at, c, foes)
 	if target.id != ally.Target {
 		ally.Target = target.id
 		forget(&ally.Route)
@@ -118,15 +149,12 @@ func (s *AllyAISystem) think(
 		return
 	}
 
-	lead, ok := hirer, hirerInPlay
-	if !ok {
-		lead, ok = nearestLeader(at, leaders)
-	}
-	if !ok {
+	if !c.led {
 		ally.Following = false
 		stand(npc, velocity)
 		return
 	}
+	lead := c.lead
 	d := math.Hypot(lead.at.X-at.X, lead.at.Y-at.Y)
 	switch {
 	case d > s.reach.Far:
@@ -141,19 +169,70 @@ func (s *AllyAISystem) think(
 	s.walk(npc, ally, at, velocity, lead.at.X, lead.at.Y)
 }
 
-// engage is the nearest live monster within Engage of the ally or after its
-// hirer in play; false with none.
-func (s *AllyAISystem) engage(at *components.TransformComponent, hirer leader, hirerInPlay bool, foes []foe) (foe, bool) {
-	var best foe
-	bestDistance := math.Inf(1)
+/*
+engage is the monster the ally at at fights this tick; false with none. Past
+Leash of its leader it fights none. It keeps its target while that one still
+qualifies; else, and every engageInterval, it takes the nearest that does and
+that its route search reaches.
+*/
+func (s *AllyAISystem) engage(ally *components.AllyComponent, at *components.TransformComponent, c company, foes []foe) (foe, bool) {
+	if c.led && s.reach.Leash > 0 && math.Hypot(c.lead.at.X-at.X, c.lead.at.Y-at.Y) > s.reach.Leash {
+		return foe{}, false
+	}
+	var candidates []foe
+	var current foe
+	keeping := false
 	for _, f := range foes {
-		d := math.Hypot(f.at.X-at.X, f.at.Y-at.Y)
-		afterHirer := hirerInPlay && f.target == hirer.id
-		if (d <= s.reach.Engage || afterHirer) && d < bestDistance {
-			best, bestDistance = f, d
+		if !s.qualifies(f, at, c) {
+			continue
+		}
+		candidates = append(candidates, f)
+		if f.id == ally.Target {
+			current, keeping = f, true
 		}
 	}
-	return best, !math.IsInf(bestDistance, 1)
+	if keeping && ally.EngageIn > 0 {
+		return current, true
+	}
+	ally.EngageIn = engageInterval
+	slices.SortStableFunc(candidates, func(a, b foe) int {
+		return cmp.Compare(math.Hypot(a.at.X-at.X, a.at.Y-at.Y), math.Hypot(b.at.X-at.X, b.at.Y-at.Y))
+	})
+	for _, f := range candidates {
+		if s.reaches(at, f.at) {
+			return f, true
+		}
+	}
+	return foe{}, false
+}
+
+// qualifies is whether f may be engaged by an ally at at: within Engage of it
+// or after its hirer in play, and within Leash of its leader when it has one.
+func (s *AllyAISystem) qualifies(f foe, at *components.TransformComponent, c company) bool {
+	near := math.Hypot(f.at.X-at.X, f.at.Y-at.Y) <= s.reach.Engage
+	afterHirer := c.hirerInPlay && f.target == c.hirer.id
+	if !near && !afterHirer {
+		return false
+	}
+	return !c.led || s.reach.Leash <= 0 || math.Hypot(f.at.X-c.lead.at.X, f.at.Y-c.lead.at.Y) <= s.reach.Leash
+}
+
+// reaches is whether a route search from at finds a way to to over the
+// floor's grid as it stands now, a shut gate or a block in the way. With no
+// grid, or either end off it, a body steers straight, and so reaches it.
+func (s *AllyAISystem) reaches(at, to *components.TransformComponent) bool {
+	grid := s.route.grid
+	if grid == nil {
+		return true
+	}
+	from, onGround := grid.Cell(at.X, at.Y)
+	goal, goalOnGround := grid.Cell(to.X, to.Y)
+	if !onGround || !goalOnGround || grid.Near(from, goal) {
+		return true
+	}
+	var found bool
+	s.path, found = grid.Path(s.path[:0], from, goal)
+	return found
 }
 
 // fight walks the ally into its reach of target, then stands and faces it,

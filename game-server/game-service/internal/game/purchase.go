@@ -378,7 +378,7 @@ func (s *Session) settlePurchase(p *purchase) {
 	if !s.purchases.settle(p) {
 		return
 	}
-	buyer, present := s.buyerInPlay(p.buyer)
+	buyer, present := s.delverInPlayByMember(p.buyer)
 
 	if p.err == nil {
 		if !present {
@@ -428,10 +428,11 @@ func debitRefusal(err error) string {
 	}
 }
 
-// buyerInPlay is the buyer's body while they are seated and in play.
-func (s *Session) buyerInPlay(buyer uuid.UUID) (*ecs.Entity, bool) {
+// delverInPlayByMember is the body of member, a member id, while they are
+// seated and in play.
+func (s *Session) delverInPlayByMember(member uuid.UUID) (*ecs.Entity, bool) {
 	s.mu.RLock()
-	entityID, here := s.playerIDToEntitiesID[buyer]
+	entityID, here := s.playerIDToEntitiesID[member]
 	s.mu.RUnlock()
 	if !here {
 		return nil, false

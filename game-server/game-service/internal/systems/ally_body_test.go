@@ -79,10 +79,10 @@ func TestTrapSystem_AnAllyFiresASteppingTrap_APilgrimDoesNot(t *testing.T) {
 	})
 }
 
-// FS-4EC7Z §C R9, Edge States: a gas vent's cloud counts an ally and a
-// peaceful NPC as it counts a delver, puffing at each in it; a caged captive
-// in it is passed by.
-func TestTrapSystem_AGasCloudCountsAlliesAndPeacefulNPCs(t *testing.T) {
+// FS-4EC7Z §C R9 (amended 2026-11-25), Edge States: an ally alone in a gas
+// vent's cloud starts its puffing as a delver does; a peaceful NPC or a caged
+// captive alone in it starts none, and the vent stays undetected.
+func TestTrapSystem_OnlyAFiringBodyStartsAGasVentsPuffing(t *testing.T) {
 	cell := components.Cell{X: 10, Y: 10}
 	for _, c := range []struct {
 		name  string
@@ -90,27 +90,64 @@ func TestTrapSystem_AGasCloudCountsAlliesAndPeacefulNPCs(t *testing.T) {
 		puffs bool
 	}{
 		{"an ally", func(em *ecs.EntityManager) *ecs.Entity { return allyNPC(em, 0, 0) }, true},
-		{"a peaceful pilgrim", func(em *ecs.EntityManager) *ecs.Entity { return pilgrim(em, 0, 0) }, true},
+		{"a peaceful pilgrim", func(em *ecs.EntityManager) *ecs.Entity { return pilgrim(em, 0, 0) }, false},
 		{"a caged captive", func(em *ecs.EntityManager) *ecs.Entity {
 			return encounterNPC(em, 0, 0, components.StanceCaged)
 		}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			em := ecs.NewEntityManager()
-			vent, _ := trapOn(em, components.TrapGasVent, cell)
+			vent, trap := trapOn(em, components.TrapGasVent, cell)
 			body := c.make(em)
 			sys := newTrapSystem()
 			sys.Update(trapTick, em.GetAllEntities())
 			standAt(body, components.Cell{X: 11, Y: 10})
 			springs := sys.Update(trapTick, em.GetAllEntities())
 			if !c.puffs {
-				assert.Empty(t, springs)
+				for range int(2*ventEvery*30) + 1 {
+					springs = append(springs, sys.Update(trapTick, em.GetAllEntities())...)
+				}
+				assert.Empty(t, springs, "alone in the cloud, it never makes the vent puff")
+				assert.False(t, trap.Puffed)
+				assert.False(t, detectedTrap(vent), "nor is the vent detected")
 				return
 			}
 			require.Len(t, springs, 1)
 			assert.Equal(t, TrapSpring{Trap: vent, Kind: components.TrapGasVent, Body: body}, springs[0])
 		})
 	}
+}
+
+// FS-4EC7Z §C R9 (amended 2026-11-25), Edge States: a peaceful NPC already in
+// a cloud a delver keeps puffing is poisoned by each puff; a caged captive in
+// it is passed by. The delver gone, the NPC left alone in it, the vent stops.
+func TestTrapSystem_APuffingCloudPoisonsThePeacefulNPCsInIt(t *testing.T) {
+	cell := components.Cell{X: 10, Y: 10}
+	em := ecs.NewEntityManager()
+	vent, _ := trapOn(em, components.TrapGasVent, cell)
+	p := pilgrim(em, 0, 0)
+	caged := encounterNPC(em, 0, 0, components.StanceCaged)
+	d := bodyAt(em, 0, 0)
+	sys := newTrapSystem()
+	standAt(p, components.Cell{X: 11, Y: 10})
+	standAt(caged, components.Cell{X: 10, Y: 11})
+	assert.Empty(t, sys.Update(trapTick, em.GetAllEntities()), "the pilgrim alone: no puff")
+
+	standAt(d, components.Cell{X: 9, Y: 10})
+	springs := sys.Update(trapTick, em.GetAllEntities())
+	bodies := make([]*ecs.Entity, len(springs))
+	for i, s := range springs {
+		assert.Equal(t, vent, s.Trap)
+		bodies[i] = s.Body
+	}
+	assert.ElementsMatch(t, []*ecs.Entity{p, d}, bodies, "the delver's entry puffs at both; the caged one is passed by")
+
+	standAt(d, components.Cell{X: 0, Y: 0})
+	var after []TrapSpring
+	for range int(2*ventEvery*30) + 1 {
+		after = append(after, sys.Update(trapTick, em.GetAllEntities())...)
+	}
+	assert.Empty(t, after, "the pilgrim left alone keeps no puffing going")
 }
 
 // FS-4EC7Z §C R9, Edge States: poison takes its tick from an ally and a
