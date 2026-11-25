@@ -100,7 +100,7 @@ func TestEndgameRun_ClimbsSixToTen_EachFloorOnItsPlan(t *testing.T) {
 				}
 			}
 			assert.GreaterOrEqual(t, darkWarriors, 1, "floor %d holds a Dark Warrior", depth)
-			assert.LessOrEqual(t, darkWarriors, min(DarkWarriorCapMax, len(standard)/DarkWarriorPer), "floor %d is within the cap", depth)
+			assert.LessOrEqual(t, darkWarriors, darkWarriorCap(len(standard)), "floor %d is within the cap", depth)
 
 			bosses := bossesIn(s)
 			assert.Empty(t, bosses[components.MonsterArchetypeBloodDemon], "floor %d: no Blood Demon", depth)
@@ -197,11 +197,20 @@ func TestEnsureDarkWarrior(t *testing.T) {
 	}
 	assert.Equal(t, 1, recast, "one brute becomes a Dark Warrior")
 
+	// any floor with a monster may hold one (FS-KE075 §Change: Room variety R83)
 	few := floorOf(DarkWarriorPer-1, components.MonsterArchetypeBloodTroll)
 	ensureDarkWarrior(seeded(), pool, 6, few)
+	recast = 0
 	for _, m := range few {
-		assert.False(t, capped(m.Archetype), "a floor whose cap is 0 keeps none")
+		if capped(m.Archetype) {
+			recast++
+		}
 	}
+	assert.Equal(t, 1, recast, "a floor under the per still gets its one")
+
+	none := floorOf(0, components.MonsterArchetypeBloodTroll)
+	ensureDarkWarrior(seeded(), pool, 6, none)
+	assert.Empty(t, none, "a floor with no monster has a cap of 0 and keeps none")
 }
 
 // The run's hub gate stands at (160, 720), its arrival at (300, 720), and is

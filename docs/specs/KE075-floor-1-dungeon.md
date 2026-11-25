@@ -866,8 +866,9 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
     turns its quiet rooms to monsters rooms, one at a time, drawn, until it reaches 8 or has none
     left; the floor map then names it quiet no more. *(charter default — reason: measured, about 1
     floor in 20 rolled too few monsters rooms to reach 8)* A floor holds at most one **Dark Warrior** per 8 of its monsters,
-    from 12 (FS-C8VM7 §C R24), up to the cap of 4 as before. *(charter default — reason: at 12, a
-    floor of 8–11 could hold none; at 8 the thinner floor keeps the one or two that 15–25 gave)*
+    from 12, and one on any floor with a monster, up to the cap of 4 as before (FS-C8VM7 §C R24).
+    *(charter default — reason: at 12, a floor of 8–11 could hold none; at 8 the thinner floor keeps
+    the one or two that 15–25 gave, and a floor short of 8 still keeps its one)*
 
 **§O. The client**
 

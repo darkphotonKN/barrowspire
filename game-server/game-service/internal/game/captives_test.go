@@ -281,7 +281,7 @@ func TestCaptives_TalkingToThem(t *testing.T) {
 // FS-4EC7Z §C R9, R12: on the run's tick a freed captive walks to its hirer;
 // when the party climbs, it stays behind, gone with the floor.
 func TestAllies_FollowOnTheTick_StayBehindOnAClimb(t *testing.T) {
-	s, ids, bodies := captivesRun(t, 8, 1)
+	s, ids, bodies := captivesRun(t, 9, 1)
 	require.NoError(t, s.OpenCage(theCage(t, s).ID, ids[0]))
 	allies := npcsOf(s)
 	require.Len(t, allies, CaptiveCount)
