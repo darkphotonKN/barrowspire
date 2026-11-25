@@ -145,7 +145,7 @@ func (s *Session) layTraps(depth int, d *dungeonFloor) {
 	if bare := d.bareTrapRooms(cells); len(bare) > 0 {
 		// the count ran out, or the half off the walk held a room on it bare
 		// (FS-KE075 §Change: Room variety R80, Edge States)
-		slog.Warn("Trap rooms left without a trap", "sessionID", s.ID, "floor", depth, "rooms", bare, "want", want)
+		slog.Debug("Trap rooms left without a trap", "sessionID", s.ID, "floor", depth, "rooms", bare, "want", want)
 	}
 	for _, c := range cells {
 		at := d.cellCentre(c)

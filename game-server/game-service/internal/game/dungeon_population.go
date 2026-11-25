@@ -323,7 +323,7 @@ func (p *dungeonPopulation) holdTotal(ordinary []int) {
 		}
 	}
 	for len(p.spawns) > DungeonMonstersMax {
-		if !p.trimOne(spawnCorridor) {
+		if !p.trimCorridor() {
 			break
 		}
 	}
@@ -356,11 +356,11 @@ func (p *dungeonPopulation) monsters() []*MonsterConfig {
 	return monsters
 }
 
-// trimOne removes one random monster placed as role; false when there is none.
-func (p *dungeonPopulation) trimOne(role spawnRole) bool {
+// trimCorridor removes one random corridor monster; false when there is none.
+func (p *dungeonPopulation) trimCorridor() bool {
 	var of []int
 	for i, spawn := range p.spawns {
-		if spawn.role == role {
+		if spawn.role == spawnCorridor {
 			of = append(of, i)
 		}
 	}

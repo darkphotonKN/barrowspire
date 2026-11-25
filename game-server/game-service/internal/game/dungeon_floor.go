@@ -69,9 +69,8 @@ const containerPadding = 10.0
 // floor, its seals found before it is published, and never written after, so
 // any goroutine may read it. One exception: the population, later in the same
 // build and under its buildMu, may turn a rolled quiet room's contents to
-// monsters (holdTotal); every reader of contents (the population, the
-// containers, the traps and the floor map) runs on that build, before the
-// floor map is published.
+// monsters (holdTotal); no write comes after the floor map is first
+// published, so a later re-publish (a secret door opened) reads them final.
 type dungeonFloor struct {
 	layout levelgen.DungeonLayout
 	// region is each cell's region id, row by row; 0 is rock.
