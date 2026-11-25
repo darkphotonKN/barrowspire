@@ -11,7 +11,9 @@ type WareKind string
 const (
 	WareHealthPotion WareKind = "health_potion"
 	WareAntidote     WareKind = "antidote"
-	WareTomeOfFilth  WareKind = "tome_of_filth"
+	// WareRestoringDraught is FS-9JV5K §Change: The Restoring Draught D2's.
+	WareRestoringDraught WareKind = "restoring_draught"
+	WareTomeOfFilth      WareKind = "tome_of_filth"
 )
 
 // Ware is one line of a merchant's stock: its price in gold, how many are
