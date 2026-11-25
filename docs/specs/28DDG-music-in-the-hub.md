@@ -903,3 +903,90 @@ R6's "the owner's mp3 alone" is superseded. The village now loads `village.m4a` 
 `village.ogg`, the same way as the tower and the effects (FS-WDM0X S21). The m4a is encoded from
 the ogg with afconvert (AAC, stereo, about 190 kbps). The new file is as loud as the mp3 it
 replaces (RMS -13.3 against -12.8 dBFS, peak -1.4 against -1.3), so the 0.3 cap (C9) stands.
+
+## Change: The chapel's and the Inn's music
+Status: shipped (listening check open, I-28DDG-10)
+Date: 2026-11-26
+
+Asked by the owner on 2026-11-26: copy how the town has its theme, and make a similar, serious
+medieval theme for the chapel and one for the tavern (the Inn). Two new tracks. Decisions are
+Claude's under the art delegation (the owner's standing call on art); each is a **[charter
+default]** with its reason.
+
+The text above is not edited. This section narrows R1 inside the hub: the hub still plays music
+whenever it runs, but which track now depends on where the player stands. Every other
+requirement holds for each of the three town tracks: the fades (R2, R3), one sound per track
+(R4), from the top on each new start (R5), the loop (R7), autoplay and focus (R9–R11), loading
+and freeing (R12–R14), the game's end (R21), and the level and its ramps (C9–C12, C15). The thin
+line "Background music" stands as it is.
+
+**Facts (verified 2026-11-26 on chore/game-loop-performance-optimization, 78dbbf67).**
+
+- The hub already knows the player's house each frame (`BuildingView.building`). The chapel and
+  the Inn are told apart by footprint: `isChapel` / `isInn` in `render/world/hubInteriors.ts`,
+  held to the town's golden. The code says Inn; the owner said tavern. They are the same house.
+- The village track, decoded: about D minor centred on A, about 70 to the minute, 113 s, −13.4
+  dBFS RMS.
+- This machine's `afconvert` reads Ogg but writes none (Vorbis, Opus and FLAC-in-Ogg all fail
+  with `pck?`/`fmt?`), and there is no ffmpeg.
+
+### Requirements
+
+M1. **A track per place.** In the chapel the chapel's track plays, and in the Inn the Inn's
+    track plays. On the street and in every other house the village track plays. Where the
+    player stands is the house `BuildingView` says they are in, read each frame.
+    `audio/townMusic.ts` names the three tracks (`TOWN_TRACKS`). **[charter default]** Reason:
+    the two rooms the owner named. Every other house stays in the village's world.
+M2. **Through a door, a crossfade.** Moving to a new place fades the old track out (R3, 1 s) and
+    the new one in (R2, 2 s), over each other. The old track is stopped and kept while the hub
+    runs (R13), and the next time it is entered it starts from the top (R5). A step back through
+    the door before the fade-out ends turns that fade round where it stands (R4). **[charter
+    default]** Reason: the same fades the world switch uses, and no second fade owner (R20).
+M3. **All three load with the hub.** The hub's preload queues the village, the chapel and the Inn
+    tracks, so the torch bar counts them. On entering the hub, the track for the player's place
+    rises and the other two are added silent (`WorldMusic.wait`), so leaving the hub frees all
+    three (R13). A track that failed to load leaves its place silent, as R14 does for a world.
+    **[charter default]** Reason: no load stalls in a doorway. The cost is about 4.7 MB more to
+    download and about 80 MB more decoded audio while the hub runs.
+M4. **Under the village's cap.** Both new tracks are mastered close to the village's loudness
+    (chapel about −15, Inn about −14 dBFS RMS), so both use `MUSIC_MAX_GAIN` (0.3, C9). A retune
+    is a `Tunes FS-28DDG`.
+M5. **Built in code, m4a alone.** The tracks are composed and synthesized by
+    `game-client/tools/music/compose.mjs` (seeded, so a re-render gives the same file), not
+    sourced, under the art rule (ADR-0021, held for sound). They ship as AAC m4a only (192 kb/s,
+    stereo, 44.1 kHz): this machine writes no Ogg (Facts). An ogg fallback is a later encode
+    from the same render. **[charter default]**
+    - **Chapel** (106.7 s loop): D minor, 54 to the minute. Organ chords open it, alone for four
+      bars. A chant of low men's voices on "ah" enters at bar 5, and from bar 13 it is doubled a
+      fifth above on "oh" (organum). A D bell tolls on bars 1, 9 and 17. A large stone hall.
+    - **Inn** (113.3 s loop): a grave dance in 6/8, D minor turning home through A major, 72
+      dotted-quarters to the minute. A hurdy-gurdy drone on D and A, a lute breaking the chords,
+      and a bodhran on the step. Four bars of intro, then a 32-bar AABB tune on fiddle, then
+      again on recorder with the fiddle under it. A small timber room.
+M6. **The level reaches the playing track.** The Options panel's Music row sets the playing
+    track's level at once (C10–C12). The other tracks read the kept level the next time they are
+    entered (C15).
+
+### Acceptance Criteria
+
+- [x] In the chapel the chapel's track rises as the village falls; the same in the Inn with the
+      Inn's track; back on the street the village rises again from the top (M1, M2).
+- [x] Any other house, or no house, plays the village (M1).
+- [x] The hub's preload queues the village (m4a, ogg), then the chapel (m4a) and the Inn (m4a);
+      each is skipped while still cached (M3).
+- [x] Leaving the hub frees all three tracks, including ones never played. A destroyed game asks
+      no sound anything (M3, R21).
+- [x] At level 0, a new place starts nothing. A level set indoors holds for the street on the
+      next entry (M6).
+- [x] An indoor track that failed to load leaves its room silent (M3, R14).
+- [x] Each file loops with no step at the seam (measured on the render: the tail folded onto the
+      start) (M5).
+- [ ] The owner's listening check: the feel of both tracks, the loudness against the village, and
+      the doorway crossfade (I-28DDG-10).
+
+### Out of Scope
+
+- Music for any other house (the smithy, the shops), or for the graveyard and the street's
+  quarters.
+- Ambient room sound (a crowd's murmur, a hearth's crackle).
+- An ogg encoding of the two new tracks.
