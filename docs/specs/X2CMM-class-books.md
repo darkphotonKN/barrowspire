@@ -124,6 +124,22 @@ follows the floor. Each is [derived] and overridable.
 - **Pick the Lock opens the cage only** (R55): the sealed floors built no locked doors and no
   locked chests. It calls FS-4EC7Z's open-cage entry point (`OpenCage`); Strike a Deal calls
   `Hire` and Take a Contract calls `TakeContract`, and each page refuses as its entry point does.
+- **A page the world refuses is told why** (§A R4 kept for the book's own gates): when a page's
+  entry point refuses (Take a Contract, Pick the Lock, Strike a Deal, Far Hand), nothing is spent and
+  the caster gets the ordinary refused reply on `cast_skill`, its `reason` one of `contract_taken`,
+  `contract_no_stairs` (no contract on the top floor), `contract_no_room` (no room holds the mark),
+  `cage_open` (the cage's key opened it during the cast), `not_willing`, `already_hired`,
+  `too_many_allies`. A cast-time page is told at its cast's end. Far Hand's work answers on the
+  interact's own reply (`lever_wrong`, `container_guarded`). The book's own refusals (locked, cooling,
+  short, out of range) still send nothing.
+- **Far Hand opens a chest through the mage's own timed open** (FS-MQYEX), its reach measured from
+  beside the chest; moving, a hit or an attack cancels it, as at the chest. A sprung trap hits no one;
+  a tripwire wakes its ambush on the mage. Far Hand needs no line of sight (R50 names none).
+- **The hound's bay is on the wire** as a `bay: {x, y}` point on its `book_effects` entry while it
+  bays (1.5 s, every 4 s while something is near). It points at an undetected door or tripwire on
+  purpose: that is what baying is for. It reveals nothing.
+- **The hound is a body that weighs** (holds a plate) and is hunted (chased, struck in melee); a
+  monster's area ability still spares it, as recorded at wave 1.
 
 ## Requirements
 
@@ -609,7 +625,15 @@ No HTTP endpoints change. No inbound action is added.
 | `current_player.book` (new, run only) | `{pages: [{id, unlock_level, cost, cooldown: {remaining, total}, spent}], casting?: {page, remaining, total}}` |
 | `other_players[].book` | never sent |
 | `book_states` (new) | `[{name, remaining}]`, names `afloat`, `hardened`, `long_night`, `trackers_eye`, `draught`, on `current_player` and `other_players` |
-| `book_effects` (new, run) | `[{id, kind, x, y, remaining}]`, kinds `witchlight`, `rune` (+`caught`), `draught`, `hound` (+`owner_id`, `health`, `max_health`, `action`); cut per recipient by distance |
+| `book_effects` (new, run) | `[{id, kind, x, y, remaining}]`, kinds `witchlight`, `rune` (+`caught`), `draught`, `hound` (+`owner_id`, `health`, `max_health`, `action`, `bay?: {x, y}`); cut per recipient by distance |
+| `current_player.book.pages[]` | also `cooldown_length`, `limit?` (`floor`/`delve`), `cast_time` (Reconciled at review) |
+| `traps[].revealed`, `barriers[].revealed` | true once a page revealed it (Reconciled at wave 2) |
+
+**Outbound (server → client), replies**
+
+| Action | Change |
+|---|---|
+| `cast_skill` reply (new) | the refused reply an interact already uses (`success: false`, a `reason`), sent when a page's entry point refuses; reasons in "Reconciled at wave 2" |
 
 ## Out of Scope
 

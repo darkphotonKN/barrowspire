@@ -853,9 +853,18 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - **Hound** (FS-X2CMM, Call the Hound) — the archer's summoned beast: an ally entity for 40 s that
   fights monsters. Not a monster and not a delver: monsters may strike it, it never counts toward
   a floor's clear or a party's roster, and it leaves no body.
+  It holds a pressure plate as a delver does (its own body kind, which weighs). It **bays**: every
+  few seconds it calls at the nearest shut secret door, or seal piece or tripwire whose ambush has
+  not woken, within 6 cells (the **hound's bay**, a point on its wire entry). A bay reveals nothing.
+- **Revealed** (FS-X2CMM R49, FS-4EC7Z §D R14) — a trap or secret door the party was told of rather
+  than came upon: by a page (Witchlight within 3 cells, Tracker's Eye within 10 of the archer) or the
+  Cutthroats' tip. Always detected as well; sent as `revealed: true`. *Avoid*: "revealed" for a plain
+  detection.
 - **Afloat** (FS-X2CMM, Levitate) — the 8 s state of a delver the Levitate page lifts: cannot
-  attack while it runs.
-- **Hardened** (FS-X2CMM) — the 10 s self state the Scar of the Pit sets on the warrior.
+  attack while it runs; walks over a chasm's pits and fires no trap. Ending over a pit, the delver
+  is set down on the nearest walkable cell.
+- **Hardened** (FS-X2CMM) — the 10 s self state the Scar of the Pit sets on the warrior: traps deal
+  them nothing and no poisoning takes hold (a poison already running runs on).
 - **Long Night** (FS-X2CMM) — the 6 s self state the Scar of the Long Night sets: monsters within
   5 cells turn on the warrior, who takes 30% less damage.
 - **Stun** (FS-04EEA; FS-X2CMM) — server state on a monster, applied by Earthbreaker and by a Binding Glyph's **rune**: while it runs the

@@ -667,6 +667,13 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   kind *none* is never armed: the click casts it. Client presentation only (ADR-0030).
 - **Cast bar** (FS-X2CMM): the small bar under the player that fills while the server counts a
   page's **cast time**, from the owner's state; it clears when the cast completes or breaks.
+- **Hound's bay** (FS-X2CMM R49): the archer's hound calling at a shut secret door or a waiting
+  ambush within 6 cells of it, drawn as verdigris rings at what it bays at; the wire's `bay` point on
+  the hound's `book_effects` entry. A call, never a place: not a chapel **bay** (a window's stretch of
+  wall). In code, the hound's call is always "hound bay" or "the bay a hound calls", never a bare `bay`.
+- **Revealed** (FS-X2CMM R49): a trap or secret door a page found (Witchlight, Tracker's Eye), drawn
+  apart from one only detected: a revealed trap stands stronger under an ochre wash; a revealed
+  secret door is marked on the minimap.
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the
   top left of a run or a field world, under the level bar in a run, each labelled with its own
   name ("Health:", "Mana:",
