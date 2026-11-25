@@ -29,6 +29,7 @@ function recording(build: HudBuild, built: Partial<Record<HudKind, unknown>>): H
     window: keep("window", build.window),
     statusMarks: keep("statusMarks", build.statusMarks),
     contract: keep("contract", build.contract),
+    roll: keep("roll", build.roll),
   };
 }
 

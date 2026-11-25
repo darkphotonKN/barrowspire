@@ -84,6 +84,17 @@ export interface PublicPlayerState {
    * Blessing is; absent when not, and always in the hub.
    */
   contract_settled?: boolean;
+  /**
+   * The roll under way (FS-7P736 R12): its direction, on `current_player` and every `other_players` entry
+   * while that delver is rolling, so every viewer can draw it; absent otherwise.
+   */
+  roll?: RollState;
+}
+
+/** A roll's direction as the server holds it (FS-7P736 R12), normalised. */
+export interface RollState {
+  dir_x: number;
+  dir_y: number;
 }
 
 /** A contract's state (FS-4EC7Z §E R19–R20, §F R25). */
@@ -211,6 +222,11 @@ export interface PlayerState extends PublicPlayerState {
    * ability, so its absence means the ability is not held. Never on an `other_players` entry (R6).
    */
   tree_ability_cooldown?: CooldownState;
+  /**
+   * The roll cooldown (FS-7P736 R7, R12), FS-Q18Q3's shape: present only while it runs. Never on an
+   * `other_players` entry. The client never times it: Space reads it (R13, R14), the pip sweeps it (R16).
+   */
+  roll_cooldown?: CooldownState;
   /**
    * The passive tree's ranks held, by node id, nodes at rank 1 or more only (FS-8RZ51 R23): sent on
    * `current_player` in every world, `{}` when none. Never on an `other_players` entry (ADR-0064).
