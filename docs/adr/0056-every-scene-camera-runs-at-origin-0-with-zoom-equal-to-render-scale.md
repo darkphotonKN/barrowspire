@@ -8,6 +8,7 @@ Scope: `game-client` only: `src/render/viewport/` (`camera.ts`, `game.ts`, `view
 `docs/issues/I-ZAJMH-1-spike-render-scale-mechanism.md` `## Answer`, implemented in
 `I-ZAJMH-2-sharp-canvas-at-fixed-logical-view.md`).
 Amended by: [ADR-0057](0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) — the Phaser 3.90 premises (`roundPixels` off at fractional zoom, `DynamicTexture.setSize`) and the `keepOnPixelGrid` forced-rounding clause; the origin-0 / zoom = render scale rule and the viewport-only rule stand
+Amended by: [ADR-0103](0103-a-worlds-camera-stands-closer-by-world-zoom-and-its-hud-has-a-camera-of-its-own.md) — zoom = render scale, for a world's camera (now render scale × `WORLD_ZOOM`), and the rejected separate HUD camera (a world's HUD now has one)
 Builds on: [ADR-0020](0020-game-canvas-art-is-pre-rendered-3d-baked-to-isometric-sprites.md)
 (2x baked art, the reason the render scale caps at 2)
 

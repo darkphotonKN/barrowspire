@@ -190,3 +190,35 @@ Engineering words for this feature. They extend `game-client/CONTEXT.md` § *Ren
 ## Change: Minimap at the top, fullscreen button beside it → FS-56CKV
 
 ## Change: Fullscreen in the OPTIONS panel → FS-T3DWX
+
+## Change: Closer world camera
+Status: shipped
+Date: 2026-11-25
+
+Asked by the owner on 2026-11-25, first for the run (the slower, room-by-room exploration pace had
+just landed at `PaceScale` 0.5), then for every world: the town felt too big as well. A tuning of
+the world view, not a new capability. The text above is not edited.
+
+**R7 amended for every world view** (the run, the town, the fields): a world shows the logical
+view divided by `WORLD_ZOOM`, so the player sees a little less of the world around them. At a
+given width the view is still fixed, and a wider screen still sees no more (16:9 stays the cap).
+The canvas menus, the UI scene and the HUD keep the logical view exactly.
+
+- **C1. One knob.** `WORLD_ZOOM = 1.2`, defined once (`game-client/src/render/viewport/camera.ts`).
+  A world's camera is zoomed by the render scale × `WORLD_ZOOM`, through the same fit as the
+  render scale, so it holds across every re-fit (R10, R11). 1 puts the view back as it was.
+- **C2. The HUD is not scaled.** HUD placement and hit tests stay in logical units (R12–R15). The
+  HUD a world scene draws itself (the minimap, its icon and name, the floor indicator, the run's
+  cards, the town's queue panel, the field's fallen panel) is drawn by a second camera over the
+  world's, at the render scale only; the world's camera draws the rest, the camera-fixed layers
+  of the world's own view among them (the light-map, the blackout, the mist, the dust, the
+  vignette), which follow its zoom. The world camera's fade covers that HUD too, as before.
+- **C3. What holds.** Bounds and follow clamp at each world's edges at the closer zoom; the scroll
+  stays on whole backing px (R4); `pointer.worldX/worldY` still give the world point under the
+  cursor away from a HUD control (R15).
+
+The mechanism, and what it costs, is [ADR-0103](../adr/0103-a-worlds-camera-stands-closer-by-world-zoom-and-its-hud-has-a-camera-of-its-own.md),
+which amends ADR-0056.
+
+Acceptance: a test pins a world camera's zoom to render scale × `WORLD_ZOOM` across a re-fit, and
+the HUD's camera to the render scale (`worldView.test.ts`, `camera.test.ts`).

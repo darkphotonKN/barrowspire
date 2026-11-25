@@ -281,6 +281,7 @@ import {
   relayoutOn,
   viewRect,
   viewport,
+  zoomWorldView,
 } from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
@@ -3552,6 +3553,10 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   create(): void {
+    // the world stands closer than the logical view, its HUD on a camera of its own at the logical
+    // view; first, so whatever is laid out for the world camera sees its zoom (FS-ZAJMH § Change:
+    // Closer world camera)
+    zoomWorldView(this);
     // an arrival is dark before anything of the floor is made: the world's fade-in opens on the
     // dark, and the card comes with the first broadcast's floor (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.dark();
