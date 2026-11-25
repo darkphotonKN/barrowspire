@@ -381,7 +381,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   party), **Cutthroats** (talk first; half turn hostile, the rest reveal the hidden room). An
   encounter NPC is not a monster until it turns, and never a hub NPC.
 - **Hired ally** — an encounter NPC fighting on the party's side: hired (FS-X2CMM's Strike a
-  Deal) or freed. Follows its **hirer** (the party, for freed captives), fights monsters, holds a
+  Deal) or freed. Follows its **hirer** (the delver who hired it, or who opened the cage for freed captives), fights monsters, holds a
   pressure plate, triggers traps, is targeted by monsters, never climbs. At most 3 a party. Its
   kills give no experience and count as the hirer's for loot.
 - **Contract** — the once-a-delve job the mercenary takes (FS-X2CMM's Take a Contract): a **mark**
