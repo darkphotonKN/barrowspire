@@ -44,6 +44,7 @@ import { EncounterWatch, encounterLineText, encounterReplyNotice } from "@/ui/en
 import { ContractWatch, contractLine } from "@/ui/contractLines";
 import { StatusWatch } from "@/ui/statusLines";
 import { statusMarks } from "@/ui/statusMarks";
+import { rollPipView } from "@/ui/rollPipView";
 import { SealWindowClock } from "@/ui/sealWindow";
 import {
   nextWatched,
@@ -64,6 +65,8 @@ import { GameplaySounds } from "@/audio/gameplaySounds";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { bindTreeAbilityKey } from "./treeAbilityKey";
+import { bindRollKey, rollAllowed, rollDirection } from "./rollKey";
+import { RollPrediction, rollReach, type RollBlocker } from "@/render/world/rollPrediction";
 import { placeOnJump } from "@/render/jump";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
@@ -759,6 +762,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private gameStateUnsubscribe?: () => void;
   private connectionStatusUnsubscribe?: () => void;
   private targetPosition: { x: number; y: number } | null = null;
+  /**
+   * The roll this client predicts on its own body (FS-7P736 R14): while it stands, the body is drawn where it
+   * says instead of easing toward `targetPosition`; once it lets go the ease takes the body back to the server.
+   */
+  private readonly rolled = new RollPrediction();
 
   // 地圖大小: the floor's own, from its floor map (FS-KE075 §H.42); none until a map sizes it
   private mapWidth = 0;
@@ -1324,6 +1332,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.walkPhase = 0;
     this.ownHealth = undefined;
     this.targetPosition = null;
+    this.rolled.clear();
 
     this.otherPlayers.clear();
     this.otherPlayersPos.clear();
@@ -3878,6 +3887,9 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drinkPotion();
     });
 
+    // Space rolls (FS-7P736 R13): an event, never an added key, so nothing captures Space and chat types it
+    bindRollKey(this.input.keyboard, () => this.roll());
+
     // 3 casts the tree ability (FS-04EEA R35, R36), an event as 1 is; held back while the UI scene's menu
     // reads it as its third row, chat types or a gear panel is open. Letting go casts an archer's Arrow Rain
     // aim, or only cancels it while the key is held back (R38)
@@ -4301,6 +4313,8 @@ export class BarrowspireScene extends Phaser.Scene {
       // Blink just sent lands there (R44)
       if (this.playerPos && placeOnJump(this.playerPos, this.targetPosition, pos)) this.kit.landed(pos, this.time.now);
       this.targetPosition = { x: pos.x, y: pos.y };
+      // the server's answer to a predicted roll, and whether its own roll still runs (FS-7P736 R14)
+      this.rolled.hear(state.current_player);
 
       this.showProgress(state.current_player);
 
@@ -5079,6 +5093,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * across the map from where they stood on the old one.
    */
   private settlePlayers(): void {
+    // a roll ends with the floor (FS-7P736 R11): the body stands where the server put it
+    this.rolled.clear();
     if (this.playerPos && this.targetPosition) {
       this.playerPos.x = this.targetPosition.x;
       this.playerPos.y = this.targetPosition.y;
@@ -6302,6 +6318,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.ui.hud({ world: "run", kind: "bar", bar: own.bar });
     // the Blessing's mark beside the own health bar, while it holds (FS-5FZ4J §J R55)
     this.ui.hud({ world: "run", kind: "statusMarks", marks: statusMarks(state) });
+    // the roll cooldown pip beside the ability bar, swept from roll_cooldown (FS-7P736 R16)
+    this.ui.hud({ world: "run", kind: "roll", roll: rollPipView(state) });
     // the controls badge stands while the bar is live, so it goes at a death though the bar is held
     // (FS-84N1G R4; FS-Q18Q3 R42): told on each change
     const live = own.bar !== null && this.heldHud === undefined;
@@ -6589,6 +6607,48 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The stride the movement keys ask for, -1, 0 or 1 on each axis: what `move` sends, and the way a roll
+   * goes (FS-7P736 R13). The keys are the menu's while it is open (FS-9K8EZ req 5), and read as released
+   * while an archer draws a Shadow Shot (FS-JTNPR req 9).
+   */
+  private heldStride(): { vx: number; vy: number } {
+    if (this.menuOpen || this.combat.aiming) return { vx: 0, vy: 0 };
+    const down = (a: Phaser.Input.Keyboard.Key, b: Phaser.Input.Keyboard.Key) => a.isDown || b.isDown;
+    const vx = down(this.cursors.left, this.wasd.left) ? -1 : down(this.cursors.right, this.wasd.right) ? 1 : 0;
+    const vy = down(this.cursors.up, this.wasd.up) ? -1 : down(this.cursors.down, this.wasd.down) ? 1 : 0;
+    return { vx, vy };
+  }
+
+  /**
+   * Space (FS-7P736 R13, R14): a roll the client judges allowed goes up as `roll`, the held keys' way else
+   * the facing, and is started on the own body at once, swept as the server sweeps it against the floor's
+   * rock, its edge and the shut doors. The cooldown is the wire's alone. Nothing while an archer draws a
+   * Shadow Shot (the keys are the hold's) or after the run's end.
+   */
+  private roll(): void {
+    const me = this.lastGameState?.current_player;
+    const now = this.time.now;
+    const gate = { spectating: this.watchedPlayerId !== undefined, predicting: this.rolled.inFlight(now), ui: this.ui.ui };
+    if (this.runEnded || this.combat.aiming || !this.playerPos || !this.targetPosition || !rollAllowed(me, gate)) return;
+    const facing = this.playerAnim?.baked ? this.playerAnim.facing : this.playerFacing;
+    const dir = rollDirection(this.heldStride(), facing);
+    socketManager.sendMessage(ActionType.Roll, dir);
+    const length = Math.hypot(dir.dir_x, dir.dir_y);
+    const unit = { x: dir.dir_x / length, y: dir.dir_y / length };
+    // swept from where the server last put the body, the roll's real start; drawn from where it is drawn
+    const end = rollReach(this.targetPosition, unit, this.dungeon?.grid, this.shutDoors());
+    const reach = Math.hypot(end.x - this.targetPosition.x, end.y - this.targetPosition.y);
+    this.rolled.start(this.playerPos, unit, reach, now);
+  }
+
+  /** The floor's shut doors as the roll's sweep stops at them (FS-7P736 R4), from the latest state. */
+  private shutDoors(): RollBlocker[] {
+    return (this.lastGameState?.doors ?? [])
+      .filter((d) => !d.is_open)
+      .map((d) => ({ x: d.position.x, y: d.position.y, width: d.width, height: d.height }));
+  }
+
+  /**
    * The stride the keys ask for, sent each frame it is non-zero; none from a player out of the
    * delve (FS-77AB6 req 17). While the menu is open the keys are its (FS-9K8EZ req 5): a stride
    * it interrupts is stopped once, and nothing more goes until it closes. The run's end stops a
@@ -6828,28 +6888,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     // handle movement
-    let vx = 0;
-    let vy = 0;
-
-    // calculate horizontal direction
-    if (this.cursors.left.isDown || this.wasd.left.isDown) {
-      vx = -1;
-    } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
-      vx = 1;
-    }
-
-    // calculate vertical direction
-    if (this.cursors.up.isDown || this.wasd.up.isDown) {
-      vy = -1;
-    } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
-      vy = 1;
-    }
-    // the keys are the menu's while it is open (FS-9K8EZ req 5), and read as released while an
-    // archer draws a Shadow Shot (FS-JTNPR req 9)
-    if (this.menuOpen || this.combat.aiming) {
-      vx = 0;
-      vy = 0;
-    }
+    const { vx, vy } = this.heldStride();
 
     // update player facing and legs: the placeholder rig (a baked sheet plays below)
     if (this.player && this.playerLegs && !this.playerAnim?.baked) {
@@ -6895,18 +6934,12 @@ export class BarrowspireScene extends Phaser.Scene {
     // 平滑移動到目標位置 (lerp)
     const lerpFactor = 0.3; // 0-1，越大越快到達目標
 
-    // eased in world space, then drawn at the projection
+    // eased in world space, then drawn at the projection; a predicted roll draws the body where it says
+    // (FS-7P736 R14), and the ease takes it back to the server once the roll lets go
     if (this.player && this.playerPos && this.targetPosition) {
-      this.playerPos.x = Phaser.Math.Linear(
-        this.playerPos.x,
-        this.targetPosition.x,
-        lerpFactor,
-      );
-      this.playerPos.y = Phaser.Math.Linear(
-        this.playerPos.y,
-        this.targetPosition.y,
-        lerpFactor,
-      );
+      const rolling = this.rolled.at(this.time.now);
+      this.playerPos.x = rolling ? rolling.x : Phaser.Math.Linear(this.playerPos.x, this.targetPosition.x, lerpFactor);
+      this.playerPos.y = rolling ? rolling.y : Phaser.Math.Linear(this.playerPos.y, this.targetPosition.y, lerpFactor);
       standAt(this.player, this.playerPos, 1);
       // afloat draws the body raised a little over its feet (FS-X2CMM R47)
       this.player.y -= this.bookStates.lift(OWN_BODY, time, this.playerAnim?.crown);

@@ -38,13 +38,13 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { AbilityBarView } from "./abilityBarView";
 import { ABILITY_BAR_SQUARES, abilityBarFrame, type AbilityBarFrame, type AbilityBarSquare, type AbilitySquareFrame } from "./abilityBarLayout";
 import { ABILITY_TIP_MAX_W, abilityTip, abilityTipPlace } from "./abilityBarTip";
-import { cooldownSwept, sweepPolygon } from "./abilityCooldown";
+import { cooldownSwept, sweepPolygon, type SweepGraphics } from "./abilityCooldown";
 import { TREE_ABILITY_LEVEL } from "./abilityCopy";
 import { ABILITY_ICONS, drawAbilityIconLines, type AbilityIconKey } from "./abilityIcons";
 import { BRONZE, GREYED, GREYED_ALPHA, Knockout } from "./knockout";
 import type { HudChannel } from "./resources";
 import type { AbilityBarPiece } from "./uiSceneHud";
-import type { Point, XpBarView } from "./xpBarLayout";
+import type { XpBarView } from "./xpBarLayout";
 
 /** The corner row's band on the UI scene (R11; ADR-0086 Decision 4). */
 const BAR_DEPTH = 1000;
@@ -111,14 +111,6 @@ const SWEPT: Partial<Record<AbilityBarSquare, (view: AbilityBarView) => Cooldown
   ability: (view) => view.cooldowns.ability,
   tree: (view) => (view.tree.locked ? null : view.cooldowns.tree),
 };
-
-/** What of a Phaser Graphics the sweep draws with: its wedge's points are plain ones, as Phaser reads them. */
-interface SweepGraphics {
-  clear(): SweepGraphics;
-  fillStyle(color: number, alpha?: number): unknown;
-  fillPoints(points: Point[], closeShape?: boolean): unknown;
-  destroy(): void;
-}
 
 /** A square's cooldown as last heard, and when on the UI scene's clock. */
 interface HeardCooldown {

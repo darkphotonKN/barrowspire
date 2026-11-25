@@ -27,6 +27,17 @@ export function cooldownSwept(
   );
 }
 
+/**
+ * What of a Phaser Graphics a sweep draws with: its wedge's points are plain ones, as Phaser reads them. The
+ * ability bar's squares and the roll pip (FS-7P736 R16) each keep one.
+ */
+export interface SweepGraphics {
+  clear(): SweepGraphics;
+  fillStyle(color: number, alpha?: number): unknown;
+  fillPoints(points: Point[], closeShape?: boolean): unknown;
+  destroy(): void;
+}
+
 /** Below this, an angle is the same angle: a corner the hand stands on is not stood again. */
 const EPSILON = 1e-9;
 
