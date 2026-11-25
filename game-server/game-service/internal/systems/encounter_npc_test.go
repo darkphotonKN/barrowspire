@@ -109,6 +109,42 @@ func TestCombatSystem_HitsOnAnEncounterNPC_OnlyAMonstersLands(t *testing.T) {
 	}
 }
 
+// FS-4EC7Z §A R3, §D R13: a caged captive is behind bars, not hunted, and
+// takes no hit at all: a monster's strike leaves it whole.
+func TestCombatSystem_AMonstersStrikeOnACagedCaptive_DealsNothing(t *testing.T) {
+	em := ecs.NewEntityManager()
+	captive := encounterNPC(em, 100, 100, components.StanceCaged)
+	strike := components.AttackSnapshot{AttackerEntityID: uuid.New(), DamageType: components.DamagePhysical, Power: 40, Coefficient: 1, FromMonster: true, Kind: components.AttackMonsterStrike}
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), []Impact{{Attack: strike, TargetEntityID: captive.ID}})
+	assert.Equal(t, 1000, health(captive))
+}
+
+// FS-4EC7Z §A R3, §D R13: a monster's shot flies through a caged captive,
+// spending nothing on it, and lands on the delver beyond.
+func TestProjectile_MonsterShotThroughACagedCaptive_FliesOn(t *testing.T) {
+	em := ecs.NewEntityManager()
+	captive := encounterNPC(em, 160, 100, components.StanceCaged)
+	beyond := delver(em, 260, 100)
+
+	shot := em.CreateEntity()
+	shot.AddComponent(components.NewTransformComponent(120, 100))
+	shot.AddComponent(components.NewVelocityComponent(600, 0, 600))
+	shot.AddComponent(components.NewProjectileComponent(components.AttackSnapshot{
+		AttackerEntityID: uuid.New(), FromMonster: true,
+		DamageType: components.DamagePhysical, Power: 50, Coefficient: 1,
+	}, 600, 1000, 6, "arrow"))
+
+	var impacts []Impact
+	for range 30 {
+		impacts = append(impacts, NewProjectileSystem(em, PlayerDamageOff).Update(tickSeconds, em.GetAllEntities())...)
+	}
+	require.NotEmpty(t, impacts)
+	for _, impact := range impacts {
+		assert.NotEqual(t, captive.ID, impact.TargetEntityID, "the captive is never struck")
+	}
+	assert.Equal(t, beyond.ID, impacts[0].TargetEntityID)
+}
+
 // FS-4EC7Z §A R3: a living encounter NPC is a body of its own kind to the
 // ground, in a block's way, holding no plate, pushing no block, firing no
 // trap and detecting nothing; a caged one is a captive; a dead one is no body.

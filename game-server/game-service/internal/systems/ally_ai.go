@@ -23,8 +23,8 @@ of them and stops once within Near, so it keeps between the two. With no
 delver in play it stands where it is.
 
 It keeps the monster it engages while that one still qualifies, and looks
-again for the nearest every engageInterval, so an unreachable monster costs a
-route search that often, not every tick.
+again for the nearest every engageInterval, target or none, so an unreachable
+monster costs a route search that often, not every tick.
 
 It only sets an ally's velocity, facing and action, as the monster AI does a
 monster's: MovementSystem moves and collides it. On a dungeon floor it walks
@@ -171,9 +171,9 @@ func (s *AllyAISystem) think(
 
 /*
 engage is the monster the ally at at fights this tick; false with none. Past
-Leash of its leader it fights none. It keeps its target while that one still
-qualifies; else, and every engageInterval, it takes the nearest that does and
-that its route search reaches.
+Leash of its leader it fights none. Between choices it keeps its target while
+that one still qualifies, else fights none; every engageInterval it chooses
+again: the nearest that qualifies and that its route search reaches.
 */
 func (s *AllyAISystem) engage(ally *components.AllyComponent, at *components.TransformComponent, c company, foes []foe) (foe, bool) {
 	if c.led && s.reach.Leash > 0 && math.Hypot(c.lead.at.X-at.X, c.lead.at.Y-at.Y) > s.reach.Leash {
@@ -191,8 +191,8 @@ func (s *AllyAISystem) engage(ally *components.AllyComponent, at *components.Tra
 			current, keeping = f, true
 		}
 	}
-	if keeping && ally.EngageIn > 0 {
-		return current, true
+	if ally.EngageIn > 0 {
+		return current, keeping
 	}
 	ally.EngageIn = engageInterval
 	slices.SortStableFunc(candidates, func(a, b foe) int {

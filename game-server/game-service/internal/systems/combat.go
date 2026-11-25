@@ -1483,10 +1483,11 @@ func alive(entity *ecs.Entity) bool {
 // Monsters never damage monsters, and with player damage off a delver never
 // damages a delver (FS-77AB6 §Requirements 12, 14, 17). A projectile passes
 // through whatever this refuses. Only a monster's hit lands on an encounter
-// NPC: a delver's, its reflect, and a trap's pass it by (FS-4EC7Z §A R3). A
-// hired ally's lands on a monster and nothing else (§C R9).
+// NPC: a delver's, its reflect, and a trap's pass it by (FS-4EC7Z §A R3), and
+// nothing lands on a caged captive, behind bars (§D R13). A hired ally's
+// lands on a monster and nothing else (§C R9).
 func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage PlayerDamage) bool {
-	if !alive(target) {
+	if !alive(target) || BodyKindOf(target) == BodyCaptive {
 		return false
 	}
 	if attack.AllyOf != uuid.Nil && !target.HasComponent(ecs.ComponentTypeEnemy) {

@@ -206,6 +206,25 @@ func TestAllyAISystem_AMonsterBehindAShutGate_IsNotEngaged(t *testing.T) {
 	assert.Equal(t, m.ID, allyOf(a).Target, "the gate open, it is reached")
 }
 
+// FS-4EC7Z §C R9 (amended 2026-11-25): an ally with no monster it can reach
+// looks again only every engageInterval, so a monster behind a shut gate
+// costs a route search twice a second, not every tick.
+func TestAllyAISystem_AnUnreachableMonster_IsSearchedForAtMostTwiceASecond(t *testing.T) {
+	em := ecs.NewEntityManager()
+	grid, move := floorOf(t, em, behindAWall)
+	move.Grid = grid
+	shutGate(grid, true)
+	_, hirer := hirerAt(em, 3.5*navCell, 1.5*navCell)
+	a := fightingAlly(em, 1.5*navCell, 1.5*navCell, hirer, 10)
+	hunter(em, 1.5*navCell, 4.5*navCell)
+	counting := &countingGrid{Grid: grid}
+	ai := NewAllyAISystem(counting, AllyReach{Near: 2 * navCell, Far: 4 * navCell, Engage: 6 * navCell, Leash: 8 * navCell})
+
+	march(em, ai, move, 1)
+	assert.Equal(t, uuid.Nil, allyOf(a).Target)
+	assert.LessOrEqual(t, len(counting.searches), 3, "route searches in 1 s")
+}
+
 // FS-4EC7Z §C R9 (amended 2026-11-25): an ally drops an engagement that would
 // take it more than 8 cells from its hirer and walks back to following.
 func TestAllyAISystem_ChasingPastEightCellsFromTheHirer_TurnsBack(t *testing.T) {

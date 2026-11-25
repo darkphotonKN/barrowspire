@@ -221,7 +221,16 @@ func TestCutthroats_PeacefulDraw_NoDoor_TheTipIsLore(t *testing.T) {
 	assert.Equal(t, components.LineCutthroatLore, npcOf(t, speaker).Line)
 	assert.Empty(t, turnedCutthroats(s))
 
-	other := npcsOf(s)[1]
+	// another Cutthroat than the speaker: npcsOf's order is the map's, and
+	// changes call to call
+	var other *ecs.Entity
+	for _, e := range npcsOf(s) {
+		if e.ID != speaker.ID {
+			other = e
+			break
+		}
+	}
+	require.NotNil(t, other)
 	talkTo(t, s, ids[0], bodies[0], other)
 	assert.Equal(t, components.LineCutthroatLore, npcOf(t, other).Line, "lore again")
 }
@@ -368,7 +377,9 @@ func TestHire_PastTheAllyCap_RefusedWhole(t *testing.T) {
 	other := CreateEncounterNPCEntity(s.EntityManager, EncounterNPCConfig{Kind: components.EncounterNPCCaptive, Stance: components.StancePeaceful, Health: 100})
 	require.NoError(t, s.makeAllies([]*ecs.Entity{other}, ids[0]))
 
-	assert.ErrorIs(t, s.Hire(npcsOf(s)[0].ID, ids[0]), ErrTooManyAllies)
+	// a Cutthroat of the encounter's own, not the captive allied above
+	_, enc, _ := theEncounter(s)
+	assert.ErrorIs(t, s.Hire(enc.NPCs[0], ids[0]), ErrTooManyAllies)
 	assert.False(t, cutthroatsOf(t, s).Hired)
 	for _, e := range npcsOf(s) {
 		if e.ID == other.ID {
