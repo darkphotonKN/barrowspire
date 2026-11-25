@@ -133,6 +133,13 @@ describe("effect cards", () => {
     expect(runs).toEqual([palette.reticleGround, palette.reticleInteractable, palette.reticleGround]);
   });
 
+  // FS-X2CMM §Change: The archer's wolf W2: the reticle card and the bay's card name the summon by its page
+  it("should name the archer's summon on its cards the wolf, as its page reads, never the hound", () => {
+    const reticle = EFFECT_CARDS.find((c) => c.module === "pageReticle");
+    expect(reticle?.name).toContain("Call the Wolf's paw");
+    for (const card of EFFECT_CARDS) expect(card.name).not.toMatch(/hound/i);
+  });
+
   it("should give every card that can't be played a reason", () => {
     const unexplained = EFFECT_CARDS.filter(
       (c) => c.demo === null && !c.reason.trim(),

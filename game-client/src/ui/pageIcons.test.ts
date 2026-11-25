@@ -42,6 +42,17 @@ describe("PAGE_ICONS (FS-X2CMM R45)", () => {
     }
   });
 
+  it("should draw Call the Wolf as a wolf's head, its pricked ear the picture's crown, behind the eye and over the muzzle (§Change: The archer's wolf W2)", () => {
+    const points = PAGE_ICONS.call_the_hound.glyph.body.silhouette.flat();
+    const [earX, earY] = points.reduce((top, p) => (p[1] < top[1] ? p : top));
+    const muzzle = points.reduce((tip, p) => (p[0] > tip[0] ? p : tip));
+    // the ear's tip stands high in the disc, well above the muzzle, behind the head's middle
+    expect(earY).toBeLessThan(-11);
+    expect(earX).toBeLessThan(0);
+    expect(muzzle[1] - earY).toBeGreaterThan(10);
+    expect(PAGE_ICONS.call_the_hound.pigment).toBe("verdigris");
+  });
+
   it("should give every page a picture of its own", () => {
     const pictures = PAGE_IDS.map((id) => JSON.stringify(PAGE_ICONS[id].glyph.body.silhouette));
     expect(new Set(pictures).size).toBe(PAGE_IDS.length);

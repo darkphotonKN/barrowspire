@@ -111,8 +111,8 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
   },
   call_the_hound: {
     id: "call_the_hound",
-    name: "Call the Hound",
-    line: "A lean grey hound answers, and bites what you would.",
+    name: "Call the Wolf",
+    line: "A grey wolf answers out of the dark, and bites what you would.",
     target: "ground",
     rangeCells: 4,
     reticleCells: 0.5,

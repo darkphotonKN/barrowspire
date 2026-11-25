@@ -56,6 +56,17 @@ describe("the class books' data (FS-X2CMM R37)", () => {
     for (const id of PAGE_IDS) if (id !== "call_the_hound") expect(PAGE_COPY[id].reticleShape ?? "ring", id).toBe("ring");
   });
 
+  it("should name the archer's summon a wolf: Call the Wolf, its line of a wolf, no page's words saying hound (§Change: The archer's wolf W2)", () => {
+    const wolf = PAGE_COPY.call_the_hound;
+    expect(wolf.id).toBe("call_the_hound");
+    expect(wolf.name).toBe("Call the Wolf");
+    expect(wolf.line).toMatch(/\bwolf\b/i);
+    for (const id of PAGE_IDS) {
+      const { name, line, scar, earned } = PAGE_COPY[id];
+      for (const words of [name, line, scar, earned]) if (words) expect(words, id).not.toMatch(/hound/i);
+    }
+  });
+
   it("should read the empty Ledger as the spec words it", () => {
     expect(CLASS_BOOKS.mercenary.empty).toBe("The Ledger is not yet written.");
   });

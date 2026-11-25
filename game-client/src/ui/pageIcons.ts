@@ -260,31 +260,51 @@ const BREW: PageGlyph = (() => {
   return glyph({ silhouette: [belly, neck, lip, stopper, ...bubbles], cuts: [surface, seat] }, [shine, fleck]);
 })();
 
-/** Call the Hound: a lean hound's head in profile, facing right, its ear folded back, a collar at its neck. */
+/**
+ * Call the Wolf (§Change: The archer's wolf W2; `call_the_hound` in code): a wolf's head in profile,
+ * facing right, a long muzzle, its ear pricked up from the crown, the ruff standing in tufts down
+ * the back of its neck and under its throat, a slanting eye.
+ */
 const CALL_THE_HOUND: PageGlyph = (() => {
   const head: Shape = [
-    [13.8, -0.8],
-    ...bend([13.8, -0.8], [13.4, -2.4], [11.6, -2.6], 4),
-    ...bend([11.6, -2.6], [6.4, -3], [3, -4.8], 5),
-    ...bend([3, -4.8], [1.4, -7.6], [-2.6, -8.6], 5),
-    ...bend([-2.6, -8.6], [-6.4, -9], [-7.6, -6], 5),
-    ...bend([-7.6, -6], [-9.4, 0.6], [-10.4, 10.4], 7),
-    ...bend([-10.4, 10.4], [-7, 13.2], [-3.2, 11.4], 6),
-    ...bend([-3.2, 11.4], [-2.6, 6.4], [1.2, 3.6], 5),
-    ...bend([1.2, 3.6], [6.4, 2], [10.6, 1.4], 4),
-    ...bend([10.6, 1.4], [13.6, 1.2], [13.8, -0.8], 4).slice(1, -1),
+    [14, 0.2],
+    ...bend([14, 0.2], [14.2, -1.2], [13.4, -1.6], 3),
+    // the long muzzle's bridge, the stop, the brow and the crown
+    ...bend([13.4, -1.6], [10, -2], [6.5, -3], 4),
+    ...bend([6.5, -3], [4.2, -3.6], [2.6, -5.6], 4),
+    ...bend([2.6, -5.6], [0, -7.6], [-2.6, -7.8], 4),
+    ...bend([-2.6, -7.8], [-6.2, -7.6], [-8.6, -4.6], 4),
+    // the ruff down the back of the neck, in tufts
+    [-10.2, -3.4],
+    [-9.6, -1.2],
+    [-12, 0.4],
+    [-10.8, 2.6],
+    [-13, 4.6],
+    [-11.4, 6.6],
+    [-12.2, 8.6],
+    [-10.2, 10],
+    ...bend([-10.2, 10], [-7, 12], [-4.4, 11.6], 4),
+    // the ruff under the throat, in tufts, and the jaw to the chin
+    [-3.6, 9.4],
+    [-1.2, 10.4],
+    [0.2, 7.8],
+    [2.4, 8.2],
+    ...bend([2.4, 8.2], [5.6, 5.4], [9.6, 3.4], 5),
+    ...bend([9.6, 3.4], [11.6, 3.2], [12.6, 1.4], 3),
+    ...bend([12.6, 1.4], [13.6, 0.6], [14, 0.2], 3).slice(0, -1),
   ];
-  // a hound's ear, hung: a leaf from the crown down the back of the head, its tip low
+  // the pricked ear: a broad-based triangle standing up from the crown, its tip a little back
   const ear: Shape = [
-    [-1.6, -7.6],
-    ...bend([-1.6, -7.6], [-6.2, -7.6], [-7, -1.4], 6),
-    ...bend([-7, -1.4], [-4.4, -3], [-3.4, -5.2], 5),
-    ...bend([-3.4, -5.2], [-2.6, -6.6], [-1.6, -7.6], 4).slice(1, -1),
+    [0, -6.6],
+    ...bend([0, -6.6], [-1.4, -11.2], [-4.2, -14.2], 4),
+    ...bend([-4.2, -14.2], [-6.8, -10.4], [-7.8, -4.2], 4),
+    ...bend([-7.8, -4.2], [-3.8, -6.4], [0, -6.6], 3).slice(0, -1),
   ];
-  const mouth: KnockoutCut = { path: curve([13.9, 0.2], [[10.4, 0.6], [6.2, 0.4]]) };
-  const collar = ribbon(curve([-9.8, 5.2], [[-6.6, 7.4], [-2.4, 6.4]]), 2.3);
-  const eye = place(oval(0, 0, 1.6, 1.05, 0, 2 * Math.PI, 12).slice(0, -1), { x: 2.6, y: -5.4, a: -0.25 });
-  return glyph({ silhouette: [head, ear], cuts: [mouth, ...gapOver(ear, [head])] }, [collar, eye]);
+  const mouth: KnockoutCut = { path: curve([14.1, 0.3], [[10.6, 1], [6.4, 1.6]]) };
+  // the cheek ruff's edge, a brushed line from behind the eye down to the throat
+  const ruff = ribbon(curve([-3.4, -3.6], [[-6.2, 1.4], [-4.8, 7.6]]), brush(1.5));
+  const eye = place(oval(0, 0, 1.7, 0.95, 0, 2 * Math.PI, 12).slice(0, -1), { x: 3, y: -4.2, a: -0.35 });
+  return glyph({ silhouette: [head, ear], cuts: [mouth, ...gapOver(ear, [head])] }, [ruff, eye]);
 })();
 
 // ── The Ledger (mercenary) ────────────────────────────────────────────────────────────────────────

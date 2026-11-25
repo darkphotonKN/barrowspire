@@ -315,11 +315,11 @@ export const EFFECT_CARDS: EffectCard[] = [
   },
   {
     module: "pageReticle",
-    name: "Armed page reticle: Witchlight's ring, then faint, then Far Hand's interactable ring, then the hound's paw",
+    name: "Armed page reticle: Witchlight's ring, then faint, then Far Hand's interactable ring, then Call the Wolf's paw",
     demo: (s) => {
       // at the point the figure aims, as an armed page draws it each frame (FS-X2CMM R41): plain on a valid
       // target, faint where a click would do nothing, Far Hand's ring under the interactable it snapped to in
-      // the interactable channel's amber, and Call the Hound's paw mark
+      // the interactable channel's amber, and Call the Wolf's paw mark
       const reticle = new PageReticle(() => s.scene.add.graphics());
       const ring = { page: "witchlight", kind: "ground", at: s.aim, radius: 3 * 80, valid: true } as const;
       const step = HOLD_MS / 4;
@@ -744,7 +744,7 @@ export const EFFECT_CARDS: EffectCard[] = [
   },
   {
     module: "houndBay",
-    name: "The hound's bay: verdigris rings rippling out at what it bays at",
+    name: "The wolf's bay: verdigris rings rippling out at what it bays at",
     // at the aim, as a run lays it at the point the hound's `bay` names (FS-X2CMM §J R49), bayed three times
     demo: (s) => playHoundBay(s),
   },
