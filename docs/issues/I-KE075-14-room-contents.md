@@ -1,6 +1,6 @@
 ---
 id: I-KE075-14
-status: open
+status: done
 implements: FS-KE075
 blocked_by: [I-KE075-12, I-KE075-13]
 labels: [blocked]
@@ -21,12 +21,12 @@ corridors, none elsewhere (R80). The floor map carries `quiet_rooms` (R84).
 
 ## Acceptance Criteria
 
-- [ ] Every room has contents; ordinary rooms near 30/40/30 and decisions near 40/60 across many builds
-- [ ] No rolled monster outside a monsters room or a treasure room at the build
-- [ ] Containers only in treasure and chest-or-sack rooms, one each; traps only in trap rooms and corridors
-- [ ] `quiet_rooms` on the dungeon floor map; absent on a floor of buildings
-- [ ] FS-5FZ4J and FS-4EC7Z tests pass (no trap in the encounter's room, dead ends kept)
-- [ ] `go test ./...` in game-service passes
+- [x] Every room has contents; ordinary rooms near 30/40/30 and decisions near 40/60 across many builds
+- [x] No rolled monster outside a monsters room or a treasure room at the build
+- [x] Containers only in treasure and chest-or-sack rooms, one each; traps only in trap rooms and corridors
+- [x] `quiet_rooms` on the dungeon floor map; absent on a floor of buildings
+- [x] FS-5FZ4J and FS-4EC7Z tests pass (no trap in the encounter's room, dead ends kept)
+- [x] `go test ./...` in game-service passes
 
 ## Blocked By
 

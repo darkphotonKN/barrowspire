@@ -69,9 +69,11 @@ const (
 	// the most of its fodder
 	HallPackBruteTries = 20
 
-	// every other room but the start holds a uniform [min, max] rolled monsters;
-	// a top-up never takes a room past RoomMonstersTopUpMax (R83, from 3)
-	RoomMonstersMin      = 0
+	// every room that rolled monsters and is not a hall holds a uniform [min,
+	// max] rolled monsters (FS-KE075 §Change: Room variety R79, from 0-2 in
+	// every room); a top-up never takes a room past RoomMonstersTopUpMax (R83,
+	// from 3)
+	RoomMonstersMin      = 1
 	RoomMonstersMax      = 2
 	RoomMonstersTopUpMax = 2
 

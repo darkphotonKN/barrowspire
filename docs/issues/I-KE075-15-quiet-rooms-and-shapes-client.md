@@ -3,7 +3,7 @@ id: I-KE075-15
 status: open
 implements: FS-KE075
 blocked_by: [I-KE075-14]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-KE075 slice 15: client: quiet rooms dressed for ambience from quiet_rooms; shaped rooms drawn from their cells (game-client)"
 ---
 Implements FS-KE075 §Change: Room variety (§O, R84–R86)

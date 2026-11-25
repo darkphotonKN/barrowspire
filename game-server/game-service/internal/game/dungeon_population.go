@@ -13,9 +13,10 @@ import (
 
 /**
 * A dungeon floor's monsters are distributed by room and role (FS-KE075 §C
-* R18–20, ADR-0061 Decision 7): none in the start room, a pack in each hall,
-* elite guards in each treasure room, a few rolled monsters in every other
-* room and along the corridors, the floor's total held to
+* R18–20, ADR-0061 Decision 7): none in the start room, elite guards in each
+* treasure room, and, in each room that rolled monsters (§Change: Room variety
+* R79), a hall's pack or one or two rolled monsters, a few more along the
+* corridors, the floor's total held to
 * [DungeonMonstersMin, DungeonMonstersMax]. Every monster is a variant of the
 * floor's pool (FS-C8VM7 §C); levels and elite chance are the floor's own
 * (rollMonster); only the treasure guards are always elite. On every dungeon
@@ -83,6 +84,9 @@ func (s *Session) populateDungeon(d *dungeonFloor, area *spawnArea, pool floorPo
 		case room == roles.Start, quiet[room]:
 		case slices.Contains(roles.Treasure, room):
 			p.treasureGuards(room)
+		// only a room that rolled monsters holds rolled ones (FS-KE075
+		// §Change: Room variety R79)
+		case d.content(room) != contentMonsters:
 		case d.isHall(room):
 			p.hallPack(room)
 		default:
@@ -264,16 +268,26 @@ func (p *dungeonPopulation) corridors() {
 /**
 * holdTotal holds the floor's monsters to [DungeonMonstersMin,
 * DungeonMonstersMax] (FS-KE075 §C R18, FS-5FZ4J §D R21): below, single rolled
-* monsters go to random ordinary rooms, none past RoomMonstersTopUpMax; above,
+* monsters go to random ordinary rooms, none past RoomMonstersTopUpMax, and
+* once those are full a quiet room that is not a hall turns to monsters, one
+* at a time, the floor map naming it quiet no more (§Change: Room variety R83); above,
 * monsters are removed from ordinary rooms, then corridors, then hall packs'
 * fodder, then treasure-guard packs, the last two room by room from the one
 * farthest from the start. A hall keeps its pack's leader and a treasure room
 * one guard, so every guarded chest keeps a guard.
 **/
 func (p *dungeonPopulation) holdTotal(ordinary []int) {
-	// the ordinary rooms a top-up may still go to
+	// the ordinary rooms a top-up may still go to, and the quiet rooms that
+	// turn to monsters, one at a time, once they are full (FS-KE075 §Change:
+	// Room variety R83)
 	room := slices.Clone(ordinary)
-	for len(p.spawns) < DungeonMonstersMin && len(room) > 0 {
+	quiet := slices.DeleteFunc(p.floor.roomsHolding(contentQuiet), p.floor.isHall)
+	shuffle(p.rng, quiet)
+	for len(p.spawns) < DungeonMonstersMin && (len(room) > 0 || len(quiet) > 0) {
+		if len(room) == 0 {
+			p.floor.contents[quiet[0]] = contentMonsters
+			room, quiet = append(room, quiet[0]), quiet[1:]
+		}
 		i := p.rng.IntN(len(room))
 		if p.inRoom(room[i]) >= RoomMonstersTopUpMax || !p.single(room[i]) {
 			room = slices.Delete(room, i, i+1)

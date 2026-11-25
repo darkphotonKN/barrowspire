@@ -3,6 +3,7 @@ package game
 import (
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -87,9 +88,11 @@ func (s *Session) applySprings(springs []systems.TrapSpring) {
 /**
 * layTraps lays the floor at depth's traps (FS-5FZ4J §D R23-R24), each of a
 * kind drawn uniformly, on cells of trapGround at least TrapSpacingCells apart:
-* first at least half of them off the walk from the start to the stairs room's
-* gate, then the rest anywhere on that ground. A floor short of ground lays
-* fewer, loudly.
+* first one in each room that rolled a trap, off the walk where it can, as far
+* as the count goes and leaves at least half of them off the walk from the
+* start to the stairs room's gate (FS-KE075 §Change: Room variety R80), then
+* off the walk up to that half, then the rest anywhere on that ground. A floor
+* short of ground lays fewer, loudly.
 *
 * The draws come from a source seeded by the floor's layout seed and depth, not
 * the session's spawn source: a seeded run still lays the same traps every
@@ -114,7 +117,24 @@ func (s *Session) layTraps(depth int, d *dungeonFloor) {
 			}
 		}
 	}
-	take(off, (want+1)/2)
+	// one in each room that rolled a trap first, off the walk where the room
+	// allows, as far as the count goes and the half off the walk still can be
+	// (FS-KE075 §Change: Room variety R80)
+	half, onWalk := (want+1)/2, 0
+	inRoom := func(from []components.Cell, region int) []components.Cell {
+		return slices.DeleteFunc(slices.Clone(from), func(c components.Cell) bool {
+			return d.region[c.Y*d.layout.Cols+c.X] != region
+		})
+	}
+	for _, room := range d.trapRooms(rng) {
+		region, laid := d.roomRegion(room), len(cells)
+		take(inRoom(off, region), min(laid+1, want))
+		if len(cells) == laid && onWalk < want-half {
+			take(inRoom(on, region), min(laid+1, want))
+			onWalk += len(cells) - laid
+		}
+	}
+	take(off, max(half+onWalk, len(cells)))
 	rest := append(append([]components.Cell(nil), off...), on...)
 	shuffle(rng, rest)
 	take(rest, want)
@@ -127,6 +147,13 @@ func (s *Session) layTraps(depth int, d *dungeonFloor) {
 		kind := components.TrapKinds[rng.IntN(len(components.TrapKinds))]
 		CreateTrapEntity(s.EntityManager, TrapConfig{Kind: kind, Cell: c, X: at.x, Y: at.y})
 	}
+}
+
+// trapRooms is the rooms that rolled a trap, in an order drawn from rng.
+func (d *dungeonFloor) trapRooms(rng populationRand) []int {
+	rooms := d.roomsHolding(contentTrap)
+	shuffle(rng, rooms)
+	return rooms
 }
 
 // trapSpaced is whether c stands at least TrapSpacingCells from every one of
@@ -154,9 +181,10 @@ func cellsApart(a, b components.Cell) int {
 * TrapStartClearCells of it, which holds every start spot of the party; not a
 * doorway; not a barrier's cell, the gate's or a secret door's; not in a hidden
 * room nor in the encounter room (FS-4EC7Z §A R2, amended 2026-11-25); not a
-* seal piece's cell, a stone block's included; and clear of
-* everything the build has held so far, fixtures, containers, the tome and
-* altars and the whole Weighted Plates room among them.
+* seal piece's cell, a stone block's included; in a corridor or a room that
+* rolled a trap, never another room (FS-KE075 §Change: Room variety R80); and
+* clear of everything the build has held so far, fixtures, containers, the
+* tome and altars and the whole Weighted Plates room among them.
 **/
 func (s *Session) trapGround(d *dungeonFloor) (off, on []components.Cell) {
 	cols, rows := d.layout.Cols, d.layout.Rows
@@ -193,6 +221,8 @@ func (s *Session) trapGround(d *dungeonFloor) (off, on []components.Cell) {
 			region := d.region[i]
 			switch {
 			case region == 0, d.doorway[i], barred[c], shutRegion[region]:
+				continue
+			case region <= len(d.layout.Rooms) && d.content(region-1) != contentTrap:
 				continue
 			case x >= start.X-TrapStartClearCells && x < start.X+start.W+TrapStartClearCells &&
 				y >= start.Y-TrapStartClearCells && y < start.Y+start.H+TrapStartClearCells:

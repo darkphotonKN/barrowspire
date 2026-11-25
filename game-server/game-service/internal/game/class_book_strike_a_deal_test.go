@@ -71,7 +71,7 @@ func standStill(s *Session, n int) {
 // cost nothing and its 900 s cooldown runs. The page is offered: on the book.
 // R56, R11, R59; FS-4EC7Z §D R15.
 func TestCastSkill_StrikeADeal_HiresTheCutthroats(t *testing.T) {
-	s, _, _ := cutthroatsRun(t, 7, 1, 0)
+	s, _, _ := cutthroatsRun(t, 8, 1, 0)
 	npc := npcsOf(s)[1]
 	merc, body := mercenaryNear(t, s, npc)
 	assert.Equal(t, false, pageOnWire(t, s, merc, components.PageStrikeADeal)["spent"], "offered: on the book")
@@ -103,7 +103,7 @@ func TestCastSkill_StrikeADeal_RefusedAtTheCastsEndAndToldWhy(t *testing.T) {
 			return s, ids[0]
 		}, RefusalNotWilling},
 		{"pilgrims are not willing", func(t *testing.T) (*Session, uuid.UUID) {
-			s, _ := pilgrimsRun(t, 4, 1)
+			s, _ := pilgrimsRun(t, 6, 1)
 			return s, delverIDs(s)[0]
 		}, RefusalNotWilling},
 		{"hired by another", func(t *testing.T) (*Session, uuid.UUID) {

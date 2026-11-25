@@ -80,7 +80,10 @@ func floor1Monsters(t *testing.T, s *Session) []floor1Monster {
 // eligibleHall is whether room holds a hall pack: a hall that is neither the
 // start nor a treasure room.
 func eligibleHall(d *dungeonFloor, room int) bool {
-	return d.isHall(room) && room != d.layout.Roles.Start && !slices.Contains(d.layout.Roles.Treasure, room)
+	// only a hall that rolled monsters holds a pack (FS-KE075 §Change: Room
+	// variety R79)
+	return d.isHall(room) && room != d.layout.Roles.Start && !slices.Contains(d.layout.Roles.Treasure, room) &&
+		d.content(room) == contentMonsters
 }
 
 // Every hall that is not the start or a treasure room holds one troll, floor
@@ -723,7 +726,7 @@ func TestPopulateMonsters_DungeonFloorPlacesARolledBloodDemon(t *testing.T) {
 func TestDungeonPopulation_ThinnerFloorsTune(t *testing.T) {
 	assert.Equal(t, []int{8, 18}, []int{DungeonMonstersMin, DungeonMonstersMax})
 	assert.Equal(t, []int{0, 1}, []int{HallPackFodderMin, HallPackFodderMax})
-	assert.Equal(t, []int{0, 2, 2}, []int{RoomMonstersMin, RoomMonstersMax, RoomMonstersTopUpMax})
+	assert.Equal(t, []int{1, 2, 2}, []int{RoomMonstersMin, RoomMonstersMax, RoomMonstersTopUpMax})
 	assert.Equal(t, []int{1, 3}, []int{CorridorMonstersMin, CorridorMonstersMax})
 	assert.Equal(t, 0.25, TreasureGuardPackShare)
 	assert.Equal(t, []int{2, 2}, []int{TreasureGuardPackMin, TreasureGuardPackMax})

@@ -389,7 +389,7 @@ func delverIDs(s *Session) []uuid.UUID {
 // delver.
 func TestPilgrims_TheWave(t *testing.T) {
 	for _, delvers := range []int{1, 2, 3} {
-		s, bodies := pilgrimsRun(t, 11, delvers)
+		s, bodies := pilgrimsRun(t, 12, delvers)
 		_, enc, _ := theEncounter(s)
 		p := npcsOf(s)[0]
 		standBeside(t, s, bodies[0], p, 100)

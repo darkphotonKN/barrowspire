@@ -840,10 +840,11 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
 79. **A monsters room** holds one or two rolled monsters, uniform; a hall that rolls monsters holds
     a hall pack instead (R82). No other room holds a rolled monster: a quiet room, a decision room
     and a role room besides the treasure rooms hold none. *(charter, M3)*
-80. **A trap room** holds at least one trap. The floor's trap count is unchanged (FS-5FZ4J §D R23):
-    one goes to each trap room first, as far as the count goes, and the rest on the ground of the
-    trap rooms and the corridors, half off the walk to the stairs as before. No trap lies in any
-    other room, the encounter's included. *(charter default — reason: the count was tuned with the
+80. **A trap room** holds a trap. The floor's trap count is unchanged (FS-5FZ4J §D R23): one goes
+    to each trap room first, on a cell off the walk to the stairs' gate where the room has one, as
+    far as the count goes and while at least half the traps can still lie off that walk (so a trap
+    room on the walk may go bare); the rest lie on the ground of the trap rooms and the corridors,
+    half off the walk as before. No trap lies in any other room, the encounter's included. *(charter default — reason: the count was tuned with the
     seals; this only moves where it lies)*
 81. **A chest-or-sack room** holds one container, a chest or at today's sack share a sack. The
     floor's containers are each treasure room's chest and these; the `clamp(round(rooms / 2), 10,
@@ -861,7 +862,10 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
     monsters besides a demon are held to **8–18**, from 15–25 (FS-5FZ4J §D R21). *(charter default —
     reason: on the new rooms the floor's natural total is about 13 and its ceiling with every
     top-up about 17; held at 15, nearly every floor would top every monsters room to 2 and M3's
-    "one or two" would be "two")* A floor holds at most one **Dark Warrior** per 8 of its monsters,
+    "one or two" would be "two")* A floor still short once every monsters room is topped up to 2
+    turns its quiet rooms to monsters rooms, one at a time, drawn, until it reaches 8 or has none
+    left; the floor map then names it quiet no more. *(charter default — reason: measured, about 1
+    floor in 20 rolled too few monsters rooms to reach 8)* A floor holds at most one **Dark Warrior** per 8 of its monsters,
     from 12 (FS-C8VM7 §C R24), up to the cap of 4 as before. *(charter default — reason: at 12, a
     floor of 8–11 could hold none; at 8 the thinner floor keeps the one or two that 15–25 gave)*
 
@@ -903,8 +907,9 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
       room holds 1–2 (a top-up never past 2); a hall that rolled monsters holds a brute and 0–1
       fodder; a treasure room 1–2 elites; corridors 1–3.
 - [ ] The floor's monsters besides a demon are 8–18 across many builds.
-- [ ] Every trap room holds a trap when the count allows; no trap lies in a room that is not a trap
-      room; the trap count per depth is unchanged; no trap in the encounter's room.
+- [ ] Every trap room off the walk to the gate holds a trap when the count allows; no trap lies in
+      a room that is not a trap room; the trap count per depth is unchanged, at least half off the
+      walk; no trap in the encounter's room.
 - [ ] Every chest-or-sack room holds one container; no other ordinary room holds one; each treasure
       room still holds its chest.
 - [ ] A Weighted Plates seal's plates and blocks keep a cell from every cut cell and its push
@@ -933,8 +938,14 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
   floor): it is skipped and logged, as a container or a monster is today; the room keeps its roll.
 - **More trap rooms than traps.** The count wins: some trap rooms hold none, and the warning is
   logged as for short trap ground.
-- **No ordinary room rolls monsters.** The floor holds its treasure guards and corridors; the top-up
-  has nowhere to go and the floor stays under 8, logged.
+- **Too few rooms roll monsters.** The top-up fills the monsters rooms to 2, then turns quiet rooms
+  to monsters one at a time (R83); with none left the floor stays under 8, logged (2 floors in 400
+  measured, at 7).
+- **A corridor too short for the pilgrims' wave** (FS-4EC7Z §B R7) on the smaller floor: the wave's
+  walk goes on through the ground beyond it to the next corridor, and still stands only on corridor
+  cells.
+- **A plates room with just enough footing**: it keeps one cell to spare, so a chained seal's block
+  laid onto a delver is laid beside them (FS-5FZ4J §B R9).
 - **A floor of buildings** after a failed generation (R17): no shapes, no contents, no
   `quiet_rooms`.
 - **An older client** ignores `quiet_rooms`; a client without it dresses every room alike.
