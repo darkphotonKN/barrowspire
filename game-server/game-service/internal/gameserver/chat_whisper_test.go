@@ -881,3 +881,67 @@ func TestWhisper_Courier_EchoesWaitOffThePublisher(t *testing.T) {
 		}
 	}
 }
+
+// ---- item links (FS-KBA4Q) -----------------------------------------------------------------------
+
+func (r *whisperRelayRig) whisperWith(p *types.Player, target, text string, items interface{}) {
+	r.relay.relay(context.Background(), p, &websocket.Conn{}, map[string]interface{}{"channel": "whisper", "target": target, "text": text, "items": items})
+}
+
+// A whisper with an item link carries `items` to a target seated here, in the letter to a target
+// on another pod, and in the echo, which is the same line. A bad link is refused before any
+// lookup. FS-KBA4Q R28, R30.
+func TestWhisper_Relay_CarriesItemLinks(t *testing.T) {
+	t.Run("here", func(t *testing.T) {
+		wren, kaelen := seatedSpeaker("Wren"), seatedSpeaker("Kaelen")
+		rig := newWhisperRelayRig([]uuid.UUID{wren.ID, kaelen.ID}, presentAt(kaelen, testPodID, "hub"))
+
+		rig.whisperWith(wren, "Kaelen", linkedText, linked(rustyBlade()))
+
+		require.Len(t, rig.spy.lines, 1)
+		assert.Equal(t, linked(rustyBlade()), rig.spy.lines[0].Payload["items"])
+		assert.Equal(t, kaelen.ID.String(), rig.spy.lines[0].Payload["target_id"])
+		echoes := rig.echoes()
+		require.Len(t, echoes, 1)
+		assert.Equal(t, rig.spy.lines[0], echoes[0], "the echo is the line the target got")
+	})
+	t.Run("there", func(t *testing.T) {
+		wren, kaelen := seatedSpeaker("Wren"), seatedSpeaker("Kaelen")
+		rig := newWhisperRelayRig([]uuid.UUID{wren.ID}, presentAt(kaelen, "pod-b", "field"))
+
+		rig.whisperWith(wren, "Kaelen", linkedText, linked(rustyBlade()))
+
+		require.Len(t, rig.whisper.letters, 1)
+		assert.Equal(t, linked(rustyBlade()), rig.whisper.letters[0].line.Payload["items"])
+		echoes := rig.echoes()
+		require.Len(t, echoes, 1)
+		assert.Equal(t, rig.whisper.letters[0].line, echoes[0], "the echo is the line the letter carries")
+	})
+	t.Run("a bad link", func(t *testing.T) {
+		wren, kaelen := seatedSpeaker("Wren"), seatedSpeaker("Kaelen")
+		rig := newWhisperRelayRig([]uuid.UUID{wren.ID, kaelen.ID}, presentAt(kaelen, testPodID, "hub"))
+
+		rig.whisperWith(wren, "Kaelen", linkedText, linked(named("Iron Helm")))
+
+		assert.Equal(t, []string{"bad_item_link"}, rig.noticeCodes())
+		assert.Empty(t, rig.spy.lines)
+		assert.Empty(t, rig.echoes())
+		assert.Empty(t, rig.whisper.asked, "refused before the presence index is read")
+	})
+}
+
+// A whisper with an item link from pod A reaches its target on pod B through the whisper letter
+// with `items` intact, and A echoes the same line. FS-KBA4Q R30.
+func TestWhisper_TwoPods_CarryItemLinks(t *testing.T) {
+	client, mini := testutil.NewRedis(t)
+	a, b, _ := twoPartyPodsOn(t, client, mini, chatbus.NewRedis(client))
+	_, wrenConn, wrenInbox := seatedThere(t, a, mini, "Wren")
+	_, _, kaelenInbox := seatedThere(t, b, mini, "Kaelen")
+
+	sendChatPayload(a.server, wrenConn, map[string]interface{}{"channel": "whisper", "target": "Kaelen", "text": linkedText, "items": linked(rustyBlade())})
+
+	heard := awaitChat(t, kaelenInbox, "Kaelen, on pod B")
+	assert.Equal(t, linked(rustyBlade()), heard.Payload["items"])
+	echo := awaitChat(t, wrenInbox, "Wren, the echo, on pod A")
+	assert.Equal(t, heard.Payload, echo.Payload, "the echo is the line Kaelen got")
+}

@@ -4,15 +4,18 @@
  * destroyed it, so a half-typed line goes with its world as before. Its lines, fold, filter and sent lines
  * are the chat store's, which outlive every switch; a sent line goes on the socket from the piece (ADR-0085).
  *
- * What it reads of the UI scene and the world is its wiring: who owns Enter and Esc (the menu slot, the gear
- * panels, the world's `blockers().chat`), whether the draft is kept (the world's letter panel), the player's
- * typing reported in the UI's state, the UI scene's one player for its sounds. Its top edge is the invite
+ * What it reads of the UI scene and the world is its wiring: who owns Enter and Esc (the menu slot, the
+ * world's `blockers().chat`), whether the draft is kept (the world's letter panel), the player's typing
+ * reported in the UI's state, the UI scene's one player for its sounds. The gear panels are no part of it
+ * (FS-KBA4Q R18): with one open, the keys are the field's while it is focused and the overlay's otherwise. Its top edge is the invite
  * stack's floor where the world reports one (`invitesAboveChat`, R132): read by the party's wiring, not here.
  *
  * Phaser-free: the UI scene hands it the builder (`mountChat` on itself), so the wiring is tested on its own.
  */
 
 import type { UiEffect } from "@/audio/uiSounds";
+import type { ItemState } from "@/types/gameState";
+import type { TipAvoid } from "./gearOverlayLayout";
 import type { UiBridge, World, WorldReport } from "./uiBridge";
 
 /** The chat window as the UI scene keeps it. `ChatWindow` is one. */
@@ -24,6 +27,16 @@ export interface ChatPiece {
    * one of its objects), on its panel or open list, with its field focused.
    */
   keepsField(x: number, y: number, over: readonly unknown[]): boolean;
+  /**
+   * An item linked from the gear overlay (FS-KBA4Q R3): its token written into the input at the caret,
+   * the input opened if it was closed. Nothing where chat may not open (R7).
+   */
+  link(item: ItemState): void;
+  /**
+   * Where its text field stands while the row is shown, in logical units; null while hidden. A browser
+   * element, above every canvas tip, so the gear overlay's tips keep clear of it (FS-KBA4Q).
+   */
+  fieldRow(): TipAvoid | null;
   /** The screen y of the panel's top edge as it now sits. */
   topEdge(): number;
   /** Re-reads who owns the keys now, between frames: the world changed its report (R128). */
@@ -48,17 +61,18 @@ export interface ChatWiring {
 export type ChatBridge = Pick<UiBridge, "world" | "ui" | "reportUi" | "play">;
 
 /**
- * The window's wiring (R126, R127): the keys while a world is reported, the menu slot empty, no gear panel
- * open and the world not turning the chat away (each world's old `mayChat`, word for word); the draft kept
- * while the world's letter panel holds the keys; typing reported as a part of the UI's state.
+ * The window's wiring (R126, R127): the keys while a world is reported, the menu slot empty and the world
+ * not turning the chat away (the town's dialogue card or letter panel, a run's open container or its end);
+ * the draft kept while the world's letter panel holds the keys; typing reported as a part of the UI's state.
+ * The inventory and the character panel, stash mode included, keep the chat neither shut nor hidden, so a
+ * draft survives their opening and closing (FS-KBA4Q R18, R19, amending R126).
  */
 export function chatWiring(bridge: ChatBridge): ChatWiring {
   return {
     mayOpen: () => {
       const report = bridge.world;
       if (!report) return false;
-      const ui = bridge.ui;
-      return !ui.menuOpen && !ui.inventory && !ui.character && !report.blockers().chat;
+      return !bridge.ui.menuOpen && !report.blockers().chat;
     },
     keepsDraft: () => bridge.world?.windows().letter ?? false,
     typing: (on) => bridge.reportUi({ typing: on }),
@@ -100,6 +114,16 @@ export class UiChatSlot {
   /** Whether a press keeps the window's field (A1 R26; R131). */
   keepsField(x: number, y: number, over: readonly unknown[]): boolean {
     return this.piece?.keepsField(x, y, over) ?? false;
+  }
+
+  /** An item linked from the gear overlay, to the standing window; none standing, nothing (FS-KBA4Q R3). */
+  link(item: ItemState): void {
+    this.piece?.link(item);
+  }
+
+  /** The standing window's shown text field; null while it is hidden or no window stands (FS-KBA4Q). */
+  fieldRow(): TipAvoid | null {
+    return this.piece?.fieldRow() ?? null;
   }
 
   /** The standing window's top edge, none with none standing: the invite stack's floor where the world reports one (R132). */

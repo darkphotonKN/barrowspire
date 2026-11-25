@@ -97,8 +97,10 @@ import {
   type Rect,
   type RowWindow,
   type StashPanelLayout,
+  type TipAvoid,
 } from "./gearOverlayLayout";
 import { viewport } from "@/render/viewport";
+import { isLinkPress, linkModifiersHeld } from "./linkPress";
 import { PURSE_UNKNOWN, type PurseShelf, type PurseView } from "./purse";
 import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 import { uiGround } from "./uiGround";
@@ -131,14 +133,15 @@ const STAT_ROW_H = 17;
 const XP_BAR_H = 6;
 const RESOURCE_BAR_H = 4;
 
+/** The link press named by one combination only (FS-KBA4Q R8), before the close part. */
 export const GEAR_HINT =
-  "Right-click or E: wear or take off  //  Shift: compare  //  I, B or Esc: close";
+  "Right-click or E: wear or take off  //  Shift: compare  //  Ctrl+Alt+click: link in chat  //  I, B or Esc: close";
 /**
  * In stash mode items move between bag and stash and nothing is worn; worn gear still comes off
  * (FS-VPD8Y R38). A bag item still compares (FS-NV54P R11, R24).
  */
 export const STASH_HINT =
-  "Right-click or E: move between bag and stash, or take off  //  Shift: compare  //  I, B or Esc: close";
+  "Right-click or E: move between bag and stash, or take off  //  Shift: compare  //  Ctrl+Alt+click: link in chat  //  I, B or Esc: close";
 
 /** A worn tip's caption (FS-NV54P R14): "Worn" for a weapon or armour, and which ring for a ring. */
 function wornCaption(slot: EquipmentSlot): string {
@@ -208,6 +211,13 @@ export class GearOverlay implements HudPanel, PurseShelf {
   mayMove?: (item: ItemState, to: ItemLocation) => boolean;
   /** A stash-mode move, drawn at once to the end of `to` (R38, R41). */
   onMove?: (item: ItemState, to: ItemLocation) => void;
+  /** A link press on an item in the bag, a worn slot or the stash (FS-KBA4Q R1, R2): it changes nothing here. */
+  onLink?: (item: ItemState) => void;
+  /**
+   * A place the tips may not cover, in logical units, or null for none: the chat's text field while
+   * it is shown, a browser element drawn above the canvas (FS-KBA4Q). Asked as a tip is placed.
+   */
+  tipsAvoid?: () => TipAvoid | null;
 
   /** The inventory (the right panel) is open. */
   private inventoryOpen = false;
@@ -911,7 +921,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
       return;
     }
     if (!this.purseTip) this.purseTip = this.buildPurseTip(this.purse.tip!);
-    const [at] = itemTipRow([this.purseTip], this.pointer, viewport);
+    const [at] = itemTipRow([this.purseTip], this.pointer, viewport, this.tipsAvoid?.());
     this.purseTip.container.setPosition(at.x, at.y);
   }
 
@@ -1153,11 +1163,19 @@ export class GearOverlay implements HudPanel, PurseShelf {
    * A left-press on a panel's × closes that panel (§ Change C4). A right-press over an item wears
    * or takes it off (R16–17), or in stash mode moves it (FS-VPD8Y R38); a left-press on an item
    * does nothing (R18). Only a press on the overlay's own: one under another piece is that piece's.
+   *
+   * With the link modifiers held, the press is none of those (FS-KBA4Q R1, R5, R6): the left button
+   * links the item under it and closes nothing, and any other button does nothing at all, since a
+   * browser that reports Control+click as the right button meant a link, not a wear.
    */
   private onPointerDown(pointer: Phaser.Input.Pointer, over?: readonly unknown[]): void {
     if (!this.onTop(over)) return;
     this.pointer = viewport.toLogical(pointer);
     this.updateHover();
+    if (linkModifiersHeld(pointer)) {
+      if (isLinkPress(pointer)) this.link();
+      return;
+    }
     if (pointer.button === 0) {
       const mark = this.closeAt(this.pointer.x, this.pointer.y);
       if (mark) this.wrapper.act(() => this.close(mark.side));
@@ -1300,6 +1318,15 @@ export class GearOverlay implements HudPanel, PurseShelf {
     else if (at.kind === "bag") this.equip(item);
   }
 
+  /**
+   * Hands on the item the pointer is over, as it is held here now (FS-KBA4Q R2, R17): a dimmed or
+   * pending item like any other, and under a status line too, since a link moves nothing.
+   */
+  private link(): void {
+    const item = this.hovered && this.itemOf(this.hovered);
+    if (item) this.onLink?.(item);
+  }
+
   /** To the end of the other side (FS-VPD8Y R41), unless the move is not allowed (R39). */
   private move(item: ItemState, to: ItemLocation): void {
     if (!this.stash || (this.mayMove && !this.mayMove(item, to))) return;
@@ -1382,7 +1409,8 @@ export class GearOverlay implements HudPanel, PurseShelf {
   private moveTip(): void {
     if (!this.tips.length) return;
     // the pointer is in logical units, so the screen it stays on is the logical view (FS-ZAJMH R15)
-    const at = itemTipRow(this.tips, this.pointer, viewport);
+    // and clear of the chat's shown text field, which would show through it
+    const at = itemTipRow(this.tips, this.pointer, viewport, this.tipsAvoid?.());
     this.tips.forEach((tip, i) => tip.container.setPosition(at[i].x, at[i].y));
   }
 

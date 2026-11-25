@@ -911,6 +911,14 @@ above; the rule is to qualify, never to rename.
   it; across pods, the whisper letter was published and at least one pod received it (a receiver
   count above 0, FS-KCQ06 R8a). A line that didn't go out gets `not_online` instead of an echo.
   There is no ack.
+- **Item link** — an item shown inside a chat line: a `[Name]` token in the line's text paired
+  with an **item snapshot** in the line's `items`, at most three to a line (FS-KBA4Q). The pod
+  checks each one's shape, closed sets and sizes and that it pairs with the text, then relays it
+  with the line on every chat channel; a line that fails is refused whole (`bad_item_link`).
+- **Item snapshot** — the item's data as it stood when the line was sent, supplied by the
+  sender's client and rebuilt by the pod from the fields it read. It names no owner, no instance
+  and no standing, and the pod never looks the item up: a snapshot is something to read in a tip,
+  not server truth about an item. Never stored, never logged (ADR-0033).
 - **Chat bus** — the Redis side of chat (`internal/chatbus`): the pub/sub the cross-pod
   channels ride, bytes in and bytes out, knowing nothing about lines. A pod subscribes to the
   world channel at boot and publishes its own world lines to it (FS-5SH4G). Not a store: nothing

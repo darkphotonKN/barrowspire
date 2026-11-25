@@ -5,7 +5,9 @@
  */
 
 import type { ChatChannel, ChatEntry, ChatLine } from "@/stores/chatStore";
+import { rarityOf } from "@/marketplace/rarity";
 import { palette } from "@/utils/canvasPalette";
+import { pairLinks, type ItemSnapshot } from "@/chat/itemLinks";
 import { CHAT_SHOWN_CHANNELS } from "./chatInput";
 import { CORNER_ICON_GAP, CORNER_ICON_W, CORNER_ICONS, CORNER_MARGIN } from "./hudCornerLayout";
 
@@ -138,8 +140,13 @@ export function chatWindowFrame(
  */
 export function formatChatEntry(entry: ChatEntry, selfId?: string): string {
   if (entry.kind === "system") return `— ${entry.text}`;
+  return `${lineHead(entry, selfId)}${entry.text}`;
+}
+
+/** What a player's line reads before its text: `Name: `, `From Name: ` or `To Name: `. */
+function lineHead(entry: ChatLine, selfId?: string): string {
   const { before, name } = namedIn(entry, selfId);
-  return `${before}${name}: ${entry.text}`;
+  return `${before}${name}: `;
 }
 
 /** The name a player line shows, whose it is, and the words drawn before it. */
@@ -248,30 +255,191 @@ export function wrapChatText(
   maxWidth: number,
   measure: (s: string) => number,
 ): string[] {
-  const lines: string[] = [];
+  return wrapChatSegments([{ kind: "text", text }], maxWidth, measure).map(
+    (row) => row.map((piece) => (piece.kind === "text" ? piece.text : "")).join(""),
+  );
+}
+
+/**
+ * The link tag's look (FS-KBA4Q R33, R34): a first pass the owner tunes in game, and retuning any
+ * of them is `Tunes FS-KBA4Q`. The ground behind the bracketed name is the name's own colour at
+ * this alpha, with no border (owner tune); the name stands this far inside the ground's left and
+ * right edges, and the ground this far from the words either side of it.
+ */
+export const CHAT_TAG_GROUND_ALPHA = 0.16;
+export const CHAT_TAG_PAD = 3;
+export const CHAT_TAG_SPACE = 3;
+/** The ground stops this far short of its row's top and foot, so tags on two rows never touch. */
+export const CHAT_TAG_INSET_Y = 1;
+/**
+ * A row that holds a tag stands this much taller above and below its words than a plain row,
+ * so the name has room inside the ground's top and foot. Rows of words only keep a plain row.
+ */
+export const CHAT_TAG_PAD_Y = 3;
+/** What ends a name cut to fit a row (R35). */
+export const CHAT_TAG_CUT = "…";
+
+/**
+ * The colour a link tag is drawn in (R33): the item's rarity, by the palette tokens and the rule
+ * the item tip uses (`itemView`), or the ordinary text colour for an item that names no rarity.
+ */
+export function chatTagColour(item: ItemSnapshot): number {
+  return item.rarity?.trim()
+    ? palette.rarity[rarityOf(item.rarity).token]
+    : palette.hudText;
+}
+
+/** A stretch of a line as it is drawn: words, or an item link's tag. */
+export type ChatSegment =
+  | { kind: "text"; text: string }
+  | { kind: "tag"; item: ItemSnapshot };
+
+/**
+ * A player's line with item links, cut into its words and its link tags (R32): the head and the
+ * text as `formatChatEntry` gives them, each paired `[Name]` token (R10) replaced by a tag. Null
+ * for an entry that links nothing (a system line, a line with no snapshot, or none that pairs): it
+ * is drawn as the one text it always was. A token is only ever read out of the line's text, never
+ * out of a name.
+ */
+export function chatEntrySegments(
+  entry: ChatEntry,
+  selfId?: string,
+): ChatSegment[] | null {
+  if (entry.kind === "system" || !entry.items) return null;
+  const links = pairLinks(entry.text, entry.items);
+  if (links.length === 0) return null;
+  const segments: ChatSegment[] = [];
+  let words = lineHead(entry, selfId);
+  let from = 0;
+  for (const link of links) {
+    words += entry.text.slice(from, link.start);
+    if (words !== "") segments.push({ kind: "text", text: words });
+    segments.push({ kind: "tag", item: link.item });
+    words = "";
+    from = link.end;
+  }
+  words += entry.text.slice(from);
+  if (words !== "") segments.push({ kind: "text", text: words });
+  return segments;
+}
+
+/** A piece of one drawn row, `x` from the row's left edge. */
+export type ChatRowPiece =
+  | { kind: "text"; x: number; text: string }
+  | {
+      kind: "tag";
+      /** The ground's left edge and its width: the name stands `CHAT_TAG_PAD` inside it. */
+      x: number;
+      width: number;
+      /** The name as drawn, in brackets: the item's, or cut with `CHAT_TAG_CUT` when wider than a row. */
+      name: string;
+      item: ItemSnapshot;
+    };
+
+/** A tag's words: the item's name in brackets, so a tag reads as a link even on a common item's plain colour. */
+export const chatTagLabel = (name: string): string => `[${name}]`;
+
+/** As much of `name` as `room` holds with the cut mark after it. */
+function cutToFit(
+  name: string,
+  room: number,
+  measure: (s: string) => number,
+): string {
+  const chars = Array.from(name);
+  for (let kept = chars.length - 1; kept > 0; kept--) {
+    const cut = chars.slice(0, kept).join("").trimEnd() + CHAT_TAG_CUT;
+    if (measure(cut) <= room) return cut;
+  }
+  return CHAT_TAG_CUT;
+}
+
+/**
+ * A line's segments laid out in rows no wider than `maxWidth`. Words wrap as `wrapChatText` says,
+ * each row filled before the next begins, around the tags. A tag is never split (R35): one that
+ * does not fit what is left of a row moves whole to the next; one wider than a whole row stands on
+ * a row of its own, its name cut to the row's width. A tag's edge is a place a row may break, so a
+ * word touching a tag is not broken inside for want of a space.
+ */
+export function wrapChatSegments(
+  segments: readonly ChatSegment[],
+  maxWidth: number,
+  measure: (s: string) => number,
+): ChatRowPiece[][] {
+  const rows: ChatRowPiece[][] = [];
+  let row: ChatRowPiece[] = [];
+  /** The words being filled, not yet a piece, and where they start in the row. */
   let line = "";
-  for (const ch of Array.from(text)) {
-    const next = line + ch;
-    if (line === "" || measure(next) <= maxWidth) {
-      line = next;
+  let x = 0;
+  /** An over-wide tag has its row to itself: whatever comes next starts a new one. */
+  let rowFull = false;
+  const closeWords = () => {
+    if (line === "") return;
+    row.push({ kind: "text", x, text: line });
+    x += measure(line);
+    line = "";
+  };
+  const nextRow = () => {
+    closeWords();
+    rows.push(row);
+    row = [];
+    x = 0;
+    rowFull = false;
+  };
+  const tagSpace = (CHAT_TAG_SPACE + CHAT_TAG_PAD) * 2;
+
+  for (const segment of segments) {
+    if (segment.kind === "tag") {
+      closeWords();
+      let name = chatTagLabel(segment.item.name);
+      if (row.length > 0 && (rowFull || x + measure(name) + tagSpace > maxWidth))
+        nextRow();
+      if (measure(name) + tagSpace > maxWidth) {
+        const room = maxWidth - tagSpace - measure(chatTagLabel(""));
+        name = chatTagLabel(cutToFit(segment.item.name, room, measure));
+        rowFull = true;
+      }
+      const width = measure(name) + CHAT_TAG_PAD * 2;
+      row.push({
+        kind: "tag",
+        x: x + CHAT_TAG_SPACE,
+        width,
+        name,
+        item: segment.item,
+      });
+      x += width + CHAT_TAG_SPACE * 2;
       continue;
     }
-    if (ch === " ") {
-      lines.push(line);
-      line = "";
-      continue;
-    }
-    const space = line.lastIndexOf(" ");
-    if (!BREAKS_ANYWHERE.test(ch) && space > 0) {
-      lines.push(line.slice(0, space));
-      line = line.slice(space + 1) + ch;
-    } else {
-      lines.push(line);
-      line = ch;
+    for (const ch of Array.from(segment.text)) {
+      if (rowFull) {
+        nextRow();
+        if (ch === " ") continue;
+      }
+      const next = line + ch;
+      if ((row.length === 0 && line === "") || x + measure(next) <= maxWidth) {
+        line = next;
+        continue;
+      }
+      if (ch === " ") {
+        nextRow();
+        continue;
+      }
+      // words that follow a tag on this row may break at their first character too
+      const afterTag = row.length > 0;
+      const space = line.lastIndexOf(" ");
+      if (BREAKS_ANYWHERE.test(ch) || (space <= 0 && !afterTag)) {
+        nextRow();
+        line = ch;
+      } else {
+        const rest = line.slice(space + 1);
+        line = line.slice(0, Math.max(0, space));
+        nextRow();
+        line = rest + ch;
+      }
     }
   }
-  lines.push(line);
-  return lines;
+  closeWords();
+  rows.push(row);
+  return rows;
 }
 
 /** The scrollbar's drawn width, its grab margin either side, and its shortest thumb (asked 2026-10-31). */

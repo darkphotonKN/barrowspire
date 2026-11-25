@@ -2309,3 +2309,5 @@ message: FS-B0H2D R29 ("Talk stays client-side. No new message.") holds. **[char
 - Mouse movement, attack, cast, potion and sprint: the town has none of them to hold.
 - Any change to the card's look, words, keys or sounds.
 
+
+## Change: Item links in chat → FS-KBA4Q

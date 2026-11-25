@@ -35,8 +35,10 @@ export interface ChatInputFieldEvents {
 export interface ChatInputFieldHandle extends ChatInputField {
   moveTo(rect: Rect): void;
   /**
-   * A browser element always draws above the canvas, so the row is hidden while an overlay owns
-   * the keys (the end-of-run card, the gear overlay, a dialogue) and shown again after.
+   * A browser element always draws above the canvas, so the row is hidden while something else
+   * owns the keys (the menu, a dialogue, the letter panel, a run's open coffer or its end) and
+   * shown again after. It stays shown under the inventory and the character panel (FS-KBA4Q R18,
+   * R19), so an item tip is placed clear of it instead (`itemTipRow`'s `avoid`).
    */
   show(): void;
   hide(): void;
@@ -144,7 +146,16 @@ export const domChatInputField: ChatInputFieldFactory = (
   field.addEventListener("input", (e) =>
     events.typed((e as InputEvent).isComposing === true),
   );
-  field.addEventListener("compositionend", () => events.typed(false));
+  // the browser's own word on whether an input method composes: a link press reads it (FS-KBA4Q
+  // edge state), since no key or input event need fall between a composition's start and the press
+  let composing = false;
+  field.addEventListener("compositionstart", () => {
+    composing = true;
+  });
+  field.addEventListener("compositionend", () => {
+    composing = false;
+    events.typed(false);
+  });
   field.addEventListener("focus", () => events.focused());
   field.addEventListener("blur", () => events.blurred());
   const dom = scene.add
@@ -165,6 +176,21 @@ export const domChatInputField: ChatInputFieldFactory = (
     },
     set channel(c: ChatChannel) {
       showChannel(c);
+    },
+    // the browser keeps a text field's selection while it is not focused, and puts it at the end
+    // on a write to its value: the caret a link is written at (FS-KBA4Q R3)
+    get selection() {
+      const end = field.value.length;
+      return {
+        start: field.selectionStart ?? end,
+        end: field.selectionEnd ?? end,
+      };
+    },
+    set selection({ start, end }: { start: number; end: number }) {
+      field.setSelectionRange(start, end);
+    },
+    get composing() {
+      return composing;
     },
     focus: () => field.focus(),
     blur: () => field.blur(),

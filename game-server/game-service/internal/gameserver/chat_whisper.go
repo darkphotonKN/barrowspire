@@ -38,9 +38,9 @@ type chatWhisper interface {
 }
 
 // relayWhisper looks up an accepted whisper's target and, once the index answers, delivers it or
-// tells the sender they are not online. at is when the line was accepted: the stamp keeps it,
-// however long the lookup took.
-func (r *chatRelay) relayWhisper(ctx context.Context, sender *types.Player, conn *websocket.Conn, name, text string, at time.Time) {
+// tells the sender they are not online. items is the line's validated item links (FS-KBA4Q). at is
+// when the line was accepted: the stamp keeps it, however long the lookup took.
+func (r *chatRelay) relayWhisper(ctx context.Context, sender *types.Player, conn *websocket.Conn, name, text string, items []interface{}, at time.Time) {
 	r.whisper.findWhisperTarget(ctx, name, func(target partypresence.Found, present bool, err error) {
 		if err != nil {
 			// a failed read is offline to the sender; never retried (R4)
@@ -57,7 +57,7 @@ func (r *chatRelay) relayWhisper(ctx context.Context, sender *types.Player, conn
 			r.notice(conn, constants.ChatNoticeWhisperSelf)
 			return
 		}
-		line := r.stampWhisper(sender, target, text, at)
+		line := r.stampWhisper(sender, target, text, items, at)
 		// seated here decides, whatever pod the index names: it lags a seat by up to a tick
 		if r.seatsHere(target.PlayerID) {
 			r.whisperHere(conn, target.PlayerID, line)
@@ -116,8 +116,8 @@ func (r *chatRelay) seatsHere(playerID uuid.UUID) bool {
 
 // stampWhisper is a whisper's line: stamped like every line, with the target's id as its scope,
 // and the target's id and name as the index holds them (R6).
-func (r *chatRelay) stampWhisper(sender *types.Player, target partypresence.Found, text string, at time.Time) types.Message {
-	line := r.stamp(sender, constants.ChatChannelWhisper, target.PlayerID.String(), text, at)
+func (r *chatRelay) stampWhisper(sender *types.Player, target partypresence.Found, text string, items []interface{}, at time.Time) types.Message {
+	line := r.stamp(sender, constants.ChatChannelWhisper, target.PlayerID.String(), text, items, at)
 	line.Payload["target_id"] = target.PlayerID.String()
 	line.Payload["target_name"] = target.Name
 	return line

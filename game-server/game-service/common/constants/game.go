@@ -187,6 +187,9 @@ const (
 	ChatNoticeNotOnline ChatNoticeCode = "not_online"
 	// ChatNoticeWhisperSelf: a whisper names the sender's own character. FS-KCQ06 R2.
 	ChatNoticeWhisperSelf ChatNoticeCode = "whisper_self"
+	// ChatNoticeBadItemLink: a line's item links are malformed, oversized, outside their closed
+	// sets, or do not pair with its text; the whole line is refused. FS-KBA4Q R28.
+	ChatNoticeBadItemLink ChatNoticeCode = "bad_item_link"
 )
 
 // PartyNoticeCode is the stable reason on a party_notice the client switches on.

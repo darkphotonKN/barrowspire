@@ -472,3 +472,19 @@ func TestWorldChat_SkipsLinesThatAreNotWorldLines(t *testing.T) {
 	assert.Equal(t, "a real one", awaitChat(t, wrenInbox, "Wren").Payload["text"])
 	assertSilent(t, wrenInbox, "Wren hears only the world line")
 }
+
+// A world line with an item link comes off the chat bus on both pods with `items` intact; the
+// receiving pod checks nothing again. FS-KBA4Q R30.
+func TestWorldChat_CarriesItemLinksAcrossPods(t *testing.T) {
+	a, b := twoPods(t)
+	_, wrenConn, wrenInbox := a.inHub(t, "Wren")
+	_, _, marlInbox := b.inHub(t, "Marl")
+
+	sendChatPayload(a.server, wrenConn, map[string]interface{}{"channel": "world", "text": linkedText, "items": linked(rustyBlade())})
+
+	mine := awaitChat(t, wrenInbox, "Wren (A, sender)")
+	theirs := awaitChat(t, marlInbox, "Marl (B)")
+	assert.Equal(t, linked(rustyBlade()), theirs.Payload["items"], "the snapshot as it was validated on A")
+	assert.Equal(t, linkedText, theirs.Payload["text"])
+	assert.Equal(t, mine.Payload, theirs.Payload, "one line on both pods")
+}

@@ -23,6 +23,7 @@ import type { ContainerKind, ItemState } from "@/types/gameState";
 import { palette } from "@/utils/canvasPalette";
 import type { CarriedState, EquipmentHud } from "./EquipmentHud";
 import type { HubGear } from "./HubGear";
+import type { TipAvoid } from "./gearOverlayLayout";
 import type { CharacterSource } from "./characterSheet";
 import type { ContainerMessage, GearMessage, NoticeLook, UiBridge, World, WorldReport } from "./uiBridge";
 
@@ -95,6 +96,16 @@ export interface GearWiring {
    * gameplay player: a coffer's open, a gear move. A take's sound is the world's, as it sends the loot.
    */
   sounds: GameplaySoundPlayer;
+  /**
+   * A link press on an item of the overlay (FS-KBA4Q R1–R3): told to the UI scene, which hands it to
+   * the chat window. The item is the UI's own data, so the world is asked nothing.
+   */
+  link: (item: ItemState) => void;
+  /**
+   * A place the overlay's tips may not cover, in logical units, or null for none: the chat window's
+   * text field while it is shown, as the UI scene reads it from its chat (FS-KBA4Q).
+   */
+  tipsAvoid: () => TipAvoid | null;
 }
 
 /** A gameplay player that plays nothing: a slot built with none. */
@@ -132,6 +143,10 @@ export class UiGearSlot {
     private readonly sounds: GameplaySoundPlayer = SILENT,
     /** A gear panel opened: the UI scene's passive tree closes (FS-8RZ51 R36). */
     private readonly opened: () => void = () => {},
+    /** An item of the overlay was linked: the UI scene's chat window takes it (FS-KBA4Q R3). */
+    private readonly link: (item: ItemState) => void = () => {},
+    /** Where the UI scene's chat window shows its text field, which the overlay's tips keep clear of (FS-KBA4Q). */
+    private readonly tipsAvoid: () => TipAvoid | null = () => null,
   ) {}
 
   /**
@@ -154,6 +169,8 @@ export class UiGearSlot {
       take: (item) => this.bridge.request({ kind: "take", item }),
       level: () => this.lastLevel,
       sounds: this.sounds,
+      link: (item) => this.link(item),
+      tipsAvoid: () => this.tipsAvoid(),
     });
     this.builtFor = world;
     this.report();

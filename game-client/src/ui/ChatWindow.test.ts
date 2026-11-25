@@ -6,6 +6,9 @@ import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
 import { palette, shade, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import { ChatWindow, type ChatWindowOptions } from "./ChatWindow";
+import { snapshotItemView, type ItemSnapshot } from "@/chat/itemLinks";
+import { itemTipRow } from "./gearOverlayLayout";
+import { buildItemTip } from "./itemTip";
 import { buttonWidth, resolvedRowY, rowLefts } from "./resolvedRow";
 import {
   CHAT_WINDOW_MARGIN,
@@ -13,6 +16,14 @@ import {
   CHAT_FOLD_OPEN,
   CHAT_FOLD_SHUT,
   CHAT_VISIBLE_LINES,
+  CHAT_PAD,
+  CHAT_SCROLL_W,
+  CHAT_LINES_GAP,
+  CHAT_TAG_GROUND_ALPHA,
+  CHAT_TAG_INSET_Y,
+  CHAT_TAG_PAD_Y,
+  CHAT_TAG_PAD,
+  CHAT_TAG_SPACE,
   chatFieldRect,
   chatFoldButton,
   chatPickerList,
@@ -72,6 +83,18 @@ interface FakeMask {
   alphas(): number[];
 }
 
+/** A graphics layer the window draws shapes in: the panel, the scrollbar, the link tags' grounds. */
+interface FakePanel {
+  depth?: number;
+  scroll?: number;
+  destroyed: boolean;
+  /** Each filled rect, and the colour and alpha each fill was set to. */
+  rects: number[][];
+  fills: [number, number][];
+  /** The holder (a Phaser Layer) it was moved into, if any. */
+  holder?: FakeHolder;
+}
+
 /** A Phaser Layer as the window holds its lines in it. */
 interface FakeHolder {
   depth?: number;
@@ -80,6 +103,19 @@ interface FakeHolder {
   mask?: FakeMask;
   /** How often it was moved to the top of the scene's display list. */
   raised: number;
+}
+
+/** A container the window made: a hovered link tag's item tip (FS-KBA4Q R37). */
+interface FakeTip {
+  x: number;
+  y: number;
+  depth?: number;
+  scroll?: number;
+  destroyed: boolean;
+  /** How often it was placed. */
+  placed: number;
+  /** The words drawn in it. */
+  texts: FakeText[];
 }
 
 /** The mask a drawn text shows through: its own, or its holder's while it sits in one. */
@@ -97,18 +133,43 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
   const holders: FakeHolder[] = [];
   /** Every mask laid, on a text or a holder (`filters.external.addMask`). */
   let masksLaid = 0;
-  const panels: {
-    depth?: number;
-    scroll?: number;
-    destroyed: boolean;
-    rects: number[][];
-    fills: [number, number][];
-  }[] = [];
+  const panels: FakePanel[] = [];
+  /** Each graphics layer, by the object the window holds. */
+  const panelOf = new Map<object, FakePanel>();
   const keys = Object.assign(new EventEmitter(), {
     enabled: true,
     resetKeys: () => undefined,
   });
-  const input = Object.assign(new EventEmitter(), { keyboard: keys });
+  /** What Phaser's own hit test finds under the still pointer now, top-most first: nothing, by default. */
+  let under: object[] = [];
+  const input = Object.assign(new EventEmitter(), {
+    keyboard: keys,
+    activePointer: { x: 0, y: 0 },
+    hitTestPointer: () => [...under],
+    sortGameObjects: (list: object[]) => list,
+  });
+  const tips: FakeTip[] = [];
+  // a Phaser Container: destroying it destroys what it holds
+  const container = (x: number, y: number, children: { destroy(): void }[]) => {
+    const tip: FakeTip = {
+      x,
+      y,
+      destroyed: false,
+      placed: 0,
+      texts: children.flatMap((child) => textOf.get(child) ?? []),
+    };
+    tips.push(tip);
+    const self: Record<string, unknown> = {
+      setDepth: (d: number) => ((tip.depth = d), self),
+      setScrollFactor: (sf: number) => ((tip.scroll = sf), self),
+      setPosition: (nx: number, ny: number) => ((tip.x = nx), (tip.y = ny), tip.placed++, self),
+      destroy: () => {
+        tip.destroyed = true;
+        children.forEach((child) => child.destroy());
+      },
+    };
+    return self;
+  };
   const zones: FakeZone[] = [];
   const zone = (x: number, y: number, width: number, height: number) => {
     const self: Record<string, unknown> = {};
@@ -129,12 +190,10 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
   };
 
   const graphics = (masks = false) => {
-    const g = {
-      depth: undefined as number | undefined,
-      scroll: undefined as number | undefined,
+    const g: FakePanel = {
       destroyed: false,
-      rects: [] as number[][],
-      fills: [] as [number, number][],
+      rects: [],
+      fills: [],
     };
     if (!masks) panels.push(g);
     // a mask shape: alive until destroyed, as the lines masked by it read it
@@ -169,6 +228,7 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       },
     };
     if (mask) shapes.set(self, mask);
+    panelOf.set(self, g);
     return self;
   };
   const text = (
@@ -203,6 +263,11 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       get width() {
         return t.content.length * 7;
       },
+      // the canvas context a text measures words with, at the same 7 a character
+      context: {
+        measureText: (words: string) => ({ width: words.length * 7 }),
+      },
+      setVisible: () => self,
       scrollFactorX: 0,
       scrollFactorY: 0,
       filtersFocusContext: false,
@@ -237,8 +302,8 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       setDepth: (d: number) => ((h.depth = d), self),
       setToTop: () => (h.raised++, self),
       add: (child: object) => {
-        const t = textOf.get(child);
-        if (t) t.holder = h;
+        const held = textOf.get(child) ?? panelOf.get(child);
+        if (held) held.holder = h;
         return self;
       },
       filtersFocusContext: true,
@@ -261,7 +326,7 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
   const events = new EventEmitter();
   const scene = {
     events,
-    add: { graphics: () => graphics(), text, layer, zone },
+    add: { graphics: () => graphics(), text, layer, zone, container },
     make: { graphics: () => graphics(true) },
     cameras: { main: { originX: 0, originY: 0 } },
     input,
@@ -285,6 +350,11 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
     messageTexts,
     panels,
     zones,
+    tips,
+    /** The item tips showing now. */
+    tipsShown: () => tips.filter((tip) => !tip.destroyed),
+    /** Sets what Phaser's own hit test finds under the still pointer from now on. */
+    coverPointer: (list: object[]) => void (under = list),
     maskRecords,
     holders,
     masksLaid: () => masksLaid,
@@ -2246,3 +2316,856 @@ describe("ChatWindow beside the run's end row (FS-TQZ5J § Change: Batch 6, R136
   });
 });
 
+
+describe("ChatWindow link tags (FS-KBA4Q §E: a received line draws its item links as tags)", () => {
+  const CHAR = 7;
+  const ROW = 18;
+  /** A row that holds a tag: a plain row and the room above and below its words. */
+  const TAG_ROW = ROW + CHAT_TAG_PAD_Y * 2;
+  const blade = { name: "Rusty Blade", item_type: "weapon", rarity: "rare", attack_power: 4 };
+  const m = chatWindowFrame(X, BOTTOM).messages;
+  const left = m.x + CHAT_PAD;
+  const foot = m.y + m.height - CHAT_LINES_GAP;
+  /** The graphics the tags' grounds are drawn in: the one the window put in its line layer. */
+  const tagGround = (s: ReturnType<typeof rig>) => s.panels.find((g) => g.holder);
+  /** A tag's whole width in a row. */
+  const tagW = (label: string) => label.length * CHAR + (CHAT_TAG_PAD + CHAT_TAG_SPACE) * 2;
+
+  it("should draw the name in its brackets in place of the token, the words around it as they were", () => {
+    const s = rig();
+
+    s.say("look [Rusty Blade] here", { items: [blade] });
+
+    const drawn = s.messageTexts().sort((a, b) => a.x - b.x);
+    expect(drawn.map((t) => t.content)).toEqual(["Wren: look ", "[Rusty Blade]", " here"]);
+    // one row: the tag stands where the token did, its space and padding either side
+    expect(new Set(drawn.map((t) => t.y))).toEqual(new Set([foot - TAG_ROW + CHAT_TAG_PAD_Y]));
+    const head = "Wren: look ".length * CHAR;
+    expect(drawn.map((t) => t.x)).toEqual([
+      left,
+      left + head + CHAT_TAG_SPACE + CHAT_TAG_PAD,
+      left + head + tagW("[Rusty Blade]"),
+    ]);
+  });
+
+  it("should draw the tag in the item's rarity colour and the rest in the channel's", () => {
+    const s = rig();
+
+    s.say("look [Rusty Blade] here", { items: [blade], channel: "world" });
+
+    const colours = Object.fromEntries(s.messageTexts().map((t) => [t.content, t.color]));
+    expect(colours).toEqual({
+      "Wren: look ": toCss(palette.chatWorld),
+      "[Rusty Blade]": toCss(palette.rarity.rare),
+      " here": toCss(palette.chatWorld),
+    });
+  });
+
+  it("should draw an item with no rarity in the ordinary text colour", () => {
+    const s = rig();
+
+    s.say("[Plain Ring]", { items: [{ name: "Plain Ring", item_type: "ring" }] });
+
+    const tag = s.messageTexts().find((t) => t.content === "[Plain Ring]")!;
+    expect(tag.color).toBe(toCss(palette.hudText));
+    expect(tagGround(s)!.fills).toEqual([[palette.hudText, CHAT_TAG_GROUND_ALPHA]]);
+  });
+
+  it("should lay a faint ground in the tag's hue behind the name, and no border", () => {
+    const s = rig();
+
+    s.say("look [Rusty Blade] here", { items: [blade] });
+
+    const g = tagGround(s)!;
+    const x = left + "Wren: look ".length * CHAR + CHAT_TAG_SPACE;
+    const y = foot - TAG_ROW + CHAT_TAG_INSET_Y;
+    const width = "[Rusty Blade]".length * CHAR + CHAT_TAG_PAD * 2;
+    const height = TAG_ROW - CHAT_TAG_INSET_Y * 2;
+    expect(g.fills).toEqual([[palette.rarity.rare, CHAT_TAG_GROUND_ALPHA]]);
+    expect(g.rects).toEqual([
+      [x, y, width, height],
+    ]);
+  });
+
+  it("should keep the ground and the tag's words in the masked line layer, the ground under the words", () => {
+    const s = rig();
+
+    s.say("look [Rusty Blade] here", { items: [blade] });
+
+    const g = tagGround(s)!;
+    const [holder] = s.holders;
+    expect(g.holder).toBe(holder);
+    expect(g.scroll).toBe(0);
+    for (const t of s.messageTexts()) {
+      expect(t.holder).toBe(holder);
+      expect(maskOver(t)).toBeDefined();
+      expect(t.scroll).toBe(0);
+      expect(g.depth!).toBeLessThan(t.depth!);
+    }
+  });
+
+  it("should start a tag that does not fit the rest of a row whole on the next row, pushing older lines up", () => {
+    const s = rig();
+    const room = m.width - CHAT_PAD * 2 - CHAT_SCROLL_W;
+    // words that leave less than the tag's width on the first row
+    const words = "a".repeat(Math.floor(room / CHAR) - "Wren: ".length - 6);
+
+    s.say("older");
+    s.say(`${words} [Rusty Blade] ok`, { items: [blade] });
+
+    const byContent = (content: string) => s.messageTexts().find((t) => t.content === content)!;
+    // the row of words only stays a plain row; the row with the tag stands taller
+    expect(byContent(`Wren: ${words} `).y).toBe(foot - TAG_ROW - ROW);
+    expect(byContent("[Rusty Blade]").y).toBe(foot - TAG_ROW + CHAT_TAG_PAD_Y);
+    expect(byContent("[Rusty Blade]").x).toBe(left + CHAT_TAG_SPACE + CHAT_TAG_PAD);
+    expect(byContent(" ok").y).toBe(foot - TAG_ROW + CHAT_TAG_PAD_Y);
+    expect(byContent("Wren: older").y).toBe(foot - TAG_ROW - ROW * 2);
+    expect(tagGround(s)!.rects[0]).toEqual([
+      left + CHAT_TAG_SPACE,
+      foot - TAG_ROW + CHAT_TAG_INSET_Y,
+      "[Rusty Blade]".length * CHAR + CHAT_TAG_PAD * 2,
+      TAG_ROW - CHAT_TAG_INSET_Y * 2,
+    ]);
+  });
+
+  it("should draw a tag wider than a row on a row of its own, cut with an ellipsis", () => {
+    const s = rig();
+    const room = m.width - CHAT_PAD * 2 - CHAT_SCROLL_W;
+    const name = "N".repeat(Math.ceil(room / CHAR) + 5);
+
+    s.say(`see [${name}] it`, { items: [{ name, item_type: "weapon" }] });
+
+    const rows = s.messageTexts();
+    const cut = rows.find((t) => t.content.endsWith("…]"))!;
+    expect(cut.content).toMatch(/^\[N+…\]$/);
+    expect(tagW(cut.content)).toBeLessThanOrEqual(room);
+    expect(rows.filter((t) => t.y === cut.y)).toEqual([cut]);
+    expect(rows.find((t) => t.content === "Wren: see ")!.y).toBe(cut.y - CHAT_TAG_PAD_Y - ROW);
+    expect(rows.find((t) => t.content === "it")!.y).toBe(cut.y + ROW + CHAT_TAG_PAD_Y);
+    // the tag still carries the whole item
+    expect(s.window.linkTagAt(cut.x, cut.y + ROW / 2)?.item.name).toBe(name);
+  });
+
+  it("should draw a line without items exactly as before: one text, brackets and all", () => {
+    const s = rig();
+
+    s.say("look [Rusty Blade] here");
+
+    const drawn = s.messageTexts();
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({
+      content: "Wren: look [Rusty Blade] here",
+      color: toCss(palette.chatArea),
+      x: left,
+      y: foot - ROW,
+    });
+    expect(tagGround(s)).toBeUndefined();
+  });
+
+  it.each([
+    ["items that are not an array", "Rusty Blade"],
+    ["a snapshot that cannot be read", [{ name: 4 }]],
+    ["a snapshot that pairs with no token", [{ name: "Iron Helm", item_type: "armor" }]],
+  ])("should draw a line with %s as text, and throw nothing", (_what, items) => {
+    const s = rig();
+
+    expect(() => s.say("look [Rusty Blade] here", { items })).not.toThrow();
+
+    expect(s.messageTexts().map((t) => t.content)).toEqual([
+      "Wren: look [Rusty Blade] here",
+    ]);
+    expect(s.window.linkTagAt(left + 100, foot - ROW / 2)).toBeNull();
+  });
+
+  it("should draw a token no snapshot pairs with as text beside a tag", () => {
+    const s = rig();
+
+    s.say("[Iron Helm] and [Rusty Blade]", { items: [blade] });
+
+    expect(s.messageTexts().sort((a, b) => a.x - b.x).map((t) => t.content)).toEqual([
+      "Wren: [Iron Helm] and ",
+      "[Rusty Blade]",
+    ]);
+  });
+
+  it("should say which item a tag carries and where it was drawn, and nothing off a tag", () => {
+    const s = rig();
+
+    s.say("look [Rusty Blade] here", { items: [blade] });
+
+    const x = left + "Wren: look ".length * CHAR + CHAT_TAG_SPACE;
+    const rect = {
+      x,
+      y: foot - TAG_ROW + CHAT_TAG_INSET_Y,
+      width: "[Rusty Blade]".length * CHAR + CHAT_TAG_PAD * 2,
+      height: TAG_ROW - CHAT_TAG_INSET_Y * 2,
+    };
+    expect(s.window.linkTagAt(x + 10, foot - ROW / 2)).toEqual({ item: blade, rect });
+    // the sender's name, the words after the tag, the row above
+    expect(s.window.linkTagAt(left + 5, foot - ROW / 2)).toBeNull();
+    expect(s.window.linkTagAt(x + rect.width + 20, foot - ROW / 2)).toBeNull();
+    expect(s.window.linkTagAt(x + 10, foot - TAG_ROW - 2)).toBeNull();
+  });
+
+  it("should carry each tag's own item when a line links two of one name", () => {
+    const s = rig();
+    const keen = { ...blade, attack_power: 9 };
+
+    s.say("[Rusty Blade] or [Rusty Blade]", { items: [blade, keen] });
+
+    const [first, second] = s
+      .messageTexts()
+      .filter((t) => t.content === "[Rusty Blade]")
+      .sort((a, b) => a.x - b.x);
+    expect(s.window.linkTagAt(first.x, first.y + 9)?.item).toEqual(blade);
+    expect(s.window.linkTagAt(second.x, second.y + 9)?.item).toEqual(keen);
+  });
+
+  it("should follow the tag as the line moves, and forget it once the line is scrolled or filtered away", () => {
+    const s = rig();
+    s.say("look [Rusty Blade] here", { items: [blade], channel: "world" });
+    const x = left + "Wren: look ".length * CHAR + CHAT_TAG_SPACE + 10;
+    expect(s.window.linkTagAt(x, foot - ROW / 2)).not.toBeNull();
+
+    s.say("newer");
+    expect(s.window.linkTagAt(x, foot - ROW / 2)).toBeNull();
+    expect(s.window.linkTagAt(x, foot - ROW * 1.5)?.item).toEqual(blade);
+
+    s.store.getState().toggleChannel("world");
+    expect(s.window.linkTagAt(x, foot - ROW * 1.5)).toBeNull();
+    expect(tagGround(s)!.rects).toEqual([]);
+
+    // hidden, not gone: the line and its link come back with its channel
+    s.store.getState().toggleChannel("world");
+    expect(s.window.linkTagAt(x, foot - ROW * 1.5)?.item).toEqual(blade);
+  });
+
+  it("should carry no tag cut off above the message area", () => {
+    const s = rig();
+    s.say("look [Rusty Blade] here", { items: [blade] });
+    for (let i = 0; i < CHAT_VISIBLE_LINES; i++) s.say(`line ${i}`);
+
+    // 8 lines in view, 18 high in 172 of room: the linked line is the ninth back, out of view
+    const x = left + "Wren: look ".length * CHAR + CHAT_TAG_SPACE + 10;
+    for (let y = m.y - 60; y < m.y; y += 3) expect(s.window.linkTagAt(x, y)).toBeNull();
+  });
+
+  it("should keep one ground for every redraw and let it go with the window", () => {
+    const s = rig();
+    s.say("[Rusty Blade]", { items: [blade] });
+    s.say("[Rusty Blade] again", { items: [blade] });
+
+    expect(s.panels.filter((g) => g.holder)).toHaveLength(1);
+    // one ground a tag, no border
+    expect(tagGround(s)!.rects).toHaveLength(2);
+
+    const g = tagGround(s)!;
+    s.window.destroy();
+    expect(g.destroyed).toBe(true);
+    expect(s.shown()).toEqual([]);
+  });
+
+  it("should draw every channel's linked line in its own colour, a whisper's echo too", () => {
+    const s = fakeScene();
+    const store = createChatStore();
+    new ChatWindow(s.scene, store, X, BOTTOM, { selfId: () => "s" });
+
+    store.getState().receive(
+      stamped("[Rusty Blade]", {
+        items: [blade],
+        channel: "whisper",
+        target_id: "t",
+        target_name: "Ash",
+      }),
+    );
+
+    const drawn = s.messageTexts().sort((a, b) => a.x - b.x);
+    expect(drawn.map((t) => [t.content, t.color])).toEqual([
+      ["To Ash: ", toCss(palette.chatWhisper)],
+      ["[Rusty Blade]", toCss(palette.rarity.rare)],
+    ]);
+  });
+});
+
+describe("ChatWindow clicks on a line with links (FS-KBA4Q R36, R39)", () => {
+  const CHAR = 7;
+  const blade = { name: "Rusty Blade", item_type: "weapon", rarity: "rare" };
+  const click = (s: ReturnType<typeof inputRig>, x: number, y: number) => {
+    s.input.emit("pointerdown", { x, y });
+    s.input.emit("pointerup", { x, y });
+  };
+  const linked = () => {
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("look [Rusty Blade] here", { items: [blade] }));
+    const byContent = (content: string) => s.messageTexts().find((t) => t.content === content)!;
+    return { s, byContent };
+  };
+
+  it("should still start a whisper when the sender's name is clicked", () => {
+    const { s, byContent } = linked();
+    const head = byContent("Wren: look ");
+
+    click(s, head.x + 2 * CHAR, head.y + 9);
+
+    expect(s.field().value).toBe("@Wren ");
+    expect(s.field().channel).toBe("whisper");
+  });
+
+  it("should do nothing for a click on a tag: no whisper, no channel picked, the input left closed", () => {
+    const { s, byContent } = linked();
+    const tag = byContent("[Rusty Blade]");
+
+    click(s, tag.x + 3 * CHAR, tag.y + 9);
+
+    expect(s.field().value).toBe("");
+    expect(s.field().channel).toBe("area");
+    expect(s.window.isTyping()).toBe(false);
+    expect(s.sent).toEqual([]);
+  });
+
+  it("should keep the player typing and their draft when they click a tag while the input is open", () => {
+    const { s, byContent } = linked();
+    s.press("ENTER");
+    s.field().value = "half a line";
+    const tag = byContent("[Rusty Blade]");
+
+    click(s, tag.x + 3 * CHAR, tag.y + 9);
+
+    expect(s.field().value).toBe("half a line");
+    expect(s.field().focused).toBe(true);
+  });
+
+  it("should keep the name's hit area off the tag when the tag heads the text", () => {
+    const s = inputRig(
+      () => true,
+      () => "p-me",
+    );
+    s.store.getState().receive(stamped("[Rusty Blade]", { items: [blade] }));
+    const tag = s.messageTexts().find((t) => t.content === "[Rusty Blade]")!;
+
+    click(s, tag.x + 1, tag.y + 9);
+
+    expect(s.field().value).toBe("");
+  });
+});
+
+// I-KBA4Q-4: hovering a link tag shows the bag's item tip for its snapshot.
+describe("ChatWindow link tag tip (FS-KBA4Q R37, R38: hovering a tag shows the item tip)", () => {
+  const CHAR = 7;
+  const ROW = 18;
+  const TIP_DEPTH = 2200;
+  const blade: ItemSnapshot = {
+    name: "Rusty Blade",
+    item_type: "weapon",
+    rarity: "rare",
+    attack_power: 4,
+    item_level: 12,
+    required_level: 60,
+    affixes: [{ stat: "strength", tier: 2, value: 5 }],
+    unique_effect: "Bleeds.",
+    description: "Old.",
+  };
+  const m = chatWindowFrame(X, BOTTOM).messages;
+  const left = m.x + CHAT_PAD;
+  const foot = m.y + m.height - CHAT_LINES_GAP;
+  /** A point on the tag of `look [Rusty Blade] here`, the newest line, and one on the words before it. */
+  const onTag = { x: left + "Wren: look ".length * CHAR + CHAT_TAG_SPACE + 10, y: foot - ROW / 2 };
+  const offTag = { x: left + 5, y: foot - ROW / 2 };
+  /** Another UI piece's object, as Phaser lists it top-most. */
+  const OTHER = {};
+  const move = (s: ReturnType<typeof fakeScene>, at: { x: number; y: number }, over: object[] = []) =>
+    s.input.emit("pointermove", at, over);
+  const linked = (extra: Partial<ChatLinePayload> = {}) => {
+    const s = rig();
+    s.say("look [Rusty Blade] here", { items: [blade], ...extra });
+    return s;
+  };
+  const words = (s: ReturnType<typeof fakeScene>) => s.tipsShown()[0].texts.map((t) => t.content);
+
+  it("should show one tip above every panel when the pointer comes onto a tag, and take it away when it leaves", () => {
+    const s = linked();
+    expect(s.tips).toEqual([]);
+
+    move(s, onTag);
+
+    expect(s.tipsShown()).toHaveLength(1);
+    expect(s.tipsShown()[0]).toMatchObject({ depth: TIP_DEPTH, scroll: 0 });
+    expect(words(s)).toContain("Rusty Blade");
+
+    move(s, offTag);
+
+    expect(s.tipsShown()).toEqual([]);
+    // what the tip drew went with it
+    expect(s.tips[0].texts.every((t) => t.destroyed)).toBe(true);
+  });
+
+  it("should show no tip while another UI piece is top-most under the pointer, and show it on its own ground", () => {
+    const s = linked();
+
+    move(s, onTag, [OTHER]);
+    expect(s.tips).toEqual([]);
+
+    move(s, onTag, [s.zones[0].obj]);
+    expect(s.tipsShown()).toHaveLength(1);
+
+    // a panel sliding over the hovered tag takes the tip
+    move(s, onTag, [OTHER, s.zones[0].obj]);
+    expect(s.tipsShown()).toEqual([]);
+  });
+
+  it("should draw the bag's tip for the snapshot: name, rarity, kind, stats, item level, requirement, affixes, effect and lore", () => {
+    const s = linked();
+
+    move(s, onTag);
+
+    // word for word what the bag's tip draws for that view
+    const bag = fakeScene();
+    buildItemTip(bag.scene, snapshotItemView(blade));
+    expect(words(s)).toEqual(words(bag));
+    expect(words(s)).toEqual(
+      expect.arrayContaining([
+        "Rusty Blade",
+        "RARE",
+        "WEAPON",
+        "Item level 12",
+        "Requires level 60",
+        "Bleeds.",
+        "Old.",
+      ]),
+    );
+  });
+
+  it("should never draw the requirement in the too-high colour, a standing note, or a Worn caption", () => {
+    const s = linked();
+
+    move(s, onTag);
+
+    const texts = s.tipsShown()[0].texts;
+    expect(texts.find((t) => t.content === "Requires level 60")!.color).toBe(toCss(palette.hudLabel));
+    expect(texts.some((t) => t.color === toCss(palette.damageBright))).toBe(false);
+    expect(texts.some((t) => /bazaar|settling|delve|unsafe|worn/i.test(t.content))).toBe(false);
+  });
+
+  it("should stand the tip beside the pointer, inside the view", () => {
+    const s = linked();
+    const size = tipSize(blade);
+
+    move(s, onTag);
+
+    const tip = s.tipsShown()[0];
+    expect({ x: tip.x, y: tip.y }).toEqual(itemTipRow([size], onTag, viewport)[0]);
+    expect(tip.x).toBeGreaterThanOrEqual(0);
+    expect(tip.y).toBeGreaterThanOrEqual(0);
+    expect(tip.x + size.width).toBeLessThanOrEqual(viewport.width);
+    expect(tip.y + size.height).toBeLessThanOrEqual(viewport.height);
+  });
+
+  it("should follow the pointer along the tag without making the tip again", () => {
+    const s = linked();
+    move(s, onTag);
+    const at = { x: onTag.x + 20, y: onTag.y + 2 };
+
+    move(s, at);
+
+    expect(s.tips).toHaveLength(1);
+    expect({ x: s.tips[0].x, y: s.tips[0].y }).toEqual(itemTipRow([tipSize(blade)], at, viewport)[0]);
+  });
+
+  it("should read the pointer in logical units at a render scale (FS-ZAJMH R15)", () => {
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    try {
+      const s = linked();
+
+      move(s, { x: onTag.x * 2, y: onTag.y * 2 });
+
+      expect(s.tipsShown()).toHaveLength(1);
+      expect({ x: s.tips[0].x, y: s.tips[0].y }).toEqual(itemTipRow([tipSize(blade)], onTag, viewport)[0]);
+    } finally {
+      viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    }
+  });
+
+  it("should change to the other item's tip when the pointer goes from one tag to another", () => {
+    const s = rig();
+    const helm: ItemSnapshot = { name: "Iron Helm", item_type: "armor" };
+    s.say("[Rusty Blade] or [Iron Helm]", { items: [blade, helm] });
+    const [first, second] = ["[Rusty Blade]", "[Iron Helm]"].map(
+      (label) => s.messageTexts().find((t) => t.content === label)!,
+    );
+
+    move(s, { x: first.x + 5, y: first.y + 9 });
+    move(s, { x: second.x + 5, y: second.y + 9 });
+
+    expect(s.tipsShown()).toHaveLength(1);
+    expect(words(s)).toContain("Iron Helm");
+    expect(words(s)).not.toContain("Rusty Blade");
+  });
+
+  it("should take the tip away when the line scrolls from under the pointer", () => {
+    const s = rig();
+    for (let i = 0; i < 20; i++) s.say(`line ${i}`);
+    s.say("look [Rusty Blade] here", { items: [blade] });
+    move(s, onTag);
+    expect(s.tipsShown()).toHaveLength(1);
+
+    s.wheel(onTag.x, onTag.y, -100);
+
+    expect(s.tipsShown()).toEqual([]);
+  });
+
+  it("should take the tip away when a new line pushes the tag from under a still pointer, and keep it while the tag stays", () => {
+    const s = linked({ channel: "world" });
+    move(s, onTag);
+
+    // a line the player's filter hides redraws nothing, and one drawn again under the pointer keeps its tip
+    s.store.getState().toggleChannel("area");
+    expect(s.tipsShown()).toHaveLength(1);
+    expect(s.tips).toHaveLength(1);
+
+    s.store.getState().toggleChannel("area");
+    s.say("newer");
+
+    expect(s.tipsShown()).toEqual([]);
+  });
+
+  it("should take the tip away when the tag's channel is filtered out", () => {
+    const s = linked({ channel: "world" });
+    move(s, onTag);
+
+    s.store.getState().toggleChannel("world");
+
+    expect(s.tipsShown()).toEqual([]);
+  });
+
+  it("should take the tip away when the window folds", () => {
+    const s = linked();
+    move(s, onTag);
+
+    s.store.getState().toggleFolded();
+
+    expect(s.tipsShown()).toEqual([]);
+  });
+
+  it("should take the tip away when a UI piece comes over the tag under a still pointer, until the pointer moves onto a free tag again", () => {
+    const s = linked();
+    move(s, onTag);
+    s.frame();
+    expect(s.tipsShown()).toHaveLength(1);
+
+    // the character panel opens by its key: no pointer event says so
+    s.coverPointer([OTHER, s.zones[0].obj]);
+    s.frame();
+    expect(s.tipsShown()).toEqual([]);
+
+    // a redraw under the covered pointer brings nothing back
+    s.say("newer");
+    s.store.getState().toggleChannel("world");
+    expect(s.tipsShown()).toEqual([]);
+
+    s.coverPointer([]);
+    move(s, { x: onTag.x, y: onTag.y - ROW });
+    expect(s.tipsShown()).toHaveLength(1);
+  });
+
+  it("should take the tip away when the pointer leaves the game", () => {
+    const s = linked();
+    move(s, onTag);
+
+    s.input.emit("gameout");
+
+    expect(s.tipsShown()).toEqual([]);
+    s.say("newer");
+    s.store.getState().toggleChannel("world");
+    expect(s.tipsShown()).toEqual([]);
+  });
+
+  it("should take the tip away with the window, as when the world changes", () => {
+    const s = linked();
+    move(s, onTag);
+
+    s.window.destroy();
+
+    expect(s.tipsShown()).toEqual([]);
+    expect(s.shown()).toEqual([]);
+    // and nothing is made after
+    move(s, onTag);
+    s.frame();
+    expect(s.tips).toHaveLength(1);
+  });
+
+  it.each(["area", "world", "party", "whisper"] as const)(
+    "should show the tip for a line on %s",
+    (channel) => {
+      const s = linked({ channel });
+
+      move(s, { ...onTag, x: s.messageTexts().find((t) => t.content === "[Rusty Blade]")!.x + 5 });
+
+      expect(words(s)).toContain("Rusty Blade");
+    },
+  );
+
+  it("should show the tip on the sender's own echo of a whisper", () => {
+    const s = fakeScene();
+    const store = createChatStore();
+    new ChatWindow(s.scene, store, X, BOTTOM, { selfId: () => "s" });
+    store.getState().receive(
+      stamped("[Rusty Blade]", { items: [blade], channel: "whisper", target_id: "t", target_name: "Ash" }),
+    );
+    const tag = s.messageTexts().find((t) => t.content === "[Rusty Blade]")!;
+
+    move(s, { x: tag.x + 5, y: tag.y + 9 });
+
+    expect(words(s)).toContain("Rusty Blade");
+  });
+
+  it("should show the tip with the input closed and with it open, and leave the draft and the focus alone", () => {
+    const s = inputRig();
+    s.store.getState().receive(stamped("look [Rusty Blade] here", { items: [blade] }));
+
+    move(s, onTag);
+    expect(s.tipsShown()).toHaveLength(1);
+    move(s, offTag);
+
+    s.press("ENTER");
+    s.field().value = "half a line";
+    move(s, onTag);
+
+    expect(s.tipsShown()).toHaveLength(1);
+    expect(s.field().value).toBe("half a line");
+    expect(s.field().focused).toBe(true);
+  });
+
+  it("should add nothing for a press on a hovered tag: the tip stays, no second tip", () => {
+    const s = linked();
+    move(s, onTag);
+
+    s.input.emit("pointerdown", onTag);
+    s.input.emit("pointerup", onTag);
+
+    expect(s.tips).toHaveLength(1);
+    expect(s.tipsShown()).toHaveLength(1);
+  });
+
+  // review round 1: the text field is a browser element, above every canvas tip, so the tip keeps clear of it
+  describe("beside the shown text field", () => {
+    const field = chatFieldRect(chatWindowFrame(X, BOTTOM), false);
+    /** A short tip, so that it fits under the pointer on the window's lower lines and reaches the field. */
+    const plain: ItemSnapshot = { name: "Rusty Blade", item_type: "weapon" };
+    const size = tipSize(plain);
+    const covers = (at: { x: number; y: number }) =>
+      at.x < field.x + field.width &&
+      at.x + size.width > field.x &&
+      at.y < field.y + field.height &&
+      at.y + size.height > field.y;
+    /** A window with its field, the tagged line pushed up until its tip, beside the pointer, would lie over the field. */
+    const overField = (mayOpen = () => true) => {
+      const s = inputRig(mayOpen);
+      s.store.getState().receive(stamped("look [Rusty Blade] here", { items: [plain] }));
+      for (let above = 0; above < CHAT_VISIBLE_LINES; above++) {
+        const at = { x: onTag.x, y: onTag.y - above * ROW };
+        if (covers(itemTipRow([size], at, viewport)[0])) return { s, at };
+        s.store.getState().receive(stamped("and on"));
+      }
+      throw new Error("no line of the window puts the tip over the field");
+    };
+
+    it("should say where its text field is while the row is shown, and nowhere while it is hidden or there is none", () => {
+      let overlay = false;
+      const s = inputRig(() => !overlay);
+      expect(s.window.fieldRow()).toEqual(field);
+
+      overlay = true;
+      s.frame();
+      expect(s.window.fieldRow()).toBeNull();
+
+      expect(rig().window.fieldRow()).toBeNull();
+    });
+
+    it("should say where the field is short of the fold button while folded", () => {
+      const s = inputRig();
+      s.store.getState().toggleFolded();
+
+      expect(s.window.fieldRow()).toEqual(chatFieldRect(chatWindowFrame(X, BOTTOM, true), true));
+    });
+
+    it("should stand the tip clear of the field where it would lie over it, still inside the view", () => {
+      const { s, at } = overField();
+
+      move(s, at);
+
+      const tip = s.tipsShown()[0];
+      expect(covers(tip)).toBe(false);
+      expect({ x: tip.x, y: tip.y }).toEqual(itemTipRow([size], at, viewport, field)[0]);
+      expect(tip.y + size.height).toBeLessThanOrEqual(field.y);
+      expect(tip.y).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should stand the tip beside the pointer as ever while the row is hidden", () => {
+      let overlay = false;
+      const { s, at } = overField(() => !overlay);
+      overlay = true;
+      s.frame();
+
+      move(s, at);
+
+      const tip = s.tipsShown()[0];
+      expect({ x: tip.x, y: tip.y }).toEqual(itemTipRow([size], at, viewport)[0]);
+    });
+  });
+
+  // review round 1: the open channel list is drawn over the lines, so a tag under it is not hovered
+  describe("under the open channel list", () => {
+    const frame = chatWindowFrame(X, BOTTOM);
+    const list = chatPickerList(frame).box;
+    const picker = chatPickerRect(frame);
+    const press = (s: ReturnType<typeof inputRig>, at: { x: number; y: number }) => {
+      s.input.emit("pointerdown", at);
+      s.input.emit("pointerup", at);
+    };
+    const pickerMid = { x: picker.x + picker.width / 2, y: picker.y + picker.height / 2 };
+    /** A window whose every line begins with a tag, so tags stand under the list's box and right of it. */
+    const tagged = () => {
+      const s = inputRig();
+      for (let i = 0; i < CHAT_VISIBLE_LINES; i++)
+        s.store.getState().receive(stamped("[Rusty Blade] and so [Rusty Blade]", { items: [blade, blade] }));
+      const tags = s.messageTexts().filter((t) => t.content === "[Rusty Blade]");
+      const under = tags
+        .map((t) => ({ x: t.x + 5, y: t.y + ROW / 2 }))
+        .find((at) => at.x < list.x + list.width && at.x >= list.x && at.y >= list.y && at.y < list.y + list.height);
+      const beside = tags
+        .map((t) => ({ x: t.x + 5, y: t.y + ROW / 2 }))
+        .find((at) => at.x >= list.x + list.width && at.y >= list.y && at.y < list.y + list.height);
+      if (!under || !beside) throw new Error("no tag under the list's box and one beside it");
+      return { s, under, beside };
+    };
+
+    it("should find no tag at a point the open list covers, and find it again once the list is shut", () => {
+      const { s, under, beside } = tagged();
+      expect(s.window.linkTagAt(under.x, under.y)?.item).toEqual(blade);
+
+      press(s, pickerMid);
+
+      expect(s.window.linkTagAt(under.x, under.y)).toBeNull();
+      expect(s.window.linkTagAt(beside.x, beside.y)?.item).toEqual(blade);
+
+      press(s, pickerMid);
+
+      expect(s.window.linkTagAt(under.x, under.y)?.item).toEqual(blade);
+    });
+
+    it("should show no tip for a tag the open list covers, and take away the one showing as the list opens over it", () => {
+      const { s, under, beside } = tagged();
+      move(s, under);
+      expect(s.tipsShown()).toHaveLength(1);
+
+      // the list opened with the pointer still: a press Phaser reports at the picker without a move before it
+      press(s, pickerMid);
+      expect(s.tipsShown()).toEqual([]);
+
+      move(s, under);
+      expect(s.tipsShown()).toEqual([]);
+
+      move(s, beside);
+      expect(s.tipsShown()).toHaveLength(1);
+    });
+  });
+
+  /** The size of the tip the bag would build for the snapshot. */
+  function tipSize(snapshot: ItemSnapshot) {
+    const { width, height } = buildItemTip(fakeScene().scene, snapshotItemView(snapshot));
+    return { width, height };
+  }
+});
+
+// FS-KBA4Q §A (I-KBA4Q-6): a link press on the gear overlay hands its item to the window's input, and is
+// the one press on a piece over the window that does not let go of the field (R4, amending FS-TQZ5J R130–R131)
+describe("ChatWindow taking an item link (FS-KBA4Q R3, R4, R7, R11)", () => {
+  const blade = { entity_id: "e-1", name: "Rusty Blade", item_type: "weapon" } as import("@/types/gameState").ItemState;
+  const frame = chatWindowFrame(X, BOTTOM);
+  /** A press on another UI piece drawn over the window's lines, the gear overlay's ground top-most. */
+  const overlayPress = (s: ReturnType<typeof inputRig>, extra: object) =>
+    s.input.emit("pointerdown", { x: frame.messages.x + 20, y: frame.messages.y + 20, button: 0, ...extra }, [{}]);
+  const systemLines = (s: ReturnType<typeof inputRig>) =>
+    s.store.getState().lines.filter((l) => l.kind === "system").map((l) => l.text);
+
+  it("should open the closed input with the token in it, the field focused (R3)", () => {
+    const s = inputRig();
+    s.window.link(blade);
+    expect(s.field().value).toBe("[Rusty Blade]");
+    expect(s.field().focused).toBe(true);
+    expect(s.window.isTyping()).toBe(true);
+  });
+
+  it("should send the linked item's snapshot with the line", () => {
+    const s = inputRig();
+    s.window.link(blade);
+    s.field().events!.keyDown("Enter", false);
+    expect(s.sent).toEqual([{ channel: "area", text: "[Rusty Blade]", items: [{ name: "Rusty Blade", item_type: "weapon" }] }]);
+  });
+
+  it.each([
+    ["Ctrl+Alt", { ctrlKey: true, altKey: true }],
+    ["Meta+Alt", { metaKey: true, altKey: true }],
+  ])("should keep its field through a %s left-press on a piece drawn over it, whichever of the press and the link comes first (R4)", (_name, event) => {
+    const s = inputRig();
+    s.press("ENTER");
+    s.field().value = "look ";
+    // the window hears the press before the overlay links
+    overlayPress(s, { event });
+    expect(s.field().focused).toBe(true);
+    s.window.link(blade);
+    // and after it
+    s.window.link(blade);
+    overlayPress(s, { event });
+    expect(s.field().focused).toBe(true);
+    expect(s.window.isTyping()).toBe(true);
+    expect(s.field().value).toBe("look [Rusty Blade][Rusty Blade]");
+  });
+
+  it.each([
+    ["no modifier", {}],
+    ["Ctrl alone", { event: { ctrlKey: true } }],
+    ["the right button with Ctrl+Alt", { button: 2, event: { ctrlKey: true, altKey: true } }],
+  ])("should still let go of its field for a press on a piece drawn over it with %s (FS-TQZ5J R130)", (_name, extra) => {
+    const s = inputRig();
+    s.press("ENTER");
+    overlayPress(s, extra);
+    expect(s.field().focused).toBe(false);
+  });
+
+  it("should still let go of its field for a link press in the world, on no piece at all", () => {
+    const s = inputRig();
+    s.press("ENTER");
+    s.input.emit("pointerdown", { x: 900, y: 50, button: 0, event: { ctrlKey: true, altKey: true } });
+    expect(s.field().focused).toBe(false);
+  });
+
+  it("should do nothing while chat may not open (R7)", () => {
+    const s = inputRig(() => false);
+    s.window.link(blade);
+    expect(s.field().value).toBe("");
+    expect(s.field().focused).toBe(false);
+    expect(systemLines(s)).toEqual([]);
+  });
+
+  it("should refuse a fourth link with a system line in the stream and menu_error, and send nothing (R11)", () => {
+    const played: string[] = [];
+    const s = inputRig(undefined, undefined, undefined, undefined, { play: (e) => played.push(e) });
+    for (let i = 0; i < 4; i++) s.window.link(blade);
+    expect(s.field().value).toBe("[Rusty Blade][Rusty Blade][Rusty Blade]");
+    expect(systemLines(s)).toEqual(["Three items to a line, no more."]);
+    expect(played).toContain("menu_error");
+    expect(s.sent).toEqual([]);
+  });
+
+  it("should take no link once destroyed, or with no input at all", () => {
+    const s = inputRig();
+    s.window.destroy();
+    expect(() => s.window.link(blade)).not.toThrow();
+    const bare = new ChatWindow(fakeScene().scene, createChatStore(), X, BOTTOM);
+    expect(() => bare.link(blade)).not.toThrow();
+  });
+});

@@ -9,6 +9,7 @@ import {
   SETTLING_NOTE,
   UNSAFE_FIND_NOTE,
 } from "@/items/itemView";
+import { itemView } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
@@ -21,6 +22,7 @@ import {
 } from "./GearOverlay";
 import { BAG_CAPACITY } from "./bag";
 import { STASH_CAPACITY } from "./stash";
+import { buildItemTip } from "./itemTip";
 import { drawPanelFrame, drawPanelTitle } from "./panelFrame";
 
 // The party panel's frame is one drawing, which this surface must call, not copy (owner
@@ -31,6 +33,7 @@ vi.mock("./panelFrame", async (importOriginal) => {
 });
 import {
   gearPanelLayout,
+  itemTipRow,
   listedMark,
   overlayLayout,
   panelClose,
@@ -43,6 +46,11 @@ const item = (id: string, extra: Partial<ItemState> = {}) =>
 const sword = item("sword", { weapon_type: "sword", attack_power: 10 });
 const axe = item("axe", { weapon_type: "sword", attack_power: 12 });
 const helm = item("helm", { armor_slot: "head", defense_rating: 3 });
+
+/** The modifier keys a press's DOM event reports. */
+type PressKeys = { ctrlKey?: boolean; altKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
+const CTRL_ALT: PressKeys = { ctrlKey: true, altKey: true };
+const META_ALT: PressKeys = { metaKey: true, altKey: true };
 
 function worn(over: Partial<EquippedItems> = {}): EquippedItems {
   return {
@@ -218,15 +226,20 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     z.obj = self;
     return self;
   };
+  /** Where each container made stands now, and its depth: a tip is one in the tips' band. */
+  const holders: { x: number; y: number; depth: number; destroyed: boolean }[] = [];
   // as Phaser's, a container's destroy destroys what it holds
   const container = (
     _x = 0,
     _y = 0,
     children: { destroy?: () => void }[] = [],
   ) => {
+    const held = { x: _x, y: _y, depth: 0, destroyed: false };
+    holders.push(held);
     const self: Record<string, unknown> = chain({
-      setDepth: (d: number) => (depths.add(d), self),
-      destroy: () => children.forEach((c) => c.destroy?.()),
+      setDepth: (d: number) => (depths.add(d), (held.depth = d), self),
+      setPosition: (x: number, y: number) => ((held.x = x), (held.y = y), self),
+      destroy: () => ((held.destroyed = true), children.forEach((c) => c.destroy?.())),
     });
     return self;
   };
@@ -262,10 +275,11 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
 
   const shown = () => texts.filter((t) => !t.destroyed).map((t) => t.content);
   /** A pointer at logical (x, y): Phaser's `pointer.x/y` are backing px, so × the render scale. */
-  const pointer = (x: number, y: number, button = 0) => ({
+  const pointer = (x: number, y: number, button = 0, event?: PressKeys) => ({
     x: x * renderScale,
     y: y * renderScale,
     button,
+    event,
   });
   /**
    * What Phaser lists under the pointer at (x, y), top first (`topOnly`): the last-made live
@@ -281,6 +295,9 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     input.emit("pointermove", pointer(x, y), over);
   const press = (x: number, y: number, button: number, over: unknown[] = under(x, y)) =>
     input.emit("pointerdown", pointer(x, y, button), over);
+  /** A press with modifier keys held, as the press's own DOM event carries them (FS-KBA4Q R1). */
+  const pressWith = (keys: PressKeys, x: number, y: number, button = 0, over: unknown[] = under(x, y)) =>
+    input.emit("pointerdown", pointer(x, y, button, keys), over);
   const wheel = (x: number, y: number, dy: number, over: unknown[] = under(x, y)) =>
     input.emit("wheel", pointer(x, y), over, 0, dy);
   /** One game step: the scene's update, after the keyboard has handed its keys their events. */
@@ -307,6 +324,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     depths,
     move,
     press,
+    pressWith,
     wheel,
     frame,
     shift,
@@ -314,6 +332,8 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     keys: keys.keys,
     captured: keys.captured,
     made,
+    /** Where the tips showing now stand. */
+    tipPlaces: () => holders.filter((h) => !h.destroyed && h.depth === TIP_DEPTH).map(({ x, y }) => ({ x, y })),
   };
 }
 
@@ -1429,12 +1449,12 @@ describe("GearOverlay compare (FS-NV54P)", () => {
     );
   });
 
-  it("should hint at Shift: compare between the gesture and the close part (R24)", () => {
+  it("should hint at Shift: compare between the gesture and the link part, the close part last (R24; FS-KBA4Q R8)", () => {
     expect(GEAR_HINT).toBe(
-      "Right-click or E: wear or take off  //  Shift: compare  //  I, B or Esc: close",
+      "Right-click or E: wear or take off  //  Shift: compare  //  Ctrl+Alt+click: link in chat  //  I, B or Esc: close",
     );
     expect(STASH_HINT).toBe(
-      "Right-click or E: move between bag and stash, or take off  //  Shift: compare  //  I, B or Esc: close",
+      "Right-click or E: move between bag and stash, or take off  //  Shift: compare  //  Ctrl+Alt+click: link in chat  //  I, B or Esc: close",
     );
     expect(overlayOnStage().shown()).toContain(GEAR_HINT);
   });
@@ -2028,5 +2048,206 @@ describe("GearOverlay's grounds and its own top object (FS-3EBCA R8; FS-TQZ5J §
     expect(env.overlay.isInventoryOpen()).toBe(true);
     env.press(box.x + box.w / 2, box.y + box.h / 2, 0);
     expect(env.overlay.isInventoryOpen()).toBe(false);
+  });
+});
+
+describe("GearOverlay link press (FS-KBA4Q §A R1–R6)", () => {
+  function linking(bag: ItemState[] = [sword, axe], gear: EquippedItems = worn({ head: helm })) {
+    const s = overlayOnStage(bag, gear);
+    const onLink = vi.fn();
+    s.overlay.onLink = onLink;
+    return { ...s, onLink };
+  }
+
+  it.each([
+    ["Ctrl+Alt", CTRL_ALT],
+    ["Meta+Alt", META_ALT],
+    ["Ctrl+Alt+Shift", { ...CTRL_ALT, shiftKey: true }],
+    ["Ctrl+Meta+Alt", { ...CTRL_ALT, metaKey: true }],
+  ])("should link the bag item under a %s left-press, and wear nothing (R1, R5)", (_name, keys) => {
+    const { pressWith, cell, onLink, onEquip, onUnequip, overlay } = linking();
+    pressWith(keys, ...cell(1));
+    expect(onLink).toHaveBeenCalledTimes(1);
+    expect(onLink).toHaveBeenCalledWith(axe);
+    expect(onEquip).not.toHaveBeenCalled();
+    expect(onUnequip).not.toHaveBeenCalled();
+    expect(overlay.isInventoryOpen()).toBe(true);
+  });
+
+  it("should link a worn item and take nothing off (R2, R5)", () => {
+    const { pressWith, slot, onLink, onUnequip } = linking();
+    pressWith(CTRL_ALT, ...slot("head"));
+    expect(onLink).toHaveBeenCalledWith(helm);
+    expect(onUnequip).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Ctrl alone", { ctrlKey: true }],
+    ["Alt alone", { altKey: true }],
+    ["Meta alone", { metaKey: true }],
+    ["Ctrl+Meta", { ctrlKey: true, metaKey: true }],
+    ["Shift alone", { shiftKey: true }],
+    ["nothing", {}],
+  ])("should link nothing on a left-press with %s held: a plain left-press still does nothing (R5)", (_name, keys) => {
+    const { pressWith, press, cell, onLink, onEquip } = linking();
+    pressWith(keys, ...cell(0));
+    press(...cell(0), 0);
+    expect(onLink).not.toHaveBeenCalled();
+    expect(onEquip).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Ctrl+Alt", CTRL_ALT],
+    ["Meta+Alt", META_ALT],
+  ])("should neither link nor wear or take off on a right-press with %s held (R6)", (_name, keys) => {
+    const { pressWith, cell, slot, onLink, onEquip, onUnequip } = linking();
+    pressWith(keys, ...cell(0), 2);
+    pressWith(keys, ...slot("head"), 2);
+    expect(onLink).not.toHaveBeenCalled();
+    expect(onEquip).not.toHaveBeenCalled();
+    expect(onUnequip).not.toHaveBeenCalled();
+  });
+
+  it("should still wear on a plain right-press and on one with only Ctrl held", () => {
+    const { pressWith, press, cell, onEquip, onLink } = linking();
+    pressWith({ ctrlKey: true }, ...cell(0), 2);
+    expect(onEquip).toHaveBeenCalledTimes(1);
+    press(...cell(0), 2);
+    expect(onEquip).toHaveBeenCalledTimes(2);
+    expect(onLink).not.toHaveBeenCalled();
+  });
+
+  it("should do nothing on a link press on an empty cell, an empty slot or the panel's ground (R5)", () => {
+    const { pressWith, cell, slot, onLink, overlay } = linking([sword]);
+    const right = overlayLayout(1080, 720).right;
+    const empty = gearPanelLayout(right, 1).cells[5].rect;
+    pressWith(CTRL_ALT, empty.x + empty.w / 2, empty.y + empty.h / 2);
+    pressWith(CTRL_ALT, ...slot("weapon"));
+    pressWith(CTRL_ALT, right.x + 3, right.y + right.h - 3);
+    expect(onLink).not.toHaveBeenCalled();
+    expect(overlay.isInventoryOpen()).toBe(true);
+    // and the item beside them still links
+    pressWith(CTRL_ALT, ...cell(0));
+    expect(onLink).toHaveBeenCalledWith(sword);
+  });
+
+  it("should close nothing on a link press on the ×, which a plain left-press still closes (R5)", () => {
+    const { pressWith, press, onLink, overlay } = linking();
+    const box = panelClose(overlayLayout(1080, 720).right);
+    pressWith(CTRL_ALT, box.x + box.w / 2, box.y + box.h / 2);
+    pressWith(META_ALT, box.x + box.w / 2, box.y + box.h / 2);
+    expect(overlay.isInventoryOpen()).toBe(true);
+    expect(onLink).not.toHaveBeenCalled();
+    press(box.x + box.w / 2, box.y + box.h / 2, 0);
+    expect(overlay.isInventoryOpen()).toBe(false);
+  });
+
+  it("should not link an item under another UI piece drawn over the overlay", () => {
+    const { pressWith, cell, onLink } = linking();
+    pressWith(CTRL_ALT, ...cell(0), 0, [{}]);
+    expect(onLink).not.toHaveBeenCalled();
+  });
+
+  it("should link while a status line holds the bag's changes, and a dimmed item like any other (R2)", () => {
+    const listed = item("listed", { weapon_type: "sword", status: "LISTED" } as Partial<ItemState>);
+    const { pressWith, cell, onLink, overlay } = linking([listed]);
+    overlay.setStatus("Saving…");
+    pressWith(CTRL_ALT, ...cell(0));
+    expect(onLink).toHaveBeenCalledWith(listed);
+  });
+
+  it("should link a stash item and a bag item in stash mode, and move neither (R2, R5)", () => {
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    const onLink = vi.fn();
+    const onMove = vi.fn();
+    overlay.onLink = onLink;
+    overlay.onMove = onMove;
+    overlay.openStash();
+    overlay.updateInventory([sword]);
+    overlay.updateEquipment(worn());
+    overlay.updateStash([axe]);
+    const { left, right } = overlayLayout(1080, 720);
+    const stashed = stashPanelLayout(left, 1, 0).cells[0].rect;
+    const bagged = gearPanelLayout(right, 1).cells[0].rect;
+    s.pressWith(META_ALT, stashed.x + stashed.w / 2, stashed.y + stashed.h / 2);
+    s.pressWith(CTRL_ALT, bagged.x + bagged.w / 2, bagged.y + bagged.h / 2);
+    expect(onLink.mock.calls).toEqual([[axe], [sword]]);
+    expect(onMove).not.toHaveBeenCalled();
+    // with the modifiers held the right button moves nothing either (R6)
+    s.pressWith(CTRL_ALT, stashed.x + stashed.w / 2, stashed.y + stashed.h / 2, 2);
+    expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+// FS-KBA4Q review (round 1): the chat's text field is a browser element, above every canvas tip, and it
+// stays shown with the gear open, so the overlay's tips keep clear of where the UI scene says it stands
+/** The item tips' band, above every panel. */
+const TIP_DEPTH = 2200;
+
+describe("GearOverlay tips keeping clear of the chat's shown text field", () => {
+  const tipOf = (item: ItemState, caption?: string) => {
+    const { width, height } = buildItemTip(recordingScene().scene, itemView(item), caption ? { caption } : {});
+    return { width, height };
+  };
+  /** A place the tip row at `at` would lie over: across its foot. */
+  const across = (at: { x: number; y: number }, size: { height: number }) => ({
+    x: at.x + 10,
+    y: at.y + size.height - 20,
+    width: 100,
+    height: 30,
+  });
+
+  it("should stand an item tip beside the pointer with no place to keep clear of, and clear of one it is told", () => {
+    const s = overlayOnStage([sword]);
+    const [x, y] = s.cell(0);
+    const size = tipOf(sword);
+    s.move(x, y);
+    const [beside] = itemTipRow([size], { x, y }, viewport);
+    expect(s.tipPlaces()).toEqual([beside]);
+
+    const field = across(beside, size);
+    s.overlay.tipsAvoid = () => field;
+    s.move(x + 1, y);
+
+    const [clear] = itemTipRow([size], { x: x + 1, y }, viewport, field);
+    expect(s.tipPlaces()).toEqual([clear]);
+    expect(clear.y + size.height).toBeLessThanOrEqual(field.y);
+  });
+
+  it("should stand the tip beside the pointer again once the field is hidden", () => {
+    const s = overlayOnStage([sword]);
+    const [x, y] = s.cell(0);
+    const size = tipOf(sword);
+    const [beside] = itemTipRow([size], { x, y }, viewport);
+    let field: ReturnType<typeof across> | null = across(beside, size);
+    s.overlay.tipsAvoid = () => field;
+    s.move(x, y);
+    expect(s.tipPlaces()).not.toEqual([beside]);
+
+    field = null;
+    s.move(x, y);
+
+    expect(s.tipPlaces()).toEqual([beside]);
+  });
+
+  it("should keep the whole compare row clear of it", () => {
+    const s = overlayOnStage([sword], worn({ weapon: axe }));
+    const [x, y] = s.cell(0);
+    s.shift(true);
+    s.frame();
+    s.move(x, y);
+    const unmoved = s.tipPlaces();
+    expect(unmoved).toHaveLength(2);
+    const field = { x: unmoved[1].x + 10, y: unmoved[1].y + 20, width: 60, height: 30 };
+    s.overlay.tipsAvoid = () => field;
+
+    s.move(x + 1, y);
+
+    const row = s.tipPlaces();
+    expect(row).toHaveLength(2);
+    expect(row[0].y).toBe(row[1].y);
+    // raised whole, above the place
+    expect(row[0].y).toBeLessThan(unmoved[0].y);
   });
 });

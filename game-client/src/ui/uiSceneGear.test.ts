@@ -61,6 +61,9 @@ function onSlot() {
   const containers: BuiltContainer[] = [];
   const wirings: GearWiring[] = [];
   const opened: string[] = [];
+  const linked: string[] = [];
+  /** Where the UI scene's chat shows its text field now; null while hidden. */
+  const field: { at: { x: number; y: number; width: number; height: number } | null } = { at: null };
   const slot = new UiGearSlot(bridge, (world, wiring) => {
     wirings.push(wiring);
     const gear: BuiltGear = {
@@ -141,15 +144,38 @@ function onSlot() {
     };
     containers.push(container);
     return { gear, container };
-  }, undefined, () => void opened.push("opened"));
+  }, undefined, () => void opened.push("opened"), (item) => void linked.push(item.name), () => field.at);
   const enter = (world: World, blockers: Partial<WorldBlockers> = {}) => {
     const w = aWorld(world, blockers);
     bridge.report(w.report);
     slot.show(w.report);
     return w;
   };
-  return { bridge, slot, gears, containers, wirings, enter, opened };
+  return { bridge, slot, gears, containers, wirings, enter, opened, linked, field };
 }
+
+// FS-KBA4Q review (round 1): the overlay's tips keep clear of the chat's text field, which the UI scene knows
+describe("the gear slot's place for tips to keep clear of, read from the UI scene (FS-KBA4Q)", () => {
+  it.each(["hub", "field", "run"] as const)("should let the %s's gear read where the chat's text field is shown, as it is now", (world) => {
+    const { enter, wirings, field } = onSlot();
+    enter(world);
+    expect(wirings[0].tipsAvoid()).toBeNull();
+    field.at = { x: 109, y: 665, width: 232, height: 30 };
+    expect(wirings[0].tipsAvoid()).toEqual({ x: 109, y: 665, width: 232, height: 30 });
+  });
+});
+
+// FS-KBA4Q §A (I-KBA4Q-6): a link press on the overlay is told to the UI scene, which hands it to the chat
+describe("the gear slot's link press, told to the UI scene (FS-KBA4Q R1–R3)", () => {
+  const blade = { entity_id: "e-1", name: "Rusty Blade" } as ItemState;
+
+  it.each(["hub", "field", "run"] as const)("should hand the %s's gear a link that reaches the UI scene", (world) => {
+    const { enter, wirings, linked } = onSlot();
+    enter(world);
+    wirings[0].link(blade);
+    expect(linked).toEqual(["Rusty Blade"]);
+  });
+});
 
 // FS-8RZ51 R36 (I-8RZ51-7): a gear panel opening closes the passive tree, told through `opened`
 describe("the gear slot's opening, told to the UI scene (FS-8RZ51 R36)", () => {

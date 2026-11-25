@@ -16,6 +16,7 @@ import {
   stashPanelLayout,
   statsPanelArea,
 } from "./gearOverlayLayout";
+import { GEAR_HINT, STASH_HINT } from "./GearOverlay";
 import { STASH_CAPACITY } from "./stash";
 import { CORNER_ICONS, CORNER_ROW_CLEARANCE, cornerIconFrame } from "./hudCornerLayout";
 
@@ -204,6 +205,41 @@ describe("the hint line (FS-NV54P R25: the longer hint stays inside the right pa
       expect(g.visibleRows).toBeGreaterThan(0);
     },
   );
+});
+
+describe("the hint line with the link press in it (FS-KBA4Q R8: inside its 40 px band)", () => {
+  // Phaser measures the words on a canvas, which a test has none of: each character is counted at
+  // half the 10px size, wider than the body face sets its mix of letters and spaces, and wrapped
+  // at the spaces as Phaser wraps, a line about 12px tall (~1.2em)
+  const CHAR_W = 5;
+  const LINE_H = 12;
+  const linesAt = (hint: string, width: number) => {
+    let lines = 1;
+    let used = 0;
+    for (const word of hint.split(" ")) {
+      const w = word.length * CHAR_W;
+      if (used > 0 && used + CHAR_W + w > width) {
+        lines++;
+        used = w;
+      } else used += (used > 0 ? CHAR_W : 0) + w;
+    }
+    return lines;
+  };
+
+  it.each([
+    [1080, 720],
+    [1280, 720],
+    [1280, 800],
+  ])("should fit both hints in the band under the purse line and the grid at %ix%i", (w, h) => {
+    const { right } = overlayLayout(w, h);
+    const g = gearPanelLayout(right, BAG_CAPACITY);
+    for (const hint of [GEAR_HINT, STASH_HINT]) {
+      // drawn 4px into the band, growing downwards: never up into the purse line or the grid
+      expect(4 + linesAt(hint, g.innerW) * LINE_H).toBeLessThanOrEqual(HINT_H);
+    }
+    expect(g.purse.y + g.purse.h).toBeLessThanOrEqual(g.hintY);
+    expect(Math.max(...g.cells.map((c) => c.rect.y + c.rect.h))).toBeLessThanOrEqual(g.hintY);
+  });
 });
 
 describe("the purse line (FS-7TGZ3 §A R1: under the bag grid, above the hint)", () => {
@@ -509,6 +545,89 @@ describe("itemTipRow (FS-NV54P §D R17–19: the item tip and its worn tips in o
         }
     },
   );
+});
+
+// FS-KBA4Q review (round 1): the chat's text field is a browser element, drawn above every canvas tip,
+// so a tip that would lie over it is placed clear of it.
+describe("itemTipRow keeping clear of a place it may not cover (the chat's shown text field)", () => {
+  const tip = (width: number, height = 120) => ({ width, height });
+  const screen = { width: 1080, height: 720 };
+  /** The field about where the chat window puts it: bottom left. */
+  const field = { x: 84, y: 669, width: 330, height: 30 };
+  const apart = (at: { x: number; y: number }, t: { width: number; height: number }, r = field) =>
+    at.x + t.width <= r.x || at.x >= r.x + r.width || at.y + t.height <= r.y || at.y >= r.y + r.height;
+
+  it("should place a row that does not reach the place exactly as with none", () => {
+    const tips = [tip(280), tip(280)];
+    for (const pointer of [{ x: 300, y: 200 }, { x: 700, y: 640 }, { x: 100, y: 500 }])
+      expect(itemTipRow(tips, pointer, screen, field)).toEqual(itemTipRow(tips, pointer, screen));
+  });
+
+  it("should take no place and a null place alike", () => {
+    const pointer = { x: 200, y: 600 };
+    expect(itemTipRow([tip(280)], pointer, screen, null)).toEqual(itemTipRow([tip(280)], pointer, screen));
+  });
+
+  it("should raise a row that would lie over the place until its bottom stands just above it, its side kept", () => {
+    // beside the pointer it would stand at y 590–710, over the field's 669–699
+    const [at] = itemTipRow([tip(280)], { x: 200, y: 600 }, screen, field);
+
+    expect(at).toEqual({ x: 214, y: 669 - 4 - 120 });
+  });
+
+  it("should raise a row already risen above the pointer that still reaches the place", () => {
+    // the pointer below the field: flipped above the pointer the row would stand at y 582–702
+    const [at] = itemTipRow([tip(280)], { x: 200, y: 710 }, screen, field);
+
+    expect(at).toEqual({ x: 214, y: 545 });
+  });
+
+  it("should raise the whole row by its tallest tip, tops aligned", () => {
+    const tips = [tip(280, 150), tip(280, 300)];
+    const at = itemTipRow(tips, { x: 120, y: 400 }, screen, field);
+
+    expect(at.map((p) => p.y)).toEqual([365, 365]);
+    at.forEach((p, i) => expect(apart(p, tips[i])).toBe(true));
+  });
+
+  it("should move a row too tall to stand above the place to its right, where there is room", () => {
+    const tall = tip(280, 680);
+    const [at] = itemTipRow([tall], { x: 200, y: 400 }, screen, field);
+
+    expect(at).toEqual({ x: 84 + 330 + 4, y: 4 });
+    expect(apart(at, tall)).toBe(true);
+  });
+
+  it("should move it to the place's left where only the left has room", () => {
+    const right = { x: 700, y: 669, width: 330, height: 30 };
+    const tall = tip(280, 680);
+    const [at] = itemTipRow([tall], { x: 600, y: 400 }, screen, right);
+
+    expect(at).toEqual({ x: 700 - 4 - 280, y: 4 });
+    expect(apart(at, tall, right)).toBe(true);
+  });
+
+  it("should leave a row where it stood when it fits neither above the place nor beside it", () => {
+    const tips = [tip(280, 680), tip(280, 680), tip(280, 680)];
+    const pointer = { x: 200, y: 400 };
+
+    expect(itemTipRow(tips, pointer, screen, field)).toEqual(itemTipRow(tips, pointer, screen));
+  });
+
+  it("should keep every row that can stand above the place clear of it and on the screen, wherever the pointer is", () => {
+    const tips = [tip(280, 150), tip(280, 320)];
+    for (let px = 0; px <= screen.width; px += 45)
+      for (let py = 0; py <= screen.height; py += 30) {
+        const at = itemTipRow(tips, { x: px, y: py }, screen, field);
+        at.forEach((p, i) => {
+          expect(apart(p, tips[i])).toBe(true);
+          expect(p.x).toBeGreaterThanOrEqual(0);
+          expect(p.x + tips[i].width).toBeLessThanOrEqual(screen.width);
+          expect(p.y).toBeGreaterThanOrEqual(0);
+          expect(p.y + tips[i].height).toBeLessThanOrEqual(screen.height);
+        });
+      }
+  });
 });
 
 describe("listedMark (FS-GTNP8 §C R5–R7: a corner triangle in a listed item's well)", () => {

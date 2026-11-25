@@ -22,10 +22,13 @@ import type { StoreApi } from "zustand";
 import type { ChatChannel } from "@/stores/chatStore";
 import { visibleChatLines, type ChatState } from "@/stores/chatStore";
 import type { UiEffect } from "@/audio/uiSounds";
+import type { ItemState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { ChatInput, type ChatSend } from "./chatInput";
 import type { ChatInputFieldFactory, ChatInputFieldHandle } from "./chatInputField";
+import { snapshotItemView, type ItemSnapshot } from "@/chat/itemLinks";
+import { isLinkPress, type PressedPointer } from "./linkPress";
 import {
   CHAT_CHANNEL_COLOUR,
   CHAT_DIVIDER_INSET_FOOT,
@@ -41,7 +44,12 @@ import {
   CHAT_SCROLL_GRAB,
   CHAT_SCROLL_W,
   CHAT_TAB_PAD,
+  CHAT_TAG_GROUND_ALPHA,
+  CHAT_TAG_INSET_Y,
+  CHAT_TAG_PAD_Y,
+  CHAT_TAG_PAD,
   chatEntryColour,
+  chatEntrySegments,
   chatFieldRect,
   chatFoldButton,
   chatPickerList,
@@ -51,15 +59,20 @@ import {
   chatScrollThumb,
   chatScrollTrack,
   chatTabSegments,
+  chatTagColour,
   chatWindowFrame,
   formatChatEntry,
   rowTextY,
   scrolledOffset,
   visibleEntries,
+  wrapChatSegments,
   wrapChatText,
+  type ChatSegment,
   type ChatWindowFrame,
   type Rect,
 } from "./chatWindowLayout";
+import { itemTipRow } from "./gearOverlayLayout";
+import { buildItemTip, type ItemTip } from "./itemTip";
 import {
   fillMaskArea,
   maskInView,
@@ -81,6 +94,12 @@ export interface ChatWindowOptions {
   typing?: (on: boolean) => void;
 }
 
+/** A link tag as it is drawn now (FS-KBA4Q R32): the item it shows, and its ground on the screen in logical units. */
+export interface ChatTagHit {
+  item: ItemSnapshot;
+  rect: Rect;
+}
+
 /** What Phaser lists under the pointer for a scene-wide event (`currentlyOver`, top-most first). */
 type Over = readonly unknown[] | undefined;
 
@@ -98,6 +117,8 @@ export interface ChatWindowInput {
 }
 
 const HUD_DEPTH = 1000;
+/** A hovered link tag's item tip (FS-KBA4Q R37): the depth every canvas item tip stands at, above every panel. */
+const TIP_DEPTH = 2200;
 const FONT_PX = 14;
 const FOLD_FONT_PX = 17;
 /** Folded, the ▴ is a small triangle in the body face and reads smaller than ▾: drawn a size up. */
@@ -116,6 +137,8 @@ const ROW_CLOSED_ALPHA = TAB_OFF_ALPHA;
 /** The label's inset from the picker's left edge, and the ▾'s from its divider. */
 const PICKER_LABEL_INSET = 4;
 const PICKER_ARROW_INSET = 8;
+/** Words whose drawn height is one row's: a text's height is its font's, whatever it says. */
+const ROW_PROBE = "Mg";
 
 /** How much of the carved panel's ground covers the world behind it. */
 /**
@@ -186,6 +209,22 @@ export class ChatWindow {
    */
   private lineLayer?: Phaser.GameObjects.Layer;
   private lineTexts: Phaser.GameObjects.Text[] = [];
+  /** Each link tag drawn now (FS-KBA4Q R32), for `linkTagAt`. */
+  private tagHits: ChatTagHit[] = [];
+  /** The words top of the first row of the linked line drawn last (`drawLinkedLine`). */
+  private linkedWordsTop = 0;
+  /** The link tags' grounds and borders, in the line layer under the words; made with the first tag. */
+  private tagGrounds?: Phaser.GameObjects.Graphics;
+  /** Measures a linked line's words for its wrap, as a plain line's own text measures its own; made with the first tag. */
+  private ruler?: Phaser.GameObjects.Text;
+  /** The hovered link tag's item and its tip (FS-KBA4Q R37); none while no tag is hovered. */
+  private tagTip?: { item: ItemSnapshot; tip: ItemTip };
+  /**
+   * Where the pointer last was, in logical units, while the window was free under it (R130); null
+   * once a UI piece covers it there, it leaves the game, or before it ever moved. What a redraw
+   * re-reads the hovered tag from, since the lines move under a still pointer.
+   */
+  private hoverPoint: { x: number; y: number } | null = null;
   /** Each drawn line's clickable name, where it is drawn now (FS-KCQ06 C15). */
   private nameHits: { name: string; rect: Rect }[] = [];
   /** The name the pointer went down on, if it did; the release on it is the click. */
@@ -259,6 +298,8 @@ export class ChatWindow {
     scene.events.on("postupdate", this.watchKeys, this);
     scene.input.on("pointermove", this.onDrag, this);
     scene.input.on("pointerup", this.onRelease, this);
+    scene.input.on("gameout", this.onPointerOut, this);
+    scene.events.on("postupdate", this.watchTagTip, this);
     if (options.input) this.buildInput(options.input);
     this.drawInputRow();
   }
@@ -287,6 +328,38 @@ export class ChatWindow {
     return own && this.holds(x, y) && this.isTyping();
   }
 
+  /**
+   * An item linked from the gear overlay (FS-KBA4Q R3): the input writes its token at the caret, holds
+   * its snapshot and takes the focus, opening if it was closed; it does nothing where chat may not open
+   * (R7). No input, or the window gone, nothing.
+   */
+  link(item: ItemState): void {
+    if (this.destroyed) return;
+    this.input?.link(item);
+  }
+
+  /**
+   * The link tag drawn under a point in logical units, if any (FS-KBA4Q R32): the item it shows and
+   * where its ground sits. Only inside the message area, as a name: a tag cut off above it lies
+   * under the tabs. None under the open channel list, which is drawn over the lines there. A tag
+   * takes no click (R39); this is what a hover reads (R37).
+   */
+  linkTagAt(x: number, y: number): ChatTagHit | null {
+    if (!within(this.frame.messages, x, y)) return null;
+    if (this.listGround && within(chatPickerList(this.frame).box, x, y)) return null;
+    return this.tagHits.find((hit) => within(hit.rect, x, y)) ?? null;
+  }
+
+  /**
+   * Where the text field stands while its row is shown, in logical units; null while it is hidden
+   * or the window has none. The field is a browser element, drawn above everything on the canvas,
+   * so an item tip is placed clear of it (FS-KBA4Q): the window's own, and the gear overlay's
+   * through the UI scene.
+   */
+  fieldRow(): Rect | null {
+    return this.field && this.rowShown ? this.fieldRect() : null;
+  }
+
   /** Whether the player is typing in the input right now. */
   isTyping(): boolean {
     return this.input?.isOpen() ?? false;
@@ -312,7 +385,11 @@ export class ChatWindow {
     this.scene.input?.off("pointerdown", this.onPress, this);
     this.scene.input?.off("pointermove", this.onDrag, this);
     this.scene.input?.off("pointerup", this.onRelease, this);
+    this.scene.input?.off("gameout", this.onPointerOut, this);
     this.scene.events?.off("postupdate", this.watchKeys, this);
+    this.scene.events?.off("postupdate", this.watchTagTip, this);
+    this.hoverPoint = null;
+    this.hideTagTip();
     this.scene.input?.keyboard?.off("keydown-ENTER", this.onEnter, this);
     this.stopRelayout?.();
     this.input?.cancel();
@@ -330,6 +407,9 @@ export class ChatWindow {
     this.panel?.destroy();
     this.scrollbar?.destroy();
     this.scrollbar = undefined;
+    this.tagGrounds?.destroy();
+    this.ruler?.destroy();
+    this.tagGrounds = this.ruler = undefined;
     this.lineLayer?.destroy();
     this.maskShape?.destroy();
     this.foldText = this.panel = this.maskShape = this.lineLayer = undefined;
@@ -414,6 +494,8 @@ export class ChatWindow {
       open: typing.open,
       play: (effect) => this.play(effect),
       changed: () => this.inputChanged(),
+      // a refused link press is a system line in the stream (FS-KBA4Q R11, R12)
+      notice: (notice) => this.store.getState().notice(notice),
       recall: {
         lines: () => this.store.getState().sent,
         remember: (line) => this.store.getState().rememberSent(line),
@@ -484,14 +566,15 @@ export class ChatWindow {
    * player plays on at once; one on the panel, a tab or the fold button, keeps them typing. The
    * browser will not move focus itself, since Phaser prevents a canvas mousedown's default.
    */
-  private onPress(pointer: { x: number; y: number }, over?: Over): void {
+  private onPress(pointer: { x: number; y: number } & PressedPointer, over?: Over): void {
     this.pressedName = null;
     // Phaser's pointer.x/y are backing px; the window is laid out in logical units (FS-ZAJMH R15)
     const at = viewport.toLogical(pointer);
     // a press on a UI piece drawn over the window is that piece's: nothing here is grabbed or named
     // (FS-TQZ5J § Change: Batch 6, R130), and the field lets go (A1 R26)
     if (!this.freeUnder(over)) {
-      if (this.input?.isOpen()) this.field?.blur();
+      // but for a link press (FS-KBA4Q R4): the gear overlay answers it, and typing goes on
+      if (this.input?.isOpen() && !isLinkPress(pointer)) this.field?.blur();
       return;
     }
     if (this.pressPicker(at)) return;
@@ -577,6 +660,59 @@ export class ChatWindow {
     const row = free ? this.listRowAt(at.x, at.y) : null;
     if (row) this.input?.hover(row);
     this.hoverAt(at, row, free);
+    this.hoverPoint = free ? at : null;
+    this.syncTagTip();
+  }
+
+  /**
+   * The item tip of the link tag under the pointer (FS-KBA4Q R37, R38): the bag's tip for the
+   * tag's snapshot, beside the pointer and inside the view, above every panel. Made as the pointer
+   * comes onto a tag, moved with it along the tag, and gone once no tag is under it: it left the
+   * tag, the lines were drawn again without the tag there (a scroll, a new line, a filter, a
+   * fold), or a UI piece covers the window there. A tag takes no click and no compare (R39).
+   */
+  private syncTagTip(): void {
+    const at = this.hoverPoint;
+    const hit = at && this.linkTagAt(at.x, at.y);
+    if (!at || !hit) {
+      this.hideTagTip();
+      return;
+    }
+    if (this.tagTip?.item !== hit.item) {
+      this.hideTagTip();
+      const tip = buildItemTip(this.scene, snapshotItemView(hit.item));
+      tip.container.setDepth(TIP_DEPTH).setScrollFactor(0);
+      this.tagTip = { item: hit.item, tip };
+    }
+    // the pointer is in logical units, so the screen the tip stays on is the logical view (FS-ZAJMH R15)
+    // and clear of the shown text field, which would show through it
+    const [place] = itemTipRow([this.tagTip.tip], at, viewport, this.fieldRow());
+    this.tagTip.tip.container.setPosition(place.x, place.y);
+  }
+
+  private hideTagTip(): void {
+    this.tagTip?.tip.container.destroy();
+    this.tagTip = undefined;
+  }
+
+  /** The pointer left the game: nothing is hovered until it moves over the window again. */
+  private onPointerOut(): void {
+    this.hoverPoint = null;
+    this.hideTagTip();
+  }
+
+  /**
+   * Once a frame while a tip shows: a UI piece that came over the tag under a still pointer (a
+   * panel opened by its key) takes the tip, though no pointer event says so (R37, FS-TQZ5J R130).
+   * Phaser lists what is under the pointer only as it moves, so the window asks it here.
+   */
+  private watchTagTip(): void {
+    if (!this.tagTip) return;
+    const input = this.scene.input;
+    const pointer = input.activePointer;
+    if (this.freeUnder(input.sortGameObjects(input.hitTestPointer(pointer), pointer))) return;
+    this.hoverPoint = null;
+    this.hideTagTip();
   }
 
   /**
@@ -872,8 +1008,14 @@ export class ChatWindow {
     }
   }
 
-  /** The lines in view, laid bottom-up from the message area's foot so a wrapped line pushes the older ones up. */
+  /** The lines drawn again, and the hovered tag's tip with them: it stays, changes or goes as the lines moved under a still pointer (FS-KBA4Q R37). */
   private drawLines(): void {
+    this.layLines();
+    this.syncTagTip();
+  }
+
+  /** The lines in view, laid bottom-up from the message area's foot so a wrapped line pushes the older ones up. */
+  private layLines(): void {
     this.clearLines();
     this.drawScrollbar();
     // above what the scene drew at HUD depth since, as when every redraw made its lines anew
@@ -889,28 +1031,11 @@ export class ChatWindow {
     let y = m.y + m.height - CHAT_LINES_GAP;
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i];
-      const t = this.scene.add
-        .text(m.x + CHAT_PAD, 0, formatChatEntry(entry, self), {
-          ...lineStyle(chatEntryColour(entry)),
-          // fill each line before breaking: Phaser's own wrap breaks only at spaces, so a Chinese
-          // sentence after "Name: " would jump whole to the next line
-          // clear of the scrollbar at the right edge
-          wordWrap: {
-            width: m.width - CHAT_PAD * 2 - CHAT_SCROLL_W,
-            callback: (text: string, self: Phaser.GameObjects.Text) =>
-              wrapChatText(
-                text,
-                m.width - CHAT_PAD * 2 - CHAT_SCROLL_W,
-                (part) => self.context.measureText(part).width,
-              ),
-          },
-        })
-        .setScrollFactor(0)
-        .setDepth(HUD_DEPTH);
-      y -= t.height;
-      t.setPosition(m.x + CHAT_PAD, y);
-      this.lineLayer?.add(t);
-      this.lineTexts.unshift(t);
+      const segments = chatEntrySegments(entry, self);
+      y = segments
+        ? this.drawLinkedLine(segments, chatEntryColour(entry), y)
+        : this.drawPlainLine(formatChatEntry(entry, self), chatEntryColour(entry), y);
+      const wordsTop = segments ? this.linkedWordsTop : y;
       // the name heads the line's first row, so its hit area is that row's, as wide as the name
       const span = chatNameSpan(
         entry,
@@ -922,13 +1047,125 @@ export class ChatWindow {
           name: span.name,
           rect: {
             x: m.x + CHAT_PAD + span.x,
-            y,
+            y: wordsTop,
             width: span.width,
             height: this.wordsSize(span.name).height,
           },
         });
       }
     }
+  }
+
+  /** How wide a line's words may run: the message area inside its padding, clear of the scrollbar at the right edge. */
+  private lineRoom(): number {
+    return this.frame.messages.width - CHAT_PAD * 2 - CHAT_SCROLL_W;
+  }
+
+  /** A line with no item link: one text, wrapped by its own callback, its foot at `foot`. Returns its top. */
+  private drawPlainLine(words: string, colour: number, foot: number): number {
+    const m = this.frame.messages;
+    const room = this.lineRoom();
+    const t = this.scene.add
+      .text(m.x + CHAT_PAD, 0, words, {
+        ...lineStyle(colour),
+        // fill each line before breaking: Phaser's own wrap breaks only at spaces, so a Chinese
+        // sentence after "Name: " would jump whole to the next line
+        wordWrap: {
+          width: room,
+          callback: (text: string, self: Phaser.GameObjects.Text) =>
+            wrapChatText(
+              text,
+              room,
+              (part) => self.context.measureText(part).width,
+            ),
+        },
+      })
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH);
+    const top = foot - t.height;
+    t.setPosition(m.x + CHAT_PAD, top);
+    this.lineLayer?.add(t);
+    this.lineTexts.unshift(t);
+    return top;
+  }
+
+  /**
+   * A line with item links (FS-KBA4Q R32–R35), its foot at `foot`: its rows laid out by
+   * `wrapChatSegments`, each stretch of words a text of its own in the line's colour, each link a
+   * tag: the item's name in brackets, in its rarity colour, on a faint ground of that hue.
+   * A row of words only is one plain row high; a row with a tag stands `CHAT_TAG_PAD_Y` taller
+   * above and below its words. Returns its top; the first row's words top is left in
+   * `linkedWordsTop` for the sender's name hit area.
+   */
+  private drawLinkedLine(
+    segments: readonly ChatSegment[],
+    colour: number,
+    foot: number,
+  ): number {
+    const left = this.frame.messages.x + CHAT_PAD;
+    const ruler = (this.ruler ??= this.scene.add
+      .text(0, 0, "", textStyle(palette.chatSystem))
+      .setVisible(false));
+    // whole units, so a tag's ground and border land on whole px beside its words
+    const rows = wrapChatSegments(segments, this.lineRoom(), (words) =>
+      Math.ceil(ruler.context.measureText(words).width),
+    );
+    const wordsH = this.wordsSize(ROW_PROBE).height;
+    const padY = (row: (typeof rows)[number]) =>
+      row.some((piece) => piece.kind !== "text") ? CHAT_TAG_PAD_Y : 0;
+    const top = rows.reduce((y, row) => y - wordsH - padY(row) * 2, foot);
+    let y = top;
+    this.linkedWordsTop = top + (rows.length > 0 ? padY(rows[0]) : 0);
+    for (const row of rows) {
+      const pad = padY(row);
+      const rowH = wordsH + pad * 2;
+      const wordsY = y + pad;
+      for (const piece of row) {
+        if (piece.kind === "text") {
+          this.addLineWords(left + piece.x, wordsY, piece.text, colour);
+          continue;
+        }
+        const hue = chatTagColour(piece.item);
+        const rect = {
+          x: left + piece.x,
+          y: y + CHAT_TAG_INSET_Y,
+          width: piece.width,
+          height: rowH - CHAT_TAG_INSET_Y * 2,
+        };
+        this.drawTagGround(rect, hue);
+        this.addLineWords(rect.x + CHAT_TAG_PAD, wordsY, piece.name, hue);
+        this.tagHits.push({ item: piece.item, rect });
+      }
+      y += rowH;
+    }
+    return top;
+  }
+
+  /** One row's stretch of words in a linked line, in the masked line layer. */
+  private addLineWords(x: number, y: number, words: string, colour: number): void {
+    const t = this.scene.add
+      .text(x, y, words, lineStyle(colour))
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH);
+    this.lineLayer?.add(t);
+    this.lineTexts.push(t);
+  }
+
+  /**
+   * A link tag's ground, no border (FS-KBA4Q R33, R34; owner tune), in the one graphics every tag
+   * shares. It sits in the line layer, so the message area clips it as it
+   * clips the words, a step under them in the layer's own order.
+   */
+  private drawTagGround(rect: Rect, hue: number): void {
+    if (!this.tagGrounds) {
+      this.tagGrounds = this.scene.add
+        .graphics()
+        .setScrollFactor(0)
+        .setDepth(HUD_DEPTH - 1);
+      this.lineLayer?.add(this.tagGrounds);
+    }
+    const { x, y, width, height } = rect;
+    this.tagGrounds.fillStyle(hue, CHAT_TAG_GROUND_ALPHA).fillRect(x, y, width, height);
   }
 
   /**
@@ -948,6 +1185,8 @@ export class ChatWindow {
     this.clearPicker();
     this.listPanel?.clear();
     this.groundList(open && !!input && !!field && this.rowShown);
+    // the list opened over a hovered tag, or shut off one, under a still pointer (FS-KBA4Q R37)
+    this.syncTagTip();
     if (!input || !field || !this.rowShown) return;
 
     const picker = chatPickerRect(this.frame);
@@ -1084,5 +1323,7 @@ export class ChatWindow {
     this.lineTexts.forEach((t) => t.destroy());
     this.lineTexts = [];
     this.nameHits = [];
+    this.tagHits = [];
+    this.tagGrounds?.clear();
   }
 }

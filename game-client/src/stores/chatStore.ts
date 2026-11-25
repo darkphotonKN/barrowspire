@@ -1,5 +1,6 @@
 import { createStore, type StoreApi } from "zustand";
 import type { KeyValueStore } from "@/characters/roster";
+import { readItemSnapshots, type ItemSnapshot } from "@/chat/itemLinks";
 
 /**
  * The chat stream the window draws from (FS-WJGFJ §C). It lives outside any scene, so walking
@@ -31,6 +32,12 @@ export interface ChatLinePayload {
   /** A whisper's target, as the presence index holds them; on whisper lines only (FS-KCQ06 R6). */
   target_id?: string;
   target_name?: string;
+  /**
+   * The line's item snapshots, one per item link, in the order their tokens stand in `text`
+   * (FS-KBA4Q R25); absent on a line with no links. Off the wire, so unread until the store
+   * holds the line (R31).
+   */
+  items?: unknown;
 }
 
 /** A system line about chat, on the `chat_notice` action (R7): a code to switch on, words to show. */
@@ -40,8 +47,22 @@ export interface ChatNoticePayload {
 }
 
 /** A player's line as the window holds it. */
-export interface ChatLine extends ChatLinePayload {
+export interface ChatLine extends Omit<ChatLinePayload, "items"> {
   kind: "line";
+  /** The item snapshots that could be read, in order; absent when there is none (FS-KBA4Q R31, R41). */
+  items?: readonly ItemSnapshot[];
+}
+
+/**
+ * A stamped line as the window holds it: its `items` read tolerantly, so a line is never dropped
+ * for them, and left out when none can be read, so a line without links is held as it always was
+ * (FS-KBA4Q R31).
+ */
+function heldLine({ items: raw, ...line }: ChatLinePayload): ChatLine {
+  const items = readItemSnapshots(raw);
+  return items.length > 0
+    ? { kind: "line", ...line, items }
+    : { kind: "line", ...line };
 }
 
 /** A system line as the window holds it: no sender, no time, never filtered (R29). */
@@ -51,7 +72,10 @@ export interface ChatSystemLine extends ChatNoticePayload {
 
 export type ChatEntry = ChatLine | ChatSystemLine;
 
-/** Whether a frame off the wire is a stamped line: the pod is trusted, a bad frame is not rendered. */
+/**
+ * Whether a frame off the wire is a stamped line: the pod is trusted, a bad frame is not rendered.
+ * Its `items` are not looked at here: whatever they are, the line is a line (FS-KBA4Q R31).
+ */
 export function isChatLine(payload: unknown): payload is ChatLinePayload {
   if (typeof payload !== "object" || payload === null) return false;
   const p = payload as Record<string, unknown>;
@@ -246,7 +270,7 @@ export function createChatStore(
               held.kind === "line" && held.message_id === line.message_id,
           );
           if (seen) return state;
-          return { lines: append(state.lines, { kind: "line", ...line }) };
+          return { lines: append(state.lines, heldLine(line)) };
         }),
       notice: (notice) =>
         set((state) => ({

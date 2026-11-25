@@ -125,7 +125,7 @@ translation belongs to the surface that renders words.
   the wallet on every open of the overlay and after a Take that carries gold; "—" when it could
   not be read. Not an item and takes no bag cell. (FS-7TGZ3)
 
-## Chat terms (FS-WJGFJ; world chat FS-5SH4G; party chat FS-XGW7H; whisper FS-KCQ06; mute and report FS-4HEG7)
+## Chat terms (FS-WJGFJ; world chat FS-5SH4G; party chat FS-XGW7H; whisper FS-KCQ06; mute and report FS-4HEG7; item links FS-KBA4Q)
 
 What the chat window says. Each maps to a game-service chat channel type on the wire; the
 protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) § Chat.
@@ -155,6 +155,21 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   name pre-fills `@name`. An offline target answers with one system line, and the whisper is gone.
 - **Recall** — ArrowUp and ArrowDown in the open input walk back and forth through the player's
   own last 50 sent lines, as a terminal's history; kept for the page's life only.
+- **Item link** — an item shown inside a chat line: a `[Name]` token in the line's text paired
+  with an **item snapshot** in the line's `items` (FS-KBA4Q). Pairing goes left to right, each
+  snapshot taking the first exact token after the pair before it; a token nothing pairs with is
+  ordinary text.
+- **Item snapshot** — the item's data as it stood when the line was sent. It names no owner, no
+  instance and no standing, so a link's tip never says where the item is now.
+- **Held link** — an item snapshot the chat input keeps beside the draft, one per link of an item,
+  in the order their tokens stand in the text, until the line is sent or the draft dropped. In the
+  text field the link is plain `[Name]`; edited inside its brackets it is ordinary text again.
+- **Link press** — a left-press with Ctrl+Alt or Meta+Alt held (Control+Option or Cmd+Option on a
+  Mac), on an item in the bag, a worn slot or the stash. It writes the item's link at the chat
+  input's caret, opening the input if it was closed, and wears, moves and closes nothing. It is the
+  one press on a UI piece that does not let go of the chat field.
+- **Link tag** — how the chat window draws an item link: the item's name alone, without the
+  brackets, in its rarity colour on a faint ground of the same hue. Never split across rows.
 - **Channel filter** — the row of tab-shaped toggles above the stream, any combination shown. A toggled-off channel is **hidden**,
   not muted: its lines keep arriving and reappear when toggled on.
 - **Mute** — hiding one player: their lines, on every channel, are received and not drawn. The

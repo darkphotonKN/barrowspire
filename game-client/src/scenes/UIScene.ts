@@ -44,6 +44,7 @@ import { UiMailboxSlot } from "@/ui/uiSceneMailbox";
 import { mountMailbox } from "@/ui/mailboxHud";
 import { hudPieces, mountHud } from "@/ui/hudPieces";
 import { UiChatSlot } from "@/ui/uiSceneChat";
+import { isLinkPress } from "@/ui/linkPress";
 import { mountChat } from "@/ui/chatPiece";
 import { LoreLines } from "@/ui/loreLine";
 import { mountLore } from "@/ui/uiSceneLore";
@@ -307,6 +308,8 @@ export class UIScene extends Phaser.Scene {
     /** Where the press being heard landed, logical units (FS-ZAJMH R15), and what Phaser listed under it. */
     let pressedAt = { x: -1, y: -1 };
     let pressedOver: readonly unknown[] = [];
+    /** Whether that press was a link press (FS-KBA4Q R1), read from its own event. */
+    let pressedToLink = false;
     const pointer = new UiScenePointer<Phaser.Input.Pointer>({
       cameras: () => this.cameras.cameras,
       anyDown: () => input.manager.pointers.some((p) => p.isDown),
@@ -319,7 +322,10 @@ export class UIScene extends Phaser.Scene {
       },
       // a press on the party panel keeps its invite field (§ Change: Phase 2: the party, R42), and one on
       // the chat window its own (§ Change: Batch 6, R131)
+      // and a link press lets go of no field: the gear overlay hands its item to the chat, which goes on
+      // being typed in (FS-KBA4Q R4, amending R26 and R131 for this one press)
       letGo: () => {
+        if (pressedToLink) return;
         if (this.party?.keepsField(pressedAt.x, pressedAt.y)) return;
         if (this.chat?.keepsField(pressedAt.x, pressedAt.y, pressedOver)) return;
         letGoOfGameField(this.game.canvas?.parentElement, document);
@@ -329,6 +335,7 @@ export class UIScene extends Phaser.Scene {
     input.on("pointerdown", (p: Phaser.Input.Pointer, over: unknown[]) => {
       pressedAt = viewport.toLogical(p);
       pressedOver = over;
+      pressedToLink = isLinkPress(p);
       pointer.pressed(p, over);
     });
     input.on("pointerup", () => pointer.released());
@@ -389,6 +396,10 @@ export class UIScene extends Phaser.Scene {
       gameplay,
       // a gear panel opening closes the passive tree (FS-8RZ51 R36)
       () => void tree.close(),
+      // a link press on an item of the overlay: the chat window takes it (FS-KBA4Q R3)
+      (item) => this.chat?.link(item),
+      // the overlay's tips keep clear of the chat's shown text field, a browser element above the canvas
+      () => this.chat?.fieldRow() ?? null,
     );
     // the passive tree for each world, fed the character the gear is, its opening closing the gear, its
     // points setting the corner icon's marker (FS-8RZ51 R32–R36, R41); it spends in town through its own

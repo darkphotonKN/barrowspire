@@ -447,3 +447,5 @@ only ever hears `move`.
 - Any new close key, or a change to the overlay's look, words, sounds or gestures.
 - Fields and runs: they have no stash (R43).
 - Mouse movement, attack, cast, potion and sprint: the town has none of them to hold.
+
+## Change: Item links in chat → FS-KBA4Q
