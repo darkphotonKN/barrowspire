@@ -785,6 +785,68 @@ export function parryClip(style, n) {
   });
 }
 
+// --- the roll ------------------------------------------------------------------------------
+
+/**
+ * A playable class's roll (FS-7P736 R15): 8 frames once at 20 fps, the server's 0.4 s (R3), keyed in
+ * place: the client carries the body along the roll and the clip turns it over, one whole forward turn
+ * about the hips, balled, from a push-off crouch to a crouch coming up. Its cloth is carried as fast as
+ * a run carries it (`speed`, rig heights per second in walks: simulateSprings).
+ */
+export const ROLL_ANIMATIONS = {
+  roll: { frames: 8, fps: 20, loop: false, speed: 2 },
+};
+
+/** How far round the body has turned at each key (rad, forward about the hips): a push-off, one whole turn, up. */
+export const ROLL_TURN = [0.3, 1.15, 2.05, 2.95, 3.85, 4.75, 5.6, 2 * Math.PI];
+
+/** How tightly the body is balled at each key: 0 standing, 1 the whole tuck; it comes up crouched. */
+export const ROLL_CURL = [0.5, 0.85, 1, 1, 1, 1, 0.75, 0.4];
+
+/** The whole tuck: the knees drawn to the chest, the heels to the seat, the back rounded, the chin down. */
+const TUCK = {
+  thighL: [-2.0, 0, 0.1],
+  thighR: [-2.0, 0, -0.1],
+  shinL: [2.3, 0, 0],
+  shinR: [2.3, 0, 0],
+  footL: [0.35, 0, 0],
+  footR: [0.35, 0, 0],
+  spine: [0.45, 0, 0],
+  chest: [0.4, 0, 0],
+  neck: [0.45, 0, 0],
+};
+
+/**
+ * The roll's keys for a style (`style.roll`, each class its own look, classStyles.js):
+ *   turn   how far round at each key (default {@link ROLL_TURN}): a heavier roll starts slower;
+ *   tuck   how tightly it balls (1 the whole {@link TUCK});
+ *   tilt   how far the hips lean over onto one shoulder at the turn's middle (rad): a shoulder roll;
+ *   low    how much deeper it crouches at the push-off and coming up, the back rounded further;
+ *   arms   the arms (and what they hold) in the tuck, eased in from the carry (`style.hold`) as it balls.
+ */
+export function rollClip(style) {
+  const r = { turn: ROLL_TURN, tuck: 1, tilt: 0, low: 0, arms: {}, ...(style.roll ?? {}) };
+  const hold = style.hold ?? pose();
+  return ROLL_CURL.map((curl, i) => {
+    const turn = r.turn[i];
+    const crouch = 1 - curl;
+    const p = pose();
+    for (const [bone, v] of Object.entries(TUCK)) p.b[bone] = v.map((a) => a * curl * r.tuck);
+    // deeper at the ends, where it is a crouch, not a ball
+    for (const bone of ["spine", "chest"]) p.b[bone][0] += r.low * crouch;
+    for (const bone of ["thighL", "thighR"]) p.b[bone][0] -= r.low * crouch * 1.2;
+    for (const bone of ["shinL", "shinR"]) p.b[bone][0] += r.low * crouch * 1.6;
+    p.b.hips = [turn, 0, r.tilt * Math.sin(turn / 2)];
+    const arms = new Set([...Object.keys(hold.b), ...Object.keys(r.arms)]);
+    for (const bone of arms) {
+      const [from, to] = [hold.b[bone] ?? ZERO, r.arms[bone] ?? hold.b[bone] ?? ZERO];
+      p.b[bone] = [0, 1, 2].map((j) => from[j] + (to[j] - from[j]) * curl);
+    }
+    p.fx = { ...hold.fx };
+    return p;
+  });
+}
+
 // --- death ---------------------------------------------------------------------------------
 
 /**
@@ -817,6 +879,7 @@ export function clipsFor(style, specs = ANIMATIONS) {
     attack: () => attackKeys(style),
     death: () => deathClip(style),
     parry: () => parryClip(style, specs.parry.frames),
+    roll: () => rollClip(style),
     ...offhandPoses(style),
   };
   const own = style.clips ?? {};

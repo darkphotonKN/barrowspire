@@ -67,6 +67,8 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
         "flurryDust",
         "flurryFlare",
         "arrowRainImpact",
+        // FS-7P736 R15: the dust scuff where a roll starts
+        "rollDust",
       ].sort(),
     );
   });
@@ -108,6 +110,8 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
       flurryDust: 500,
       flurryFlare: 360,
       arrowRainImpact: 320,
+      // FS-7P736 R15: a quick scuff, inside the roll's 400 ms
+      rollDust: 380,
     };
     const got = Object.fromEntries(
       oneShots.map(([name, e]) => [
@@ -374,6 +378,7 @@ describe("effect rules (FS-KYPQ9 §B.4, §B.6, §B.7)", () => {
       "chargeDust",
       "chargeTrail",
       "deathDust",
+      "rollDust",
     ] as const)
       for (const c of colorsOf(EFFECTS[name]))
         expect(dark, `${name}: ${c}`).not.toContain(c);

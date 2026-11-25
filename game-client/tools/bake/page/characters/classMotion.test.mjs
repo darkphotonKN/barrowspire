@@ -67,6 +67,8 @@ const DEG = 180 / Math.PI;
  * A digest changes only when the keys do.
  */
 const digest = (x) => createHash("sha256").update(JSON.stringify(x)).digest("hex");
+/** A sheet as it was before the roll joined every class sheet, last (FS-7P736 R15; roll.test.mjs holds the roll). */
+const rollless = (sheet) => ({ ...sheet, animations: Object.fromEntries(Object.entries(sheet.animations).filter(([a]) => a !== "roll")) });
 
 /** A class's rig as cast.js builds it, with the legs and boots every clip is grounded on. */
 function rigOf(build) {
@@ -1280,7 +1282,7 @@ const SHORT_SPRINTERS = [
     style: WIZARD_STYLE,
     sheet: WIZARD_SHEET,
     stride: [WIZARD_SPRINT_STRIDE, 0.88],
-    clips: ["idle", "walk", "attack", "death", "run"],
+    clips: ["idle", "walk", "attack", "death", "run", "roll"],
     plain: ["idle", "walk", "attack", "death"],
     // her run on the 10° lean at 14 fps read 190.22; the sprint's legs' knee 0.335 came through her gown
     pace: 194.21,
@@ -1292,7 +1294,7 @@ const SHORT_SPRINTERS = [
     style: KNIGHT_STYLE,
     sheet: KNIGHT_SHEET,
     stride: [KNIGHT_SPRINT_STRIDE, 0.84],
-    clips: ["idle", "walk", "attack", "death", "run"],
+    clips: ["idle", "walk", "attack", "death", "run", "roll"],
     plain: ["idle", "walk", "death"],
     // his run on the 10° lean at 14 fps read 197.67, the sprint's legs at 16 fps 198.84; their
     // knee 0.335 folded his calf out through the hauberk's back
@@ -1305,7 +1307,7 @@ const SHORT_SPRINTERS = [
     style: BERSERKER_STYLE,
     sheet: BERSERKER_SHEET,
     stride: [KNIGHT_SPRINT_STRIDE, 0.84],
-    clips: ["idle", "walk", "attack", "death", "run", "attack_offhand"],
+    clips: ["idle", "walk", "attack", "death", "run", "roll", "attack_offhand"],
     plain: ["idle", "walk", "death"],
     pace: 193.61,
     knee: 0.31,
@@ -1431,7 +1433,7 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
     expect(ARCHER_SHEET.scale).toBe(1.5);
     // idle, walk, attack, death and her run, in that order: no walk_attack, no backpedal_attack (D7, D8)
-    expect(Object.keys(ARCHER_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "run"]);
+    expect(Object.keys(ARCHER_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "run", "roll"]);
     for (const anim of ["idle", "walk", "attack", "death"]) expect(ARCHER_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
   });
 
@@ -1452,7 +1454,7 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
 
   it("keeps her run keys and her sheet byte for byte as at 2018f786, now read from the shared sprint (§ Change: The mercenary's sprint and trailing sword R92, R93)", () => {
     expect(digest(run), "her run keys").toBe("20fe48c323216e8d91686fa7e1b3324acb004bfe960e005089298da1213034de");
-    expect(digest(ARCHER_SHEET), "her sheet").toBe("e6c879218d09b0b82b07c10ad369e4c02513e1375d6b23621e3315f9203199e4");
+    expect(digest(rollless(ARCHER_SHEET)), "her sheet, its roll aside").toBe("e6c879218d09b0b82b07c10ad369e4c02513e1375d6b23621e3315f9203199e4");
   });
 
   it("leaves her idle, walk, attack and death keys as on main (R78)", () => {
@@ -1471,7 +1473,7 @@ describe("the mercenary's sprint (FS-JS7C8 § Change: The mercenary's sprint and
     expect(MERCENARY_SHEET.scale).toBe(1.5);
     expect(MERCENARY_SHEET.animations.parry).toEqual(MERC_ANIMATIONS.parry);
     // idle, walk, attack, death, the parry and the sprint, in that order: no walk_attack, no backpedal_attack (M5)
-    expect(Object.keys(MERCENARY_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
+    expect(Object.keys(MERCENARY_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "parry", "run", "roll"]);
     for (const anim of ["idle", "walk", "attack", "death"]) expect(MERCENARY_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
   });
 
@@ -1491,7 +1493,7 @@ describe("the mercenary's sprint (FS-JS7C8 § Change: The mercenary's sprint and
   // 31a1826f…)
   it("keeps his sheet byte for byte as at 22cabd3a and his run keys as R158's tune round left them (§ Change: The wizard's sprint and pointed cast R115)", () => {
     expect(digest(clips.run), "his run keys").toBe("5863a592220b029b68bbb5f66d854eaa6f25b01effe3f5c1949f1a4e9fa43069");
-    expect(digest(MERCENARY_SHEET), "his sheet").toBe("93b4ca11a25c0b32c028759cae77673566b8884ac33116fe485516ee5e334a46");
+    expect(digest(rollless(MERCENARY_SHEET)), "his sheet, its roll aside").toBe("93b4ca11a25c0b32c028759cae77673566b8884ac33116fe485516ee5e334a46");
   });
 
   it("leaves his idle, walk, attack, death and parry keys byte for byte as at 2018f786 (R103)", () => {
