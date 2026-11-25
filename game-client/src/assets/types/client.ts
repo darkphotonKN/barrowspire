@@ -19,9 +19,15 @@ export interface PickupPayload {
   itemId: string;
 }
 
-export interface UsePayload {
-  itemId: string;
-  targetId?: string; // 可選：對誰使用
+/** Using an item in the player's bag (FS-9JV5K §D R17): an antidote drunk, by its entity id. */
+export interface UseItemPayload {
+  item_entity_id: string;
+}
+
+/** Buying a ware from the wandering merchant (FS-9JV5K §B R5): who sells it and which. */
+export interface BuyPayload {
+  merchant_id: string;
+  ware: string;
 }
 
 /** A chat line as the client sends it; the pod stamps everything else (FS-WJGFJ R2). */
@@ -82,7 +88,10 @@ export interface ActionMap {
   move: MovePayload;
   attack: AttackPayload;
   pickup: PickupPayload;
-  use: UsePayload;
+  /** A player in the run using a bag item (FS-9JV5K §D R17); answered by a `use_item` reply. */
+  use_item: UseItemPayload;
+  /** A player in the run buying a ware (FS-9JV5K §B R5); answered by a `buy` reply. */
+  buy: BuyPayload;
   chat: ChatPayload;
   find_game: FindGamePayload;
   interact: InteractPayload;
@@ -152,7 +161,8 @@ export const ActionType = {
   Move: "move",
   Attack: "attack",
   Pickup: "pickup",
-  Use: "use",
+  UseItem: "use_item",
+  Buy: "buy",
   Chat: "chat",
   Find_Game: "find_game",
   Interact: "interact",
@@ -197,7 +207,7 @@ export type ClientAction =
   | { action: "move"; payload: MovePayload; seq: number }
   | { action: "attack"; payload: AttackPayload; seq: number }
   | { action: "pickup"; payload: PickupPayload; seq: number }
-  | { action: "use"; payload: UsePayload; seq: number }
+  | { action: "use_item"; payload: UseItemPayload; seq: number }
   | { action: "chat"; payload: ChatPayload; seq: number }
   | { action: "cast_skill"; payload: CastSkillPayload; seq: number };
 

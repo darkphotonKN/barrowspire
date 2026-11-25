@@ -31,6 +31,7 @@ import type { SeenState } from "./partyFramesLayout";
 import type { RecordView } from "./settlement";
 import type { HudMessage } from "./uiSceneHud";
 import type { LoreMessage } from "./uiSceneLore";
+import type { WaresMessage } from "./wares";
 import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "./uiScenePointer";
 import { typingGuard, type SceneKeyboard } from "./worldKeyboard";
 
@@ -156,10 +157,10 @@ export const NO_FACTS: WorldFacts = {
 
 /**
  * What the UI scene asks the world to close (R11, R17): the letter panel, the dialogue; the run's
- * settlement record, its Close (§ Change: Phase 3, R57). The party panel and the gear overlay are the
+ * settlement record, its Close (§ Change: Phase 3, R57); the run's wares panel, its × or Esc (FS-9JV5K §F R22). The party panel and the gear overlay are the
  * UI scene's own (§ Change: Phase 2, R39; § Change: Phase 3, R55).
  */
-export type UiClose = "letter" | "dialogue" | "record";
+export type UiClose = "letter" | "dialogue" | "record" | "wares";
 
 /**
  * UI → world: what the UI scene asks of the world (R11). An Esc step's `close`; the ESC menu's rows that only the world can do (the town's and the field's
@@ -181,6 +182,10 @@ export type UiRequest =
   | { readonly kind: "take"; readonly item: ItemState }
   /** The run's Burn tome? confirm said Burn: the world sends the one interact for the altar (FS-3103M R25). */
   | { readonly kind: "burn"; readonly altar: string }
+  /** The wares panel's Buy on a ware of the merchant it is open for: the run sends the `buy` (FS-9JV5K §F R23). */
+  | { readonly kind: "buy"; readonly ware: string }
+  /** The gear overlay's Drink on a bag item, by its entity id: the run sends the `use_item` (FS-9JV5K §F R24). */
+  | { readonly kind: "drink"; readonly item: string }
   /**
    * A dread lore line started on the UI scene: the world's camera trembles, as it did when the run drew
    * the line (FS-XWHZP R10; FS-TQZ5J § Change: Merge with main, 2026-11-14).
@@ -237,6 +242,8 @@ export type WorldAnswers = {
   readonly unequip?: (item: string) => void;
   readonly take?: (item: ItemState) => void;
   readonly burn?: (altar: string) => void;
+  readonly buy?: (ware: string) => void;
+  readonly drink?: (item: string) => void;
   readonly tremor?: (durationMs: number, intensity: number) => void;
 };
 
@@ -257,6 +264,10 @@ export function answering(answers: WorldAnswers): (request: UiRequest) => void {
         return answers.take?.(request.item);
       case "burn":
         return answers.burn?.(request.altar);
+      case "buy":
+        return answers.buy?.(request.ware);
+      case "drink":
+        return answers.drink?.(request.item);
       case "tremor":
         return answers.tremor?.(request.durationMs, request.intensity);
       default:
@@ -340,6 +351,8 @@ export interface UiScreen {
   confirmBurn?(altar: string): void;
   /** A lore line the run says, or its floor change's clear (FS-XWHZP; § Change: Merge with main, 2026-11-14). */
   lore?(message: LoreMessage): void;
+  /** The run's wares panel shown, a purchase answered, or the panel down (FS-9JV5K §F R22, R23). */
+  wares?(message: WaresMessage): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
@@ -458,6 +471,12 @@ export interface UiBridge extends UiActWrapper {
    * main, the owner's 2026-11-14 call): the UI scene's lines have it when this returns.
    */
   lore(message: LoreMessage): void;
+  /**
+   * The run's wares panel (FS-9JV5K §F R22, R23): shown whole as plain data, again on any change; a
+   * purchase answered, so the purse line reads the wallet again; or taken down. The run owns its open
+   * state; the UI scene draws it and asks back (`buy`, `close: wares`).
+   */
+  wares(message: WaresMessage): void;
 }
 
 /**
@@ -484,6 +503,7 @@ export type WorldUi = Pick<
   | "hud"
   | "confirmBurn"
   | "lore"
+  | "wares"
 > & {
   /** An interface effect a world's input plays (FS-WDM0X S7); its gameplay effects are its own player's. */
   play(effect: UiEffect): void;
@@ -509,6 +529,7 @@ export const NO_UI: WorldUi = {
   hud: () => {},
   confirmBurn: () => {},
   lore: () => {},
+  wares: () => {},
 };
 
 /** Told each world report, and none (null) as the world reported leaves. */
@@ -648,6 +669,10 @@ export class GameUiBridge implements UiBridge {
 
   lore(message: LoreMessage): void {
     for (const screen of [...this.screens]) screen.lore?.(message);
+  }
+
+  wares(message: WaresMessage): void {
+    for (const screen of [...this.screens]) screen.wares?.(message);
   }
 
   onScreen(screen: UiScreen): () => void {

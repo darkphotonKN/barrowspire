@@ -18,7 +18,8 @@ import { tileHash } from "./ground";
 /**
  * What kind of fixed light a pool is: the budget drops by kind. `interactable` is the faint pool
  * a chest or switch stands in under the tower's dark ambient (§B.7's readability floor);
- * `hallowed_altar` the hallowed altar's candles while it is dormant (FS-5FZ4J §J R51).
+ * `hallowed_altar` the hallowed altar's candles while it is dormant (FS-5FZ4J §J R51);
+ * `merchant_lantern` the wandering merchant's lantern (FS-9JV5K §F R21).
  */
 export type FixedLightKind =
   | "stairs"
@@ -26,21 +27,24 @@ export type FixedLightKind =
   | "sconce"
   | "brazier"
   | "slit"
-  | "hallowed_altar";
+  | "hallowed_altar"
+  | "merchant_lantern";
 
 /** The most fixed lights one floor stamps. */
 export const FIXED_LIGHT_CAP = 24;
 
 /**
  * Past the cap, lights go in this order (§C.6), an interactable's pool last of all: it is what
- * keeps a chest reading as one. The hallowed altar's candles go just before it: they mark a Pray
- * still to be had, as the pool marks a chest. The stairs pool is not on it: it is never dropped.
+ * keeps a chest reading as one. Just before it go the hallowed altar's candles, then the merchant's
+ * lantern: they mark a Pray still to be had and a trader to reach, as the pool marks a chest. The
+ * stairs pool is not on it: it is never dropped.
  */
 const DROP_ORDER: readonly FixedLightKind[] = [
   "slit",
   "brazier",
   "sconce",
   "hallowed_altar",
+  "merchant_lantern",
   "interactable",
 ];
 

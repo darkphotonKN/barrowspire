@@ -426,6 +426,28 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
     expect(onEquip).toHaveBeenLastCalledWith(sword, "weapon");
   });
 
+  // FS-9JV5K §F R24 (I-9JV5K-5): an antidote in the bag is drunk, never worn
+  it("should drink a hovered antidote on right-click or E, wearing nothing and leaving it in the bag for the server", () => {
+    const antidote = item("antidote-1", { name: "Antidote", item_type: "consumable" });
+    const { overlay, move, press, cell, onEquip, shown } = overlayOnStage([antidote]);
+    const onDrink = vi.fn();
+    overlay.onDrink = onDrink;
+    move(...cell(0));
+    press(...cell(0), 2);
+    overlay.handleEquipKey();
+    expect(onDrink.mock.calls).toEqual([[antidote], [antidote]]);
+    expect(onEquip).not.toHaveBeenCalled();
+    expect(shown()).toContain("1 / 30");
+  });
+
+  it("should wear an antidote as any consumable where nothing drinks it (the town's gear)", () => {
+    const antidote = item("antidote-1", { name: "Antidote", item_type: "consumable" });
+    const { move, press, cell, onEquip } = overlayOnStage([antidote]);
+    move(...cell(0));
+    press(...cell(0), 2);
+    expect(onEquip).toHaveBeenCalledWith(antidote, "consumable_1");
+  });
+
   it.each([1, 1.5, 2])(
     "should land a right-click on the item under the cursor at render scale %s (FS-ZAJMH R15)",
     (rs) => {

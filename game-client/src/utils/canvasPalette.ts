@@ -394,6 +394,12 @@ export const palette = {
    * madder coat reads as a drab traveller's and not as a player's.
    */
   merchantStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.vellumDark, 0.5), 0.45),
+  /**
+   * FS-9JV5K §F R22, R23: the wares panel's price in gold (the purse's brass, as gold reads in the
+   * gear overlay) and its refusal line (error copy's lifted oxblood: money clarity, never lore).
+   */
+  waresPrice: BARROW_HEX.brassBright,
+  waresRefused: BARROW_HEX.oxbloodText,
 
   // -- A monster ability's telegraph and impact (FS-C8VM7 §F R36): the hostile channel, drawn
   //    above the light-map. The edge in the HP bar's lifted oxblood, so the ring reads on a dark

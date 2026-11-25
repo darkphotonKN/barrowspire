@@ -100,6 +100,7 @@ import {
 } from "./gearOverlayLayout";
 import { viewport } from "@/render/viewport";
 import { PURSE_UNKNOWN, type PurseShelf, type PurseView } from "./purse";
+import { drinksFromBag } from "./potions";
 import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 import { uiGround } from "./uiGround";
 
@@ -204,6 +205,12 @@ export class GearOverlay implements HudPanel, PurseShelf {
   onUnequip?: (item: ItemState, slot: EquipmentSlot) => void;
   mayEquip?: (item: ItemState, slot: EquipmentSlot) => boolean;
   mayUnequip?: (item: ItemState) => boolean;
+  /**
+   * A bag item drunk where it lies, in place of an equip (FS-9JV5K §F R24): the antidote. Nothing
+   * moves on the panel; the next state takes the item away. Unset, the antidote is worn as any
+   * consumable.
+   */
+  onDrink?: (item: ItemState) => void;
   /** Asked before a stash-mode move is drawn; false leaves the item where it is (FS-VPD8Y R39). */
   mayMove?: (item: ItemState, to: ItemLocation) => boolean;
   /** A stash-mode move, drawn at once to the end of `to` (R38, R41). */
@@ -1286,7 +1293,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
   }
 
   /**
-   * Wear or take off what the pointer is over. In stash mode nothing is worn: a worn item still
+   * Wear or take off what the pointer is over, or drink an antidote in the bag (FS-9JV5K §F R24). In stash mode nothing is worn: a worn item still
    * comes off to the bag, a bag item moves to the stash and a stash item to the bag (FS-VPD8Y R38).
    */
   private act(): void {
@@ -1297,6 +1304,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     if (!item) return;
     if (at.kind === "slot") this.unequip(item, at.slot);
     else if (this.stash) this.move(item, at.kind === "bag" ? "stash" : "bag");
+    else if (at.kind === "bag" && this.onDrink && drinksFromBag(item)) this.onDrink(item);
     else if (at.kind === "bag") this.equip(item);
   }
 

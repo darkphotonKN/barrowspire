@@ -22,6 +22,9 @@ describe("escapeStep (FS-R82NV § Change C2: one press closes one thing)", () =>
     ["the tree, over the gear overlay", { ...none, tree: true, gear: true }, "tree"],
     ["the tree", { ...none, tree: true }, "tree"],
     ["the open menu, over the tree", { ...none, menu: true, tree: true }, "close-menu"],
+    // FS-9JV5K §F R22: the run's wares panel, opened over the world's windows, before the UI scene's own
+    ["the wares panel, over the gear overlay and the party panel", { ...none, wares: true, gear: true, party: true, tree: true }, "wares"],
+    ["the controls panel, before the wares panel", { ...none, wares: true, controls: true }, "controls"],
     ["the controls panel, before every other step", { letter: true, menu: true, gear: true, party: true, controls: true }, "controls"],
   ] as const)("should close %s", (_case, open, step) => {
     expect(escapeStep(open)).toBe(step);

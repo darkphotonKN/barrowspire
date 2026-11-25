@@ -101,6 +101,7 @@ const chatMayOpen = (run: object) => chatWiring(uiSceneOn(run, "run", { row: fal
 const typeInChat = (run: object, on = true) => uiSceneOn(run, "run", { row: false }).bridge.reportUi({ typing: on });
 const { barShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { GameUiBridge, NO_UI, worldContainer } = await import("@/ui/uiBridge");
+const { ANTIDOTE_LOOK } = await import("@/render/effects/shimmer");
 
 /**
  * The lore lines the run says through the UI bridge (FS-XWHZP; FS-TQZ5J § Change: Merge with main, the
@@ -9067,8 +9068,21 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
       said,
       reply: (payload: unknown) => listeners.get("interact")?.(payload),
       equip: (payload: unknown) => listeners.get("equip")?.(payload),
+      buy: (payload: unknown) => listeners.get("buy")?.(payload),
+      useItem: (payload: unknown) => listeners.get("use_item")?.(payload),
     };
   }
+
+  // FS-9JV5K §F R23, R24 (I-9JV5K-5): the purchase's and the drink's replies reach the run
+  it("should hear the buy and use_item replies, each in plain words as a notice", () => {
+    const { notified, buy, useItem } = connected();
+    buy({ success: false, reason: "wallet_unavailable", message: "your purse can't be reached" });
+    useItem({ success: false, reason: "not_poisoned", message: "you are not poisoned" });
+    expect(notified.mock.calls).toEqual([
+      ["Your purse can't be reached. Nothing was taken.", palette.damageBright],
+      ["You are not poisoned.", palette.damageBright],
+    ]);
+  });
 
   // FS-XWHZP R16: the world's reply is a lore line, in the client's words, never a HUD notice
   it("should give up the reach and say it will not open, as a lore line", () => {
@@ -12611,6 +12625,187 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       next({}, mine());
       const marks = hud.mock.calls.map(([m]) => m as { kind: string; marks?: unknown }).filter((m) => m.kind === "statusMarks");
       expect(marks.map((m) => m.marks)).toEqual([["blessed"], []]);
+    });
+  });
+
+  // FS-9JV5K §F R21–R24 (I-9JV5K-5): the wandering merchant, his wares panel, buying and drinking
+  describe("the wandering merchant and his wares (FS-9JV5K §F)", () => {
+    interface MerchantRun {
+      bindRunInput(): void;
+      checkBuildingStatus(): void;
+      showNotification(text: string, backing: number): void;
+      worldSide(): import("@/ui/uiBridge").WorldSide;
+      merchant: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      dungeon: { lights: { all: readonly { kind: string }[] } };
+      ui: WorldUi;
+      shimmers?: { playGranted: ReturnType<typeof vi.fn> };
+      waresAnswered(reply: unknown): void;
+      itemUsed(reply: unknown): void;
+      endRun(): void;
+    }
+    /** This client's player in room 1, at (2560, 3080). */
+    const ME = at(2560, 3080);
+    const mine = (over: Record<string, unknown> = {}) =>
+      ({ current_player: { ...player("me", "Aldric", 0), position: ME, ...over } }) as Partial<Party>;
+    const wares = (antidotes = 3) => [
+      { ware: "health_potion", price: 60, left: 3, item: { name: "Lesser Heal Potion", item_type: "consumable", healing_amount: 30 } },
+      { ware: "antidote", price: 40, left: antidotes, item: { name: "Antidote", item_type: "consumable" } },
+    ];
+    /** He stands beside the player; or far off past the stairs, in a region not yet seen. */
+    const merchant = (where = at(ME.x + 30, ME.y), antidotes = 3) => ({ entity_id: "merchant-1", position: where, wares: wares(antidotes) });
+    const merchantStage = (extra: Partial<GameState> = { merchant: merchant() }) => {
+      const staged = dungeonStage(mine(), extra);
+      const run = staged.run as unknown as MerchantRun;
+      const told: { kind: string; wares?: { rows: { action: string; left: string }[]; line?: string } }[] = [];
+      run.ui = { ...NO_UI, wares: (message) => void told.push(message as (typeof told)[number]) };
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      const next = (over: Partial<GameState> = { merchant: merchant() }, me = mine()) => staged.handle({ ...dungeonState(me), ...over } as GameState);
+      const answer = (request: import("@/ui/uiBridge").UiRequest) => run.worldSide().answer(request);
+      return { ...staged, run, told, notified, next, answer };
+    };
+    const pressE = (run: MerchantRun, playerPos: { x: number; y: number }) => {
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos,
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const calls = [...sent.mock.calls];
+      sent.mockRestore();
+      return calls;
+    };
+    const sending = () => vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    /** The bodies dressed in a sheet whose name starts so: the frame set on them is `{sheet}/…`. */
+    const dressed = (made: Made[], prefix: string) =>
+      made.filter((m) => m.kind === "sprite" && !m.destroyed && String(m.last.setTexture?.[1] ?? m.args[3] ?? "").startsWith(prefix));
+
+    it("should draw him from his own sheet with his nameplate, and his lantern among the floor's lights (R21)", () => {
+      const { run, stage } = merchantStage();
+      expect(dressed(stage.made, "npc_merchant/")).toHaveLength(1);
+      expect(stage.made.some((m) => m.kind === "text" && !m.destroyed && m.args[2] === "Wandering Merchant")).toBe(true);
+      expect(run.dungeon.lights.all.filter((l) => l.kind === "merchant_lantern")).toHaveLength(1);
+    });
+
+    it("should draw his stand-in under its wash while his sheet is not in", () => {
+      const { stage } = dungeonStage(mine(), { merchant: merchant() }, { without: "npc_merchant" });
+      const [body] = dressed(stage.made, "char_mercenary_base/");
+      expect(body).toBeDefined();
+      expect(body.tint).toBe(palette.merchantStandIn);
+    });
+
+    it("should take him, his nameplate and his lantern down when he leaves the state", () => {
+      const { run, stage, next } = merchantStage();
+      next({});
+      expect(dressed(stage.made, "npc_merchant/")).toHaveLength(0);
+      expect(stage.made.some((m) => m.kind === "text" && !m.destroyed && m.args[2] === "Wandering Merchant")).toBe(false);
+      expect(run.dungeon.lights.all.filter((l) => l.kind === "merchant_lantern")).toHaveLength(0);
+    });
+
+    it("should hide him and his nameplate in a region not yet seen", () => {
+      const { run, stage } = merchantStage({ merchant: merchant(at(1400, 1200)) });
+      run.checkBuildingStatus();
+      expect(shownNow(run.merchant.placed()[0].sprite)).toBe(false);
+      const plate = stage.made.find((m) => m.kind === "text" && m.args[2] === "Wandering Merchant")!;
+      expect(shownNow(plate)).toBe(false);
+    });
+
+    it("should open his wares panel on E in reach, sending nothing to the server (R21, R22)", () => {
+      const { run, told } = merchantStage();
+      expect(pressE(run, ME)).toEqual([]);
+      expect(told.map((m) => m.kind)).toEqual(["show"]);
+      expect(told[0].wares!.rows.map((r) => r.left)).toEqual(["3 left", "3 left"]);
+    });
+
+    it("should not open it out of reach, nor for a player out of the delve", () => {
+      const far = merchantStage({ merchant: merchant(at(ME.x + 200, ME.y)) });
+      pressE(far.run, ME);
+      expect(far.told).toEqual([]);
+      const dead = dungeonStage(mine({ current_health: 0 }), { merchant: merchant() });
+      const told: unknown[] = [];
+      (dead.run as unknown as MerchantRun).ui = { ...NO_UI, wares: (m) => void told.push(m) };
+      pressE(dead.run as unknown as MerchantRun, ME);
+      expect(told).toEqual([]);
+    });
+
+    it("should follow his stock while open, and close, sending nothing, as the player walks out of reach", () => {
+      const { run, told, next } = merchantStage();
+      pressE(run, ME);
+      next({ merchant: merchant(undefined, 0) });
+      expect(told.at(-1)!.wares!.rows[1].left).toBe("Sold out");
+      const sent = sending();
+      Object.assign(run, { playerPos: at(ME.x + 300, ME.y) });
+      next();
+      expect(told.at(-1)!.kind).toBe("close");
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    it("should close it as he leaves the state, and as the menu opens over it", () => {
+      const a = merchantStage();
+      pressE(a.run, ME);
+      a.next({});
+      expect(a.told.at(-1)!.kind).toBe("close");
+      const b = merchantStage();
+      pressE(b.run, ME);
+      b.run.worldSide().heardUi?.({ menuOpen: true }, { menuOpen: false });
+      expect(b.told.at(-1)!.kind).toBe("close");
+    });
+
+    it("should close it on the UI scene's close: wares", () => {
+      const { run, told, answer } = merchantStage();
+      pressE(run, ME);
+      answer({ kind: "close", window: "wares" });
+      expect(told.map((m) => m.kind)).toEqual(["show", "close"]);
+    });
+
+    it("should send one buy for the open panel's merchant and show Paying… until the reply (R23)", () => {
+      const { run, told, answer } = merchantStage();
+      pressE(run, ME);
+      const sent = sending();
+      answer({ kind: "buy", ware: "antidote" });
+      answer({ kind: "buy", ware: "health_potion" });
+      expect(sent.mock.calls).toEqual([[ActionType.Buy, { merchant_id: "merchant-1", ware: "antidote" }]]);
+      expect(told.at(-1)!.wares!.rows.map((r) => r.action)).toEqual(["Buy", "Paying…"]);
+    });
+
+    it("should say Bought: on a success and have the purse read again (R23)", () => {
+      const { run, told, notified, answer } = merchantStage();
+      pressE(run, ME);
+      sending();
+      answer({ kind: "buy", ware: "antidote" });
+      run.waresAnswered({ success: true, ware: "antidote" });
+      expect(notified.mock.calls).toEqual([["Bought: Antidote.", palette.safe]]);
+      expect(told.map((m) => m.kind)).toContain("answered");
+      expect(told.at(-1)!.wares!.rows.map((r) => r.action)).toEqual(["Buy", "Buy"]);
+    });
+
+    it("should show a refusal's line on the open panel, in plain words (R23)", () => {
+      const { run, told, notified, answer } = merchantStage();
+      pressE(run, ME);
+      sending();
+      answer({ kind: "buy", ware: "antidote" });
+      run.waresAnswered({ success: false, reason: "not_enough_gold", message: "not enough gold" });
+      expect(told.at(-1)!.wares!.line).toBe("Not enough gold.");
+      expect(notified).not.toHaveBeenCalled();
+    });
+
+    it("should send use_item for the gear's Drink (R24)", () => {
+      const { answer } = merchantStage();
+      const sent = sending();
+      answer({ kind: "drink", item: "antidote-1" });
+      expect(sent.mock.calls).toEqual([[ActionType.UseItem, { item_entity_id: "antidote-1" }]]);
+    });
+
+    it("should say You are not poisoned. on that refusal, and play the antidote's shimmer on a success (R24)", () => {
+      const { run, notified } = merchantStage();
+      const shimmers = { playGranted: vi.fn() };
+      run.shimmers = shimmers;
+      run.itemUsed({ success: false, reason: "not_poisoned", message: "you are not poisoned" });
+      expect(notified.mock.calls).toEqual([["You are not poisoned.", palette.damageBright]]);
+      expect(shimmers.playGranted).not.toHaveBeenCalled();
+      run.itemUsed({ success: true });
+      expect(shimmers.playGranted).toHaveBeenCalledWith(ANTIDOTE_LOOK, expect.anything());
     });
   });
 });

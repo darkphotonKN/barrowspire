@@ -78,6 +78,12 @@ describe("effect cards", () => {
     for (const card of cards) expect(card.demo).toBeTypeOf("function");
   });
 
+  // FS-9JV5K §F R24 (I-9JV5K-5): the antidote's shimmer, beside the heal's
+  it("should card the heal and the antidote shimmers on the granted base, each playable", () => {
+    const names = EFFECT_CARDS.filter((c) => c.module === "shimmer").map((c) => c.name);
+    expect(names).toEqual(expect.arrayContaining(["Heal shimmer (granted base)", "Antidote shimmer (granted base)"]));
+  });
+
   it("should card the ward on the mage, the gloom on the archer, and a ward under a heal, each playable (FS-1J1CB R38)", () => {
     const cards = EFFECT_CARDS.filter((c) => c.module === "aura");
     expect(cards.map((c) => c.name)).toEqual([

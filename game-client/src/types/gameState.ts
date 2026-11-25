@@ -324,6 +324,36 @@ export interface HallowedAltarState {
   prayed: boolean;
 }
 
+/** What the wandering merchant sells (FS-9JV5K §A R3–R4): a ware the client does not know keeps its own name. */
+export type WareKind = "health_potion" | "antidote" | "tome_of_filth";
+
+/**
+ * A ware's display data (FS-9JV5K §A R4): its template's name, rarity and the stats the icon resolver
+ * reads (`itemIcon`), since the catalogue sends no icon or item code. game-service's `MerchantWareItem`.
+ */
+export interface MerchantWareItem {
+  name: string;
+  item_type?: string;
+  rarity?: string;
+  healing_amount?: number;
+  mana_amount?: number;
+}
+
+/** One of his wares: its kind, price in gold, how many are neither sold nor reserved, and the item; none for the tome. */
+export interface MerchantWareState {
+  ware: WareKind | (string & {});
+  price: number;
+  left: number;
+  item?: MerchantWareItem;
+}
+
+/** The wandering merchant on his floor and his wares, sent whole; absent in the hub, a field and elsewhere (FS-9JV5K §A R4). */
+export interface MerchantState {
+  entity_id: UUID;
+  position: Position;
+  wares: MerchantWareState[];
+}
+
 /** A cell's column and row on the floor map's grid (FS-5FZ4J §I R46). */
 export interface CellState {
   x: number;
@@ -644,6 +674,8 @@ export interface ClientGameState {
   fountain?: FountainState;
   /** The hallowed altar on its floor once reachable; absent anywhere else (R46). */
   hallowed_altar?: HallowedAltarState;
+  /** The floor's wandering merchant and his wares, sent whole; absent with none and anywhere else (FS-9JV5K §A R4). */
+  merchant?: MerchantState;
   escaped_count: number; // Number of players who have escaped
 }
 

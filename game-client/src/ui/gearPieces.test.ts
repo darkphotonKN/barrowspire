@@ -63,6 +63,7 @@ const wiring = () => ({
   notice: vi.fn(),
   send: vi.fn(),
   take: vi.fn(),
+  drink: vi.fn(),
   level: () => 7,
   sounds: { play: vi.fn() },
 });

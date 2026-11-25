@@ -55,6 +55,7 @@ function recording(): UiBridge & { heard: string[] } {
     abilityBar: () => void heard.push("abilityBar"),
     hud: (message) => void heard.push(`hud ${message.kind}`),
     confirmBurn: (altar) => void heard.push(`confirmBurn ${altar}`),
+    wares: (message) => void heard.push(`wares ${message.kind}`),
     lore: (message) => void heard.push(`lore ${message.kind}`),
     onScreen: () => () => {},
   };
@@ -735,6 +736,32 @@ describe("the gear's, the container's and the record's requests (FS-TQZ5J § Cha
     answering({})({ kind: "take", item });
 
     expect(done).toEqual(["equip sword-1", "unequip helm-1", "take ring-1", "close record"]);
+  });
+
+  // FS-9JV5K §F R22–R24 (I-9JV5K-5)
+  it("should hand buy, drink and close: wares to the world's answers", () => {
+    const done: string[] = [];
+    const answer = answering({
+      buy: (ware) => void done.push(`buy ${ware}`),
+      drink: (item) => void done.push(`drink ${item}`),
+      close: { wares: () => void done.push("close wares") },
+    });
+    answer({ kind: "buy", ware: "antidote" });
+    answer({ kind: "drink", item: "antidote-1" });
+    answer({ kind: "close", window: "wares" });
+    answering({})({ kind: "buy", ware: "antidote" });
+    expect(done).toEqual(["buy antidote", "drink antidote-1", "close wares"]);
+  });
+
+  it("should tell every screen the wares panel's data as the world hands it", () => {
+    const bridge = new GameUiBridge();
+    const heard: string[] = [];
+    bridge.onScreen({ wares: (message) => void heard.push(message.kind) });
+    bridge.wares({ kind: "show", wares: { merchantId: "merchant-1", rows: [] } });
+    bridge.wares({ kind: "answered" });
+    bridge.wares({ kind: "close" });
+    NO_UI.wares({ kind: "close" });
+    expect(heard).toEqual(["show", "answered", "close"]);
   });
 
   it("should carry the world's part of the gear's refusal in its blockers, false where left out", () => {

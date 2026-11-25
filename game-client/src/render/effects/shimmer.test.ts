@@ -5,6 +5,7 @@ import { BARROW_HEX } from "@/utils/theme";
 import { fakeArt, fakeLights } from "./fakeScene";
 import type { EffectsScene, FxArt } from "./runtime";
 import {
+  ANTIDOTE_LOOK,
   HEAL_LOOK,
   SHIMMER_CROWN_FALLBACK,
   SHIMMER_GRANTED_MS,
@@ -375,6 +376,11 @@ describe("ShimmerFx look (FS-KZC92 §A)", () => {
       centre: "vellum",
       light: "oxblood",
     });
+  });
+
+  // FS-9JV5K §F R24 (I-9JV5K-5): the poison tint's own two parents, never health's red
+  it("should be the antidote's in the poison tint's colours: arcane glints, bright brass cores, arcane light", () => {
+    expect(ANTIDOTE_LOOK).toEqual({ glint: "arcane", centre: "brassBright", light: "arcane" });
   });
 
   it("should draw in the look's three colours and no other (R3)", () => {

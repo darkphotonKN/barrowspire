@@ -322,6 +322,22 @@ describe('traps, poison and a search on the wire (FS-5FZ4J §I R46, R47, R49)', 
     expect(state.other_players[0].blessed).toBe(true);
     expect(state.current_player?.timed_open?.target_kind).toBe('pray');
   });
+
+  // FS-9JV5K §A R4 (I-9JV5K-5): the wandering merchant, as game-service's types.MerchantState sends him
+  it('should keep the merchant and every ware, the tome without an item, as the server sends them', () => {
+    const merchant = {
+      entity_id: 'merchant-1',
+      position: { x: 900, y: 420 },
+      wares: [
+        { ware: 'health_potion', price: 60, left: 3, item: { name: 'Lesser Heal Potion', item_type: 'consumable', rarity: 'normal', healing_amount: 30 } },
+        { ware: 'antidote', price: 40, left: 0, item: { name: 'Antidote', item_type: 'consumable' } },
+        { ware: 'tome_of_filth', price: 1500, left: 1 },
+      ],
+    };
+    const wire = JSON.parse(JSON.stringify({ ...base, merchant }));
+    expect(isGameState(wire)).toBe(true);
+    expect((wire as ClientGameState).merchant).toEqual(merchant);
+  });
 });
 
 describe('placedKind (FS-1D6BX R12, D2)', () => {
