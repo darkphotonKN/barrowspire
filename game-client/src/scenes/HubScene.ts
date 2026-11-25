@@ -135,6 +135,8 @@ import {
 import {
   HUB_INDOOR_DRESSING,
   furnishingOf,
+  isChapel,
+  isInn,
   partitionInside,
   placeholderWarning,
   residentFacing,
@@ -192,7 +194,8 @@ import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "@/ui
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
-import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
+import { preloadMusic, sceneMusicStage } from "@/audio/worldMusic";
+import { TOWN_TRACKS, TownMusic, townMusic, type TownPlace } from "@/audio/townMusic";
 import { browserMusicStore } from "@/audio/musicSetting";
 
 /** Moves a world position a step toward its target. */
@@ -796,9 +799,10 @@ export class HubScene extends Phaser.Scene {
   private oneShots?: OneShotHandlers;
   /**
    * The town's music (FS-28DDG R20): made with the first visit, and kept with this scene instance,
-   * which is this game's, across its stops, as the fade-out outlives the stop (R3).
+   * which is this game's, across its stops, as the fade-out outlives the stop (R3). The village's
+   * on the street, the chapel's and the Inn's indoors (§ Change: The chapel's and the Inn's music).
    */
-  private music?: WorldMusic;
+  private music?: TownMusic;
   /**
    * What the player's actions that can open or close a window, and the minimap's step, run through:
    * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
@@ -836,9 +840,9 @@ export class HubScene extends Phaser.Scene {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
-    // the town's music, with its art, so the torch bar counts it; skipped while still cached
-    // (FS-28DDG R12, R13)
-    preloadMusic(this, worldTrack("hub"));
+    // the town's music, the chapel's and the Inn's with it, beside its art, so the torch bar counts
+    // them; each skipped while still cached (FS-28DDG R12, R13; § Change: The chapel's and the Inn's music, M3)
+    for (const track of Object.values(TOWN_TRACKS)) preloadMusic(this, track);
   }
 
   create(): void {
@@ -1016,8 +1020,19 @@ export class HubScene extends Phaser.Scene {
 
   /** The town's music rises as the hub is entered; release() tells it the hub was left (FS-28DDG R2). */
   private enterMusic(): void {
-    this.music ??= new WorldMusic(sceneMusicStage(this, worldTrack("hub")), browserMusicStore);
-    this.music.enter();
+    this.music ??= townMusic((track) => sceneMusicStage(this, track), browserMusicStore);
+    this.music.enter(this.musicPlace);
+  }
+
+  /**
+   * Where the player stands, as the town's music hears it: the chapel, the Inn, or anywhere else,
+   * the street and every other house (§ Change: The chapel's and the Inn's music, M1).
+   */
+  private get musicPlace(): TownPlace {
+    const house = this.playerBuilding;
+    if (house && isChapel(house)) return "chapel";
+    if (house && isInn(house)) return "inn";
+    return "street";
   }
 
   /** A window opening closes the letter panel first (FS-3EBCA R16). */
@@ -1293,6 +1308,7 @@ export class HubScene extends Phaser.Scene {
     this.keepMapNameClear();
     this.offerConversation();
     this.updateBuildings();
+    this.music?.moveTo(this.musicPlace);
     this.hideWhoIsElsewhere();
     this.followAuras(time);
     this.showStashChest();

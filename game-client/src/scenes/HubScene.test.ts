@@ -4992,6 +4992,8 @@ describe("HubScene spec looks (FS-1J1CB R20, R23)", () => {
 const { VILLAGE_TRACK, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/worldMusic");
 /** The town's track's key (FS-28DDG § Change: The tower's music on every floor of a run, W1). */
 const MUSIC_KEY = VILLAGE_TRACK.key;
+const { CHAPEL_TRACK, INN_TRACK } = await import("@/audio/townMusic");
+const { HUB_CHAPEL, HUB_INN } = await import("@/render/world/hubInteriors");
 const { MUSIC_DEFAULT_LEVEL, MUSIC_SETTING_KEY, musicGain } = await import("@/audio/musicSetting");
 const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
 const { UI_EFFECTS, uiSoundKey } = await import("@/audio/uiSounds");
@@ -5006,22 +5008,26 @@ describe("HubScene music loading (FS-28DDG R12–R14)", () => {
       textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
     });
 
-  it("should queue the village m4a then ogg, under its one key, beside the folk", () => {
+  it("should queue the village m4a then ogg, then the chapel's and the Inn's m4a, beside the folk", () => {
     const art = residentArt();
     const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
 
     hub.preload();
 
-    expect(art.queuedAudio).toEqual([{ key: MUSIC_KEY, url: ["/audio/music/village.m4a", "/audio/music/village.ogg"] }]);
+    expect(art.queuedAudio).toEqual([
+      { key: MUSIC_KEY, url: ["/audio/music/village.m4a", "/audio/music/village.ogg"] },
+      { key: CHAPEL_TRACK.key, url: ["/audio/music/chapel.m4a"] },
+      { key: INN_TRACK.key, url: ["/audio/music/inn.m4a"] },
+    ]);
     expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
   });
 
-  it("should skip the download while the track is still cached", () => {
+  it("should skip the download while the tracks are still cached", () => {
     const art = artLoaderStandin({
       manifest: shippedManifest(),
       cachedManifest: true,
       textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
-      audio: [MUSIC_KEY],
+      audio: [MUSIC_KEY, CHAPEL_TRACK.key, INN_TRACK.key],
     });
     const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
 
@@ -5349,6 +5355,20 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
 
       expect(sound.volumes.at(-1)).toBeCloseTo(musicGain(4), 12);
     });
+  });
+
+  // the chapel's and the Inn's tracks indoors, the village's everywhere else (§ Change: The chapel's
+  // and the Inn's music, M1); the switch itself is the town music's (townMusic.test.ts)
+  it.each([
+    ["the chapel", { id: "h-chapel", ...HUB_CHAPEL }, "chapel"],
+    ["the Inn", { id: "h-inn", ...HUB_INN }, "inn"],
+    ["another house", { id: "h-smithy", x: 0, y: 0, width: 100, height: 100 }, "street"],
+    ["no house", undefined, "street"],
+  ])("should hear %s as the music's place", (_, building, place) => {
+    const { hub } = hubWithSound();
+    Object.assign(hub, { view: { building } });
+
+    expect((hub as unknown as { musicPlace: string }).musicPlace).toBe(place);
   });
 
   it("should start the music on entering and fade it in on the game's step", () => {
@@ -6638,7 +6658,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const hub = env.hub as unknown as typeof env.hub & Windowed;
     const heard = hearOn(hub as unknown as Record<string, unknown>);
     // OPTIONS opens only beside the town's music; its level is not under test here
-    hub.music = { level: () => 3, setLevel: () => {}, leave: vi.fn() };
+    hub.music = { level: () => 3, setLevel: () => {}, leave: vi.fn(), moveTo: () => {} };
     const letter = { open: false };
     hub.mailbox = {
       isOpen: () => letter.open,
