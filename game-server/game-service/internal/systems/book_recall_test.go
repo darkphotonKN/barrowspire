@@ -39,7 +39,7 @@ func recallCast(em *ecs.EntityManager) (*ecs.Entity, BookCast) {
 func recallThrough(s *BookSystem, em *ecs.EntityManager, ground BookGround) {
 	for range recallTicks {
 		s.Update(castTick, em.GetAllEntities(), ground)
-		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground)
+		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground, PageEntryPoints{})
 	}
 }
 
@@ -171,10 +171,10 @@ func TestBookSystemCast_RecallBreaksWhatTheTeammateWasDoing(t *testing.T) {
 	// the teammate starts a cast of their own on the recall's last tick
 	for range recallTicks {
 		books.Update(castTick, em.GetAllEntities(), BookGround{})
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground)
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground, PageEntryPoints{})
 	}
 	bookOfT(t, mate).Casting = &components.BookCasting{Page: components.PageHardened, Total: 1, FromX: 1000, FromY: 500, HealthBeforeCombat: 100}
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground)
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground, PageEntryPoints{})
 
 	require.InDelta(t, 2*constants.PlayerRadius, apart(t, mage, mate), 1e-6, "recalled")
 	assert.False(t, mate.HasComponent(ecs.ComponentTypeTimedOpen), "the timed open broke")

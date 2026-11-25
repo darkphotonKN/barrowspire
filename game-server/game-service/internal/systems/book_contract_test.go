@@ -36,7 +36,7 @@ func contractCast(t *testing.T, desk ContractTaker) (BookCast, *ecs.Entity) {
 	merc := bookDelver(em, "mercenary", 15, 100, 100, components.PageTakeAContract)
 	page, ok := BookPageOf(string(components.PageTakeAContract))
 	require.True(t, ok)
-	return BookCast{Caster: merc, Page: page, CellSize: testCell, BookGround: BookGround{Contracts: desk}}, merc
+	return BookCast{Caster: merc, Page: page, CellSize: testCell, PageEntryPoints: PageEntryPoints{Contracts: desk}}, merc
 }
 
 // A mercenary's Take a Contract places the delve's contract through the

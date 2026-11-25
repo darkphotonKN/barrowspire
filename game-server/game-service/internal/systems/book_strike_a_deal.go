@@ -14,8 +14,8 @@ import (
 * The group has no body of its own on the wire, so the cast names it by any
 * of its living NPCs, as the client shows them (encounter_npcs); the entry
 * point resolves the NPC to its group and judges whether it is willing. The
-* book reaches it through GroupHirer, which the session supplies on the page's
-* ground, so this package never knows the session. It is had when the 2 s
+* book reaches it through GroupHirer, which the session supplies in the page's
+* PageEntryPoints, so this package never knows the session. It is had when the 2 s
 * cast completes, before the page is paid for, so a refusal by the world (not
 * willing, already hired, too many allies) spends nothing.
 **/

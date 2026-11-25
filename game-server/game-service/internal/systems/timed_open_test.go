@@ -52,11 +52,11 @@ func TestTimedOpenSystem_Start_PutsItOnTheBodyFromZero(t *testing.T) {
 	sys := NewTimedOpenSystem(em)
 
 	sys.Start(body, first, components.TimedTargetOpen, timedOpenDuration)
-	assert.Equal(t, components.TimedOpenComponent{TargetID: first, TargetKind: components.TimedTargetOpen, Duration: timedOpenDuration, FromX: 120, FromY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
+	assert.Equal(t, components.TimedOpenComponent{TargetID: first, TargetKind: components.TimedTargetOpen, Duration: timedOpenDuration, FromX: 120, FromY: 340, ReachX: 120, ReachY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
 
 	sys.Update(timedOpenTick, em.GetAllEntities(), nil)
 	sys.Start(body, second, components.TimedTargetOpen, timedOpenDuration)
-	assert.Equal(t, components.TimedOpenComponent{TargetID: second, TargetKind: components.TimedTargetOpen, Duration: timedOpenDuration, FromX: 120, FromY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
+	assert.Equal(t, components.TimedOpenComponent{TargetID: second, TargetKind: components.TimedTargetOpen, Duration: timedOpenDuration, FromX: 120, FromY: 340, ReachX: 120, ReachY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
 }
 
 // Each tick counts its simulation time on the timed open, the reach's own

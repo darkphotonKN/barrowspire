@@ -234,11 +234,14 @@ type placedBody struct {
 // huntedHit is every body the attack may land on: a monster's ability hits
 // the bodies monsters hunt, a delver in play, an ally and a peaceful
 // encounter NPC (FS-4EC7Z §A R3), never a monster, a caged captive or
-// anything else with health.
+// anything else with health. A standing hound is hunted (chased and struck
+// in melee, by shots too) but an area or cone spares it: monster area
+// abilities strike delvers (FS-X2CMM "Reconciled at review (wave 1)").
 func huntedHit(attack components.AttackSnapshot, entities []*ecs.Entity, playerDamage PlayerDamage) []placedBody {
 	var out []placedBody
 	for _, entity := range entities {
-		if !BodyKindOf(entity).Hunted() || !CanHit(attack, entity, playerDamage) {
+		kind := BodyKindOf(entity)
+		if !kind.Hunted() || kind == BodyHound || !CanHit(attack, entity, playerDamage) {
 			continue
 		}
 		tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)

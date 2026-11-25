@@ -13,7 +13,8 @@ import (
 * leave on a delver's book: its book cooldowns and its timed book states.
 *
 * A cast passes every gate in bookGates, in order, then its page's own in
-* pageGates (Recall's someone to pull, Heave's block free to go), or is
+* pageGates (Recall's someone to pull, Heave's block free to go) and
+* pageCastGates (Pick the Lock's shut cage), or is
 * refused with no effect, no cost and no cooldown. An instant page then pays
 * its cost, starts its book cooldown (or is spent) and has its effect, through
 * the resolver its page id names in pageResolvers. A page with a cast time
@@ -52,6 +53,7 @@ type BookCast struct {
 	// CellSize is the floor's cell edge in px, the unit of every range.
 	CellSize float64
 	BookGround
+	PageEntryPoints
 }
 
 // BookGround is what a page reads of its world past the entities: the floor's
@@ -72,13 +74,20 @@ type BookGround struct {
 	// afloat ends over a pit is set down (book_levitate.go). Nil off a
 	// dungeon floor: no one is set down.
 	Footing Footing
-	// Contracts is the world's contract entry point, Take a Contract's effect
-	// (book_contract.go). Nil takes none.
-	Contracts ContractTaker
 	// Cells is a dungeon floor's grid as a stone block reads and writes it:
 	// Heave shoves a block over it as a push does (book_heave.go, R52). Nil
 	// off a dungeon floor: nothing is shoved.
 	Cells CellMask
+}
+
+// PageEntryPoints are the world's entry points a page's effect calls, each
+// its own one-method port the page that calls it owns (pageEntries): the
+// effect may be refused by the world, and the refusal is told. The
+// session's; a test's stand-in.
+type PageEntryPoints struct {
+	// Contracts is the world's contract entry point, Take a Contract's effect
+	// (book_contract.go). Nil takes none.
+	Contracts ContractTaker
 	// FarReach is the world's interact from a distance, Far Hand's effect
 	// (book_far_hand.go, R50). Nil works nothing.
 	FarReach FarReach
@@ -124,10 +133,12 @@ var pageEntries = map[components.PageID]pageEntry{
 }
 
 // pageInteractables holds, by page id, which entities an interactable page
-// may name, where the page says (Far Hand's levers, chests, doors and traps);
-// any other interactable page names an entity the world takes an interact on.
+// may name, where the page says (Far Hand's levers, chests, doors and traps,
+// Heave's stone block); any other interactable page names an entity the
+// world takes an interact on.
 var pageInteractables = map[components.PageID]func(*ecs.Entity) bool{
 	components.PageFarHand:     farHandTarget,
+	components.PageHeave:       isStoneBlock,
 	components.PagePickTheLock: isCage,
 	components.PageStrikeADeal: isLivingEncounterNPC,
 }
@@ -174,6 +185,15 @@ var pageGates = map[components.PageID]pageGate{
 	components.PageRecall: gateSomeoneToPull,
 }
 
+// pageCastGates are conditions a page's entry point judges as well, which the
+// book judges at the cast only: refused there with nothing started and nothing
+// told, and at completion left to the entry point, whose refusal is told. A
+// Pick the Lock is aimed at a shut cage; one its key opened during the cast
+// is the world's cage_open.
+var pageCastGates = map[components.PageID]pageGate{
+	components.PagePickTheLock: gateShutCage,
+}
+
 // BookSystem works on one world's books and the book effects on its floor.
 type BookSystem struct {
 	em *ecs.EntityManager
@@ -199,6 +219,11 @@ func (s *BookSystem) Cast(cast BookCast) error {
 	}
 	if err := s.ownGate(cast); err != nil {
 		return err
+	}
+	if gate, ok := pageCastGates[cast.Page.ID]; ok {
+		if err := gate(s.em, cast); err != nil {
+			return err
+		}
 	}
 	if cast.Page.CastTime > 0 {
 		startCasting(cast, book)

@@ -46,7 +46,7 @@ func pickTheLockCast(t *testing.T, em *ecs.EntityManager, target *ecs.Entity, de
 	merc := bookDelver(em, "mercenary", 3, 0, 0, components.PagePickTheLock)
 	page, ok := BookPageOf(string(components.PagePickTheLock))
 	require.True(t, ok)
-	return BookCast{Caster: merc, Page: page, Target: target, CellSize: testCell, BookGround: BookGround{Cages: desk}}, merc
+	return BookCast{Caster: merc, Page: page, Target: target, CellSize: testCell, PageEntryPoints: PageEntryPoints{Cages: desk}}, merc
 }
 
 // castThrough casts and counts the page's whole cast time, returning the
@@ -59,7 +59,7 @@ func castThrough(t *testing.T, em *ecs.EntityManager, cast BookCast) ([]CastRefu
 	}
 	var refused []CastRefusal
 	for range ticksOf(cast.Page.CastTime) + 1 {
-		refused = append(refused, books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround)...)
+		refused = append(refused, books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround, cast.PageEntryPoints)...)
 	}
 	return refused, nil
 }
@@ -79,11 +79,11 @@ func TestBookSystemCast_PickTheLock_OpensTheCageAtCompletion(t *testing.T) {
 	require.NoError(t, books.Cast(cast))
 	require.NotNil(t, bookOfT(t, merc).Casting, "a 4 s cast")
 	for range ticksOf(4) - 1 {
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround)
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround, cast.PageEntryPoints)
 	}
 	assert.Empty(t, desk.opened, "nothing before the cast completes")
 
-	refused := books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround)
+	refused := books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround, cast.PageEntryPoints)
 
 	assert.Empty(t, refused)
 	assert.Equal(t, []uuid.UUID{cage.ID}, desk.opened)
@@ -92,8 +92,9 @@ func TestBookSystemCast_PickTheLock_OpensTheCageAtCompletion(t *testing.T) {
 	assert.Equal(t, before, pool.Current, "no cost")
 }
 
-// Only a cage is picked, and only one adjacent (within 1.5 cells): anything
-// else is refused at the cast, nothing started and nothing opened. R55 as
+// Only a shut cage is picked, and only one adjacent (within 1.5 cells):
+// anything else, an open cage too, is refused at the cast, nothing started
+// and nothing opened. R55 as
 // reconciled at wave 2, R12, R14.
 func TestBookSystemCast_PickTheLock_RefusesAnythingButAnAdjacentCage(t *testing.T) {
 	cases := map[string]func(em *ecs.EntityManager) *ecs.Entity{
@@ -105,6 +106,12 @@ func TestBookSystemCast_PickTheLock_RefusesAnythingButAnAdjacentCage(t *testing.
 			return chest
 		},
 		"a cage two cells off": func(em *ecs.EntityManager) *ecs.Entity { return standCage(em, 2*testCell, 0) },
+		"a cage already open": func(em *ecs.EntityManager) *ecs.Entity {
+			cage := standCage(em, testCell, 0)
+			cc, _ := cage.GetComponent(ecs.ComponentTypeCage)
+			cc.(*components.CageComponent).Open = true
+			return cage
+		},
 	}
 	for name, target := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -162,7 +169,7 @@ func TestBookSystemCast_PickTheLock_CageGoneEndsWithNothing(t *testing.T) {
 
 	var refused []CastRefusal
 	for range ticksOf(4) + 1 {
-		refused = append(refused, books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround)...)
+		refused = append(refused, books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround, cast.PageEntryPoints)...)
 	}
 
 	assert.Empty(t, refused)

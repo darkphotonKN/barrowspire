@@ -41,7 +41,7 @@ func farHandCast(t *testing.T, mage, target *ecs.Entity, desk FarReach) BookCast
 	t.Helper()
 	page, ok := BookPageOf(string(components.PageFarHand))
 	require.True(t, ok)
-	return BookCast{Caster: mage, Page: page, Target: target, CellSize: testCell, BookGround: BookGround{FarReach: desk}}
+	return BookCast{Caster: mage, Page: page, Target: target, CellSize: testCell, PageEntryPoints: PageEntryPoints{FarReach: desk}}
 }
 
 // castFarHandThrough casts Far Hand and counts its 1 s cast to its end with
@@ -53,7 +53,7 @@ func castFarHandThrough(t *testing.T, em *ecs.EntityManager, cast BookCast) erro
 		return err
 	}
 	for range ticksOf(1) {
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround)
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround, cast.PageEntryPoints)
 	}
 	return nil
 }
@@ -302,7 +302,7 @@ func TestBookSystemCast_FarHand_ReJudgedAtCompletion(t *testing.T) {
 
 			tt.change(em, target)
 			for range ticksOf(1) {
-				books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround)
+				books.AdvanceCasts(castTick, em.GetAllEntities(), nil, cast.BookGround, cast.PageEntryPoints)
 			}
 
 			assert.Empty(t, desk.worked)

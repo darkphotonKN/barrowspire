@@ -11,7 +11,7 @@ import (
 
 // FS-X2CMM §J R58, §E R28: a hound standing is a body of its own kind to the
 // ground. It weighs on a plate as a body does, stands in a block's way and is
-// hunted (and struck) by monsters; it pushes no block, detects nothing, fires
+// hunted (and struck in melee) by monsters, whose area abilities spare it; it pushes no block, detects nothing, fires
 // no trap and breathes no cloud. I-X2CMM-17.
 
 // bodyHoundAt sets a hound down at (x, y) with 40 health and its 40 s, as a
@@ -66,13 +66,14 @@ func TestShoveStoneBlock_RefusedOntoAHound(t *testing.T) {
 	assert.Equal(t, components.Cell{X: 5, Y: 5}, cellOf(w.block))
 }
 
-// A monster's ability lands on a standing hound in its reach, as on every
-// body monsters hunt; never on one that is gone.
-func TestHuntedHit_AMonstersAbilityStrikesAStandingHound(t *testing.T) {
+// A monster's area ability spares a standing hound: it strikes the delvers
+// in its reach (and the encounter NPCs monsters hunt), never the hound, which
+// monsters still chase and strike in melee (FS-X2CMM "Reconciled at review
+// (wave 1)").
+func TestHuntedHit_AMonstersAbilitySparesAStandingHound(t *testing.T) {
 	em := ecs.NewEntityManager()
-	hound := bodyHoundAt(em, 0, 0)
-	down := bodyHoundAt(em, 0, 0)
-	healthT(t, down).CurrentHealth = 0
+	bodyHoundAt(em, 0, 0)
+	d := delver(em, 0, 0)
 
 	hit := huntedHit(components.AttackSnapshot{FromMonster: true}, em.GetAllEntities(), PlayerDamageOff)
 
@@ -80,5 +81,19 @@ func TestHuntedHit_AMonstersAbilityStrikesAStandingHound(t *testing.T) {
 	for _, b := range hit {
 		ids = append(ids, b.entity.ID)
 	}
-	assert.Equal(t, []uuid.UUID{hound.ID}, ids)
+	assert.Equal(t, []uuid.UUID{d.ID}, ids)
+}
+
+// A troll's slam lands on the delver in its circle and passes by the hound
+// standing beside them. FS-C8VM7 §B R14.
+func TestMonsterAbility_SlamSparesAHoundInItsCircle(t *testing.T) {
+	em := ecs.NewEntityManager()
+	bloodTroll(t, em, 500, 500)
+	target := sturdy(delver(em, 580, 500))
+	hound := bodyHoundAt(em, 500, 580)
+	brawl(em, 1)
+	brawl(em, ticks(0.9))
+
+	assert.Less(t, health(target), 100000, "the delver in the circle is hit")
+	assert.Equal(t, 40, healthT(t, hound).CurrentHealth, "the hound is spared")
 }

@@ -68,6 +68,7 @@ func (s *TimedOpenSystem) Start(delver *ecs.Entity, targetID uuid.UUID, kind com
 	if tc, ok := delver.GetComponent(ecs.ComponentTypeTransform); ok {
 		at := tc.(*components.TransformComponent)
 		open.FromX, open.FromY = at.X, at.Y
+		open.ReachX, open.ReachY = at.X, at.Y
 	}
 	if hc, ok := delver.GetComponent(ecs.ComponentTypeHealth); ok {
 		open.HealthBeforeCombat = hc.(*components.HealthComponent).CurrentHealth
@@ -83,7 +84,7 @@ func (s *TimedOpenSystem) StartAfar(delver *ecs.Entity, targetID uuid.UUID, kind
 	s.Start(delver, targetID, kind, duration)
 	if oc, ok := delver.GetComponent(ecs.ComponentTypeTimedOpen); ok {
 		open := oc.(*components.TimedOpenComponent)
-		open.Afar, open.AfarX, open.AfarY = true, x, y
+		open.ReachX, open.ReachY = x, y
 	}
 }
 
@@ -173,12 +174,14 @@ func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOp
 	if _, stands := s.em.GetEntity(delver.ID); !stands {
 		return true
 	}
-	// the body is not where it stood at the reach, whatever moved it
-	if tc, ok := delver.GetComponent(ecs.ComponentTypeTransform); ok {
-		at := tc.(*components.TransformComponent)
-		if at.X != open.FromX || at.Y != open.FromY {
-			return true
-		}
+	// the body is not where it stood at the reach, whatever moved it; a body
+	// with no place is in reach of nothing
+	tc, placed := delver.GetComponent(ecs.ComponentTypeTransform)
+	if !placed {
+		return true
+	}
+	if at := tc.(*components.TransformComponent); at.X != open.FromX || at.Y != open.FromY {
+		return true
 	}
 	// a hit cost the delver health in the tick's combat
 	if hc, ok := delver.GetComponent(ecs.ComponentTypeHealth); ok {
@@ -196,27 +199,13 @@ func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOp
 	if !ok {
 		return true
 	}
-	if open.Afar {
-		return !withinInteractRangeOf(open.AfarX, open.AfarY, container)
-	}
-	return !withinInteractRange(delver, container)
-}
-
-// withinInteractRange is whether the two stand within the interact range of
-// each other; a thing with no place is in reach of nothing. A door-shaped
-// target, a secret door, is measured to its rect's nearest point, as its
-// reach is (FS-5FZ4J §F R38); a container to its centre, as ever.
-func withinInteractRange(a, b *ecs.Entity) bool {
-	ac, ok := a.GetComponent(ecs.ComponentTypeTransform)
-	if !ok {
-		return false
-	}
-	from := ac.(*components.TransformComponent)
-	return withinInteractRangeOf(from.X, from.Y, b)
+	return !withinInteractRangeOf(open.ReachX, open.ReachY, container)
 }
 
 // withinInteractRangeOf is whether the place (fromX, fromY) stands within
-// the interact range of b, measured as withinInteractRange measures.
+// the interact range of b; a thing with no place is in reach of nothing. A
+// door-shaped target, a secret door, is measured to its rect's nearest point,
+// as its reach is (FS-5FZ4J §F R38); a container to its centre, as ever.
 func withinInteractRangeOf(fromX, fromY float64, b *ecs.Entity) bool {
 	bc, ok := b.GetComponent(ecs.ComponentTypeTransform)
 	if !ok {

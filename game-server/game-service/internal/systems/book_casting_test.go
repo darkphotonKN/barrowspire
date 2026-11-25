@@ -30,7 +30,7 @@ func witchlightCast(em *ecs.EntityManager, x float64) (*ecs.Entity, BookCast) {
 func castTicks(s *BookSystem, em *ecs.EntityManager, n int) {
 	for range n {
 		s.Update(castTick, em.GetAllEntities(), BookGround{})
-		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
+		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround}, PageEntryPoints{})
 	}
 }
 
@@ -62,7 +62,7 @@ func TestBookSystemCast_WitchlightSetsDownItsLightOnlyAfterItsCastTime(t *testin
 	assert.Empty(t, book.Cooldowns)
 
 	// the cast's own tick, then 28 more: still casting
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround}, PageEntryPoints{})
 	castTicks(books, em, 28)
 	require.NotNil(t, book.Casting, "still casting before 1 s")
 	assert.Empty(t, bookEffectsOf(em), "no light yet")
@@ -152,7 +152,7 @@ func TestBookSystemAdvanceCasts_BreaksWithNothingSpent(t *testing.T) {
 			books.MarkHealth(entities)
 
 			attackers := tt.breakIt(em, mage)
-			books.AdvanceCasts(castTick, entities, attackers, BookGround{Walkable: anyGround})
+			books.AdvanceCasts(castTick, entities, attackers, BookGround{Walkable: anyGround}, PageEntryPoints{})
 
 			assert.Nil(t, book.Casting, "the cast is broken")
 			pool, _ := bookPool(mage)
@@ -175,7 +175,7 @@ func TestBookSystemAdvanceCasts_AHealBeforeTheMarkBreaksNothing(t *testing.T) {
 
 	hc.(*components.HealthComponent).CurrentHealth = 60
 	books.MarkHealth(em.GetAllEntities())
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround}, PageEntryPoints{})
 
 	assert.NotNil(t, bookOfT(t, mage).Casting, "a heal breaks nothing")
 }
@@ -221,7 +221,7 @@ func TestBookSystemAdvanceCasts_CompletionRechecksTheTarget(t *testing.T) {
 	require.NoError(t, books.Cast(cast))
 
 	for range 31 {
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: func(_, _ float64) bool { return false }})
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: func(_, _ float64) bool { return false }}, PageEntryPoints{})
 	}
 
 	assert.Empty(t, bookEffectsOf(em), "no light on rock")

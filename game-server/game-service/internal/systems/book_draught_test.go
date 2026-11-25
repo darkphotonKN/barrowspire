@@ -40,7 +40,7 @@ func brewedDraught(t *testing.T, em *ecs.EntityManager) (archer, draught *ecs.En
 	books := NewBookSystem(em)
 	require.NoError(t, books.Cast(selfCast(archer, components.PageBrew)))
 	for range 91 { // the cast's 3 s, and the tick it completes on
-		books.AdvanceCasts(draughtTick, em.GetAllEntities(), nil, BookGround{})
+		books.AdvanceCasts(draughtTick, em.GetAllEntities(), nil, BookGround{}, PageEntryPoints{})
 	}
 	set := draughtsIn(em)
 	require.Len(t, set, before+1, "the draught is set down")

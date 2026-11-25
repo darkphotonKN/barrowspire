@@ -86,9 +86,10 @@ func (s *BookSystem) MarkHealth(entities []*ecs.Entity) {
 // cast on a tick completes on the 60th at 60 Hz, its own counted. attackers is
 // the bodies whose attack or cast went off in the tick's combat
 // (CombatSystem.Attackers); ground is the floor a completed page has its
-// effect on, a ground page's point judged again on it. What comes back is
-// each completed page an entry point refused, for its caster to be told.
-func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID, ground BookGround) []CastRefusal {
+// effect on, a ground page's point judged again on it, and entries the
+// world's entry points a completed page calls. What comes back is each
+// completed page an entry point refused, for its caster to be told.
+func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID, ground BookGround, entries PageEntryPoints) []CastRefusal {
 	var refused []CastRefusal
 	for _, entity := range entities {
 		book, ok := bookOf(entity)
@@ -102,7 +103,7 @@ func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, att
 		}
 		if casting.Elapsed += deltaTime; casting.Elapsed >= casting.Total-castEpsilon {
 			book.Casting = nil
-			if err := s.complete(entity, book, casting, ground); err != nil {
+			if err := s.complete(entity, book, casting, ground, entries); err != nil {
 				refused = append(refused, CastRefusal{Member: memberIDOf(entity), Err: err})
 			}
 		}
@@ -144,19 +145,20 @@ func (s *BookSystem) castBroken(caster *ecs.Entity, casting *components.BookCast
 // A page that is an entry point may still be refused by the world: it too
 // ends with nothing, and the refusal comes back for its caster to be told.
 // A failed gate's is never told, as the cast's own are not.
-func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent, casting *components.BookCasting, ground BookGround) error {
+func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent, casting *components.BookCasting, ground BookGround, entries PageEntryPoints) error {
 	page, ok := classBooks[casting.Page]
 	if !ok {
 		return nil
 	}
 	cast := BookCast{
-		Caster:     caster,
-		Page:       page,
-		TargetX:    casting.TargetX,
-		TargetY:    casting.TargetY,
-		Target:     s.castTarget(casting.TargetID),
-		CellSize:   casting.CellSize,
-		BookGround: ground,
+		Caster:          caster,
+		Page:            page,
+		TargetX:         casting.TargetX,
+		TargetY:         casting.TargetY,
+		Target:          s.castTarget(casting.TargetID),
+		CellSize:        casting.CellSize,
+		BookGround:      ground,
+		PageEntryPoints: entries,
 	}
 	recheck := cast
 	recheck.Page.RangeCells += castRangeSlackCells

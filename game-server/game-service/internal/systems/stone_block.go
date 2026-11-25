@@ -152,7 +152,7 @@ func (s *StoneBlockSystem) build(b stoneBlock, pushes []push, deltaTime float64,
 		b.block.PushX, b.block.PushY, b.block.Pushed = lead.dx, lead.dy, 0
 	}
 	target := components.Cell{X: b.piece.Cell.X + lead.dx, Y: b.piece.Cell.Y + lead.dy}
-	if s.refused(target, b, entities, blocks) {
+	if refusedOnto(s.grid, target, b, entities, blocks) {
 		b.block.Pushed = 0
 		return
 	}
@@ -164,17 +164,17 @@ func (s *StoneBlockSystem) build(b stoneBlock, pushes []push, deltaTime float64,
 	}
 	b.block.Pushed = 0
 	b.block.Still = 0
-	s.land(b, target, lead.by, 1/rate)
+	landOn(s.grid, b, target, lead.by, 1/rate)
 }
 
-// land moves the block's cell on to target and starts its slide there over
-// slideFor seconds: target is shut on the grid from this tick, the cell it
-// leaves the tick the slide ends. by is the delver whose push moved it,
-// uuid.Nil for a drift home.
-func (s *StoneBlockSystem) land(b stoneBlock, target components.Cell, by uuid.UUID, slideFor float64) {
+// landOn moves the block's cell on to target and starts its slide there over
+// slideFor seconds: target is shut on grid from this tick, the cell it leaves
+// the tick the slide ends. by is the delver whose push moved it, uuid.Nil for
+// a drift home.
+func landOn(grid CellMask, b stoneBlock, target components.Cell, by uuid.UUID, slideFor float64) {
 	b.block.PushedBy = by
 	b.piece.Cell = target
-	s.grid.SetWalkable(target.X, target.Y, false)
+	grid.SetWalkable(target.X, target.Y, false)
 	b.block.Sliding = true
 	b.block.FromX, b.block.FromY = b.at.X, b.at.Y
 	b.block.Slid, b.block.SlideFor = 0, slideFor
@@ -190,40 +190,39 @@ grid, when block is no stone block or still slides, or when the cell is one a
 push may not enter (refused).
 */
 func ShoveStoneBlock(grid CellMask, block *ecs.Entity, dx, dy int, by uuid.UUID, entities []*ecs.Entity) bool {
-	s, b, target, ok := shoveOf(grid, block, dx, dy, entities)
+	b, target, ok := shoveOf(grid, block, dx, dy, entities)
 	if !ok {
 		return false
 	}
 	b.block.Pushed, b.block.Still = 0, 0
-	s.land(b, target, by, b.block.Size/(constants.DefaultSpeed*BlockPushSpeedShare))
+	landOn(grid, b, target, by, b.block.Size/(constants.DefaultSpeed*BlockPushSpeedShare))
 	return true
 }
 
 // StoneBlockShovable is whether ShoveStoneBlock would move the block, moving
 // nothing.
 func StoneBlockShovable(grid CellMask, block *ecs.Entity, dx, dy int, entities []*ecs.Entity) bool {
-	_, _, _, ok := shoveOf(grid, block, dx, dy, entities)
+	_, _, ok := shoveOf(grid, block, dx, dy, entities)
 	return ok
 }
 
-// shoveOf is a shove of block along (dx, dy) as the block system judges a
-// push: the system over grid, the block, the cell it lands on, and whether
-// the shove may go.
-func shoveOf(grid CellMask, block *ecs.Entity, dx, dy int, entities []*ecs.Entity) (*StoneBlockSystem, stoneBlock, components.Cell, bool) {
+// shoveOf is a shove of block along (dx, dy) over grid as a push is judged:
+// the block, the cell it lands on, and whether the shove may go.
+func shoveOf(grid CellMask, block *ecs.Entity, dx, dy int, entities []*ecs.Entity) (stoneBlock, components.Cell, bool) {
 	if grid == nil || block == nil || dx*dx+dy*dy != 1 {
-		return nil, stoneBlock{}, components.Cell{}, false
+		return stoneBlock{}, components.Cell{}, false
 	}
 	blocks := stoneBlocksOf(entities)
 	i := slices.IndexFunc(blocks, func(b stoneBlock) bool { return b.entity.ID == block.ID })
 	if i < 0 || blocks[i].block.Sliding {
-		return nil, stoneBlock{}, components.Cell{}, false
+		return stoneBlock{}, components.Cell{}, false
 	}
-	s, b := &StoneBlockSystem{grid: grid}, blocks[i]
+	b := blocks[i]
 	target := components.Cell{X: b.piece.Cell.X + dx, Y: b.piece.Cell.Y + dy}
-	if s.refused(target, b, entities, blocks) {
-		return nil, stoneBlock{}, components.Cell{}, false
+	if refusedOnto(grid, target, b, entities, blocks) {
+		return stoneBlock{}, components.Cell{}, false
 	}
-	return s, b, target, true
+	return b, target, true
 }
 
 /*
@@ -243,14 +242,14 @@ func (s *StoneBlockSystem) driftHome(b stoneBlock, deltaTime float64, entities [
 		return
 	case b.block.Still < s.drift.After, plates[b.piece.Cell]:
 		return
-	case s.delverNear(b, entities), s.refused(b.block.Home, b, entities, blocks):
+	case s.delverNear(b, entities), refusedOnto(s.grid, b.block.Home, b, entities, blocks):
 		return
 	}
 	next, ok := s.stepHome(b, blocks, plates)
-	if !ok || s.refused(next, b, entities, blocks) {
+	if !ok || refusedOnto(s.grid, next, b, entities, blocks) {
 		return
 	}
-	s.land(b, next, uuid.Nil, b.block.Size/(constants.DefaultSpeed*BlockPushSpeedShare))
+	landOn(s.grid, b, next, uuid.Nil, b.block.Size/(constants.DefaultSpeed*BlockPushSpeedShare))
 }
 
 // delverNear is whether a delver in play stands within the drift's clear
@@ -345,17 +344,17 @@ func (s *StoneBlockSystem) slide(b stoneBlock, deltaTime float64) {
 }
 
 /*
-refused is whether a block may not be pushed onto target (FS-5FZ4J §C R19):
-out of its plates room's cells (as amended), off the floor, rock or shut on the
-grid (a shell wall, a shut gate or secret door, a pit, another block), any
+refusedOnto is whether a block may not be pushed onto target (FS-5FZ4J §C
+R19): out of its plates room's cells (as amended), off the floor, rock or shut
+on grid (a shell wall, a shut gate or secret door, a pit, another block), any
 barrier's cell even open (a block never enters the gate's cells or a pit, Edge
 States), another block's cell, a shut door's, or a cell a body overlaps.
 */
-func (s *StoneBlockSystem) refused(target components.Cell, self stoneBlock, entities []*ecs.Entity, blocks []stoneBlock) bool {
+func refusedOnto(grid CellMask, target components.Cell, self stoneBlock, entities []*ecs.Entity, blocks []stoneBlock) bool {
 	if self.block.Room.W > 0 && !inRect(self.block.Room, target) {
 		return true
 	}
-	if !s.grid.Walkable(target.X, target.Y) {
+	if !grid.Walkable(target.X, target.Y) {
 		return true
 	}
 	for _, other := range blocks {
@@ -385,9 +384,11 @@ func (s *StoneBlockSystem) refused(target components.Cell, self stoneBlock, enti
 	return BodyOverlapsCell(target, size, entities)
 }
 
-// BodyOverlapsCell is whether a body the ground counts (a delver in play, a
-// live monster) overlaps cell, of side size px: a block may not be pushed,
-// drift or be laid there (FS-5FZ4J §C R19).
+// BodyOverlapsCell is whether a body the ground counts overlaps cell, of
+// side size px: a delver in play, a live monster, an encounter NPC caged or
+// not, a hired ally or a standing hound (any kind but BodyNone). A block may
+// not be pushed, shoved, drift or be laid there (FS-5FZ4J §C R19, FS-X2CMM
+// §J R58).
 func BodyOverlapsCell(cell components.Cell, size float64, entities []*ecs.Entity) bool {
 	x0, y0 := float64(cell.X)*size, float64(cell.Y)*size
 	x1, y1 := x0+size, y0+size

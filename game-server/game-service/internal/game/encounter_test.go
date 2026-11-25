@@ -1,9 +1,11 @@
 package game
 
 import (
+	"cmp"
 	"math"
 	"math/rand/v2"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -41,7 +43,10 @@ func theEncounter(s *Session) (*ecs.Entity, *components.EncounterComponent, bool
 	return nil, nil, false
 }
 
-// npcsOf is the floor's encounter NPC entities.
+// npcsOf is the floor's encounter NPC entities in a fixed order, so a test's
+// npcsOf(s)[i] is the same NPC on every run at its seed: the encounter's own
+// order (the order they stood), then any NPC no encounter names, by id.
+// GetAllEntities' order is a map's.
 func npcsOf(s *Session) []*ecs.Entity {
 	var out []*ecs.Entity
 	for _, e := range s.EntityManager.GetAllEntities() {
@@ -49,6 +54,24 @@ func npcsOf(s *Session) []*ecs.Entity {
 			out = append(out, e)
 		}
 	}
+	stood := map[uuid.UUID]int{}
+	if _, enc, ok := theEncounter(s); ok {
+		for i, id := range enc.NPCs {
+			stood[id] = i
+		}
+	}
+	rank := func(e *ecs.Entity) int {
+		if i, ok := stood[e.ID]; ok {
+			return i
+		}
+		return len(stood)
+	}
+	slices.SortFunc(out, func(a, b *ecs.Entity) int {
+		if c := cmp.Compare(rank(a), rank(b)); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID.String(), b.ID.String())
+	})
 	return out
 }
 

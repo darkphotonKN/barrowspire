@@ -61,13 +61,14 @@ func (s *Session) castPage(playerID uuid.UUID, page systems.BookPage, cast types
 	}
 
 	err := systems.NewBookSystem(s.EntityManager).Cast(systems.BookCast{
-		Caster:     caster,
-		Page:       page,
-		TargetX:    cast.TargetX,
-		TargetY:    cast.TargetY,
-		Target:     s.pageTarget(cast.TargetID),
-		CellSize:   s.bookCellSize(),
-		BookGround: s.bookGround(),
+		Caster:          caster,
+		Page:            page,
+		TargetX:         cast.TargetX,
+		TargetY:         cast.TargetY,
+		Target:          s.pageTarget(cast.TargetID),
+		CellSize:        s.bookCellSize(),
+		BookGround:      s.bookGround(),
+		PageEntryPoints: s.pageEntryPoints(),
 	})
 	if err != nil {
 		slog.Debug("Refusing a book ability", "session_id", s.ID, "player_id", playerID, "page", page.ID, "reason", err)
@@ -132,7 +133,7 @@ func (s *Session) advanceCasts(deltaTime float64, entities []*ecs.Entity, attack
 	if s.worldType != types.WorldTypeRun {
 		return
 	}
-	for _, refused := range systems.NewBookSystem(s.EntityManager).AdvanceCasts(deltaTime, entities, attackers, s.bookGround()) {
+	for _, refused := range systems.NewBookSystem(s.EntityManager).AdvanceCasts(deltaTime, entities, attackers, s.bookGround(), s.pageEntryPoints()) {
 		slog.Debug("Refusing a book ability at its cast's end", "session_id", s.ID, "player_id", refused.Member, "reason", refused.Err)
 		s.refusePage(refused.Member, refused.Err)
 	}
@@ -148,10 +149,6 @@ func (s *Session) bookGround() systems.BookGround {
 		Walkable:  s.pageGround,
 		Ground:    s.movementSystem,
 		EndCharge: s.combatSystem.EndCharge,
-		Contracts: s,
-		Cages:     s,
-		Hires:     s,
-		FarReach:  s,
 	}
 	// a nil grid is no footing, never a footing holding a nil grid
 	if s.navGrid != nil {
@@ -159,6 +156,13 @@ func (s *Session) bookGround() systems.BookGround {
 		ground.Cells = s.navGrid
 	}
 	return ground
+}
+
+// pageEntryPoints is the session as the pages' world entry points: the
+// contract, the open cage, the hire and Far Hand's reach, each the page's own
+// one-method port. FS-X2CMM §J R50, R55–R57.
+func (s *Session) pageEntryPoints() systems.PageEntryPoints {
+	return systems.PageEntryPoints{Contracts: s, Cages: s, Hires: s, FarReach: s}
 }
 
 // pageGround is whether a ground page's point is ground a body could stand

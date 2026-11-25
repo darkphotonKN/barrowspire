@@ -3,6 +3,7 @@ package systems
 import (
 	"errors"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/google/uuid"
 )
@@ -11,12 +12,14 @@ import (
 * Pick the Lock (FS-X2CMM §B R11, §J R55 as reconciled at wave 2). The
 * mercenary's page opens an adjacent cage without its key, as FS-4EC7Z's
 * open-cage entry point does (game/captives.go OpenCage): the sealed floors
-* built no locked doors and no locked chests, so the cage is its only target,
-* judged at the cast and again at completion (R17). The book reaches the
-* entry point through CageOpener, which the session supplies on the page's
-* ground, so this package never knows the session. It is had when the 4 s
-* cast completes, before the page is paid for, so a refusal by the world (too
-* many allies, a cage its key opened meanwhile) spends nothing.
+* built no locked doors and no locked chests, so a shut cage is its only
+* target, judged at the cast and again at completion (R17): by the book at
+* the cast, by the entry point at completion, so a cage its key opened during
+* the cast is told cage_open. The book reaches the entry point through
+* CageOpener, which the session supplies in the page's PageEntryPoints, so
+* this package never knows the session. It is had when the 4 s cast
+* completes, before the page is paid for, so a refusal by the world (too many
+* allies, a cage its key opened meanwhile) spends nothing.
 **/
 
 // ErrNoCages refuses a Pick the Lock in a world that supplies no open-cage
@@ -42,4 +45,15 @@ func enterPickTheLock(cast BookCast) error {
 // isCage is whether e is a cage, Pick the Lock's one target.
 func isCage(e *ecs.Entity) bool {
 	return e.HasComponent(ecs.ComponentTypeCage)
+}
+
+// gateShutCage refuses a Pick the Lock on a cage already open, so the 4 s
+// are never spent on one. Judged at the cast only (pageCastGates): a cage its
+// key opens during the cast is refused at completion by the world's
+// open-cage entry point, cage_open, and the caster is told.
+func gateShutCage(_ *ecs.EntityManager, cast BookCast) error {
+	if cc, ok := cast.Target.GetComponent(ecs.ComponentTypeCage); ok && cc.(*components.CageComponent).Open {
+		return ErrBadPageTarget
+	}
+	return nil
 }

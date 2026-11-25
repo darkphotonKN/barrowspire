@@ -32,7 +32,7 @@ func callHound(t *testing.T, em *ecs.EntityManager, archer *ecs.Entity, x float6
 		CellSize: testCell, BookGround: BookGround{Walkable: anyGround},
 	}))
 	for range ticksOf(2) {
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround}, PageEntryPoints{})
 	}
 	hound, ok := houndOfArcher(em, archer)
 	require.True(t, ok, "the hound is called")

@@ -10,8 +10,8 @@ import (
 * Take a Contract (FS-X2CMM §J R57). The mercenary's page places the delve's
 * one contract, FS-4EC7Z's: the mark, its heading and Contract Settled are the
 * session's (game/contract.go). The book reaches it through ContractTaker, the
-* one entry point the session supplies on the page's ground, so this package
-* never knows the session. The entry point judges the contract (one a delve,
+* one entry point the session supplies in the page's PageEntryPoints, so this
+* package never knows the session. The entry point judges the contract (one a delve,
 * a floor with stairs, a room for the mark) and may refuse; the page is paid
 * for only once it takes (resolve), so a refusal leaves the once-a-delve use
 * unspent.

@@ -9,6 +9,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
+	"github.com/google/uuid"
 )
 
 /**
@@ -75,9 +76,10 @@ func (weightedPlates) work(*Session, pieceWork) {}
 * watch weighs every plate of the seal this tick: held while a body that
 * weighs has its centre on the plate's cell or a block rests there (FS-5FZ4J
 * §C R18), shown as the piece's active, broken seal or not. While the seal
-* holds, the first plate held wakes its one ambush, on the delver holding it
-* or the one whose push brought the block there; and on the first tick every
-* plate is held at once the seal breaks (R17).
+* holds, the first plate held wakes its one ambush, on the delver holding it,
+* the one whose push brought the block there or the archer of the hound on
+* it, else (none in play) on the delver nearest the plate, never on a hound;
+* and on the first tick every plate is held at once the seal breaks (R17).
 **/
 func (weightedPlates) watch(s *Session, _ float64, seal *ecs.Entity, sc *components.SealComponent, entities []*ecs.Entity) {
 	plates := platesOf(seal, entities)
@@ -116,10 +118,12 @@ func (weightedPlates) watch(s *Session, _ float64, seal *ecs.Entity, sc *compone
 }
 
 /**
-* plateHeld is whether something holds the plate on cell, and the delver it
-* is down to: a body that weighs with its centre on the cell, that body; else
-* a stone block at rest on the cell, the delver whose push left it there, nil
-* when they are gone or out of play. Cells are size px a side.
+* plateHeld is whether something holds the plate on cell, and the body it is
+* down to: a delver or a hired ally with its centre on the cell, that body; a
+* standing hound there, its archer, nil when they are out of play (never the
+* hound: FS-X2CMM §J R58); else a stone block at rest on the cell, the delver
+* whose push left it there, nil when they are gone or out of play. Cells are
+* size px a side.
 **/
 func plateHeld(cell components.Cell, size float64, entities []*ecs.Entity) (bool, *ecs.Entity) {
 	if size <= 0 {
@@ -133,12 +137,16 @@ func plateHeld(cell components.Cell, size float64, entities []*ecs.Entity) (bool
 			}
 			continue
 		}
-		if !systems.BodyKindOf(e).Weighs() {
+		kind := systems.BodyKindOf(e)
+		if !kind.Weighs() {
 			continue
 		}
 		if tc, ok := e.GetComponent(ecs.ComponentTypeTransform); ok {
 			at := tc.(*components.TransformComponent)
 			if (components.Cell{X: int(math.Floor(at.X / size)), Y: int(math.Floor(at.Y / size))}) == cell {
+				if kind == systems.BodyHound {
+					return true, delverInPlay(systems.ArcherOf(e), entities)
+				}
 				return true, e
 			}
 		}
@@ -146,12 +154,18 @@ func plateHeld(cell components.Cell, size float64, entities []*ecs.Entity) (bool
 	if block == nil {
 		return false, nil
 	}
+	return true, delverInPlay(block.PushedBy, entities)
+}
+
+// delverInPlay is the delver id names among entities, nil when they are gone
+// or out of play.
+func delverInPlay(id uuid.UUID, entities []*ecs.Entity) *ecs.Entity {
 	for _, e := range entities {
-		if e.ID == block.PushedBy && systems.BodyKindOf(e) == systems.BodyDelver {
-			return true, e
+		if e.ID == id && systems.BodyKindOf(e) == systems.BodyDelver {
+			return e
 		}
 	}
-	return true, nil
+	return nil
 }
 
 // platesOf is seal's plates, by entity.

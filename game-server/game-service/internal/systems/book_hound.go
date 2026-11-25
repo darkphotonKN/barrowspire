@@ -76,15 +76,15 @@ func resolveCallTheHound(world *ecs.EntityManager, cast BookCast) {
 // sendAwayHoundOf takes the archer's hound from the floor, if one stands.
 func sendAwayHoundOf(world *ecs.EntityManager, archerID uuid.UUID) {
 	for _, entity := range world.GetAllEntities() {
-		if entity.HasComponent(ecs.ComponentTypeHound) && archerOf(entity) == archerID {
+		if entity.HasComponent(ecs.ComponentTypeHound) && ArcherOf(entity) == archerID {
 			world.RemoveEntity(entity.ID)
 		}
 	}
 }
 
-// archerOf is the body whose call set the hound down, uuid.Nil for anything
+// ArcherOf is the body whose call set the hound down, uuid.Nil for anything
 // that is no book effect.
-func archerOf(hound *ecs.Entity) uuid.UUID {
+func ArcherOf(hound *ecs.Entity) uuid.UUID {
 	if ec, ok := hound.GetComponent(ecs.ComponentTypeBookEffect); ok {
 		return ec.(*components.BookEffectComponent).CasterID
 	}
@@ -160,7 +160,7 @@ func (s *MonsterAISystem) houndGoal(entity *ecs.Entity, hound *components.HoundC
 		to, _ := bodyCentre(prey)
 		return to, hound.Reach, true
 	}
-	archer := archerOf(entity)
+	archer := ArcherOf(entity)
 	for _, other := range entities {
 		if other.ID == archer && InPlay(other) {
 			to, ok := bodyCentre(other)

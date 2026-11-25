@@ -38,7 +38,7 @@ func (w *pushWorld) heaveGround() BookGround {
 // heaveFor counts the world's casts through seconds of ticks, nothing moving.
 func heaveFor(w *pushWorld, books *BookSystem, seconds float64) {
 	for range ticksOf(seconds) {
-		books.AdvanceCasts(castTick, w.em.GetAllEntities(), nil, w.heaveGround())
+		books.AdvanceCasts(castTick, w.em.GetAllEntities(), nil, w.heaveGround(), PageEntryPoints{})
 	}
 }
 

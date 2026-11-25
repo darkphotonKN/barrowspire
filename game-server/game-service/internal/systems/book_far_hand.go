@@ -13,8 +13,8 @@ import (
 * works its target within 6 cells as if the mage had interacted with it
 * standing beside it, or springs a detected trap. What working it does is the
 * session's interact (game/class_book_far_hand.go): the book reaches it through
-* FarReach, the one entry point the session supplies on the page's ground, so
-* this package never knows the session. It is had when the 1 s cast completes,
+* FarReach, the one entry point the session supplies in the page's
+* PageEntryPoints, so this package never knows the session. It is had when the 1 s cast completes,
 * before the page is paid for, so a refusal by the world spends nothing.
 *
 * The targets are named here, and nothing else is one: a lever or the bridge

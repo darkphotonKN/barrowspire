@@ -114,3 +114,41 @@ func TestBook_AfloatEndingOverAPit_NoGroundAnywhere_StaysPut(t *testing.T) {
 	require.False(t, afloat(delver))
 	assert.Equal(t, [2]float64{420, 300}, placeOf(delver))
 }
+
+// A chasm wider than 2 cells with rock behind its far edge: afloat ending
+// near that edge sets the delver down on the bank the pit reaches, though a
+// walkable cell beyond the rock lies nearer in a straight line. Columns 0-1
+// ground, 2-6 pit, 7 rock, 8-9 ground.
+func TestBook_AfloatEndingOverAWideChasm_SetsDownOnTheBankThePitReaches(t *testing.T) {
+	walkable := make([]bool, 10*10)
+	for i := range walkable {
+		col := i % 10
+		walkable[i] = col <= 1 || col >= 8
+	}
+	em := ecs.NewEntityManager()
+	addPit(em, 2*chasmCell, 0, 5*chasmCell, 10*chasmCell)
+	grid := navigation.NewGrid(10, 10, chasmCell, walkable)
+	delver := lift(walkingDelver(em, 6.4*chasmCell, 3.5*chasmCell, 1, 0), 0.05)
+
+	lapse(em, BookGround{Footing: grid})
+
+	assert.Equal(t, [2]float64{1.5 * chasmCell, 3.5 * chasmCell}, placeOf(delver), "on cell (1, 3), across the pit, not (8, 3) behind the rock")
+}
+
+// A pit with no bank its cells reach (walled in by rock) falls back to the
+// nearest walkable cell in a straight line.
+func TestBook_AfloatEndingOverAWalledPit_SetsDownOnTheStraightNearest(t *testing.T) {
+	walkable := make([]bool, 10*10)
+	for i := range walkable {
+		col := i % 10
+		walkable[i] = col <= 1 || col >= 8
+	}
+	em := ecs.NewEntityManager()
+	addPit(em, 3*chasmCell, 0, 4*chasmCell, 10*chasmCell) // columns 3-6, rock at 2 and 7
+	grid := navigation.NewGrid(10, 10, chasmCell, walkable)
+	delver := lift(walkingDelver(em, 6.4*chasmCell, 3.5*chasmCell, 1, 0), 0.05)
+
+	lapse(em, BookGround{Footing: grid})
+
+	assert.Equal(t, [2]float64{8.5 * chasmCell, 3.5 * chasmCell}, placeOf(delver))
+}

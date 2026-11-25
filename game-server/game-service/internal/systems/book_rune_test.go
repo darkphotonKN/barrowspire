@@ -29,9 +29,9 @@ func layRune(t *testing.T, em *ecs.EntityManager, books *BookSystem) *ecs.Entity
 	t.Helper()
 	_, cast := bindingGlyphCast(em, runePoint)
 	require.NoError(t, books.Cast(cast))
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround}, PageEntryPoints{})
 	for range ticksOf(2.5) {
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround}, PageEntryPoints{})
 	}
 	r := runeOf(em)
 	require.NotNil(t, r, "the rune is laid")
@@ -67,7 +67,7 @@ func TestBookSystemCast_BindingGlyphLaysARuneAfterItsCastTime(t *testing.T) {
 	books := NewBookSystem(em)
 
 	require.NoError(t, books.Cast(cast))
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround}, PageEntryPoints{})
 	castTicks(books, em, ticksOf(2.5)-2)
 	assert.Nil(t, runeOf(em), "no rune before 2.5 s")
 

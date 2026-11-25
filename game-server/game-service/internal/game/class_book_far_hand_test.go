@@ -173,6 +173,47 @@ func TestCastSkill_FarHand_RefusesTheStairs(t *testing.T) {
 	assert.Empty(t, bookOf(t, body).Cooldowns)
 }
 
+// The world's far reach works only the branches Far Hand works (a floor door,
+// a container, a lever or the bridge lever, a trap), whatever the page's own
+// target rule lets through: the stairs, the escape door, a switch, a secret
+// door, a plate and a stone block are refused before any interact runs, so no
+// one climbs, escapes or works them from afar. R50 as reconciled at wave 2.
+func TestReachFar_RefusesEveryBranchButFarHands(t *testing.T) {
+	cases := map[string]func(em *ecs.EntityManager) *ecs.Entity{
+		"the stairs": func(em *ecs.EntityManager) *ecs.Entity {
+			return CreateStairsEntity(em, StairsConfig{X: 500 + 3*cell, Y: 500})
+		},
+		"the escape door": func(em *ecs.EntityManager) *ecs.Entity {
+			return CreateEscapeDoorEntity(em, EscapeConfig{X: 500 + 3*cell, Y: 500})
+		},
+		"a switch": func(em *ecs.EntityManager) *ecs.Entity {
+			return CreateSwitchEntity(em, SwitchConfig{X: 500 + 3*cell, Y: 500, SwitchID: 1})
+		},
+		"a secret door": func(em *ecs.EntityManager) *ecs.Entity {
+			return CreateBarrierEntity(em, BarrierConfig{Kind: components.BarrierSecretDoor, X: 500 + 3*cell, Y: 500, Width: cell, Height: cell})
+		},
+		"a plate": func(em *ecs.EntityManager) *ecs.Entity {
+			return CreateSealPieceEntity(em, SealPieceConfig{Seal: uuid.New(), Kind: components.SealPiecePlate, X: 500 + 3*cell, Y: 500})
+		},
+		"a stone block": func(em *ecs.EntityManager) *ecs.Entity {
+			block := CreateSealPieceEntity(em, SealPieceConfig{Seal: uuid.New(), Kind: components.SealPieceBlock, X: 500 + 3*cell, Y: 500})
+			block.AddComponent(&components.StoneBlockComponent{Size: cell})
+			return block
+		},
+	}
+	for name, target := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := unstartedRun(t)
+			on := target(s.EntityManager)
+			mage, _ := placeDelverAt(t, s, "mage", 5, 500, 500)
+
+			err := s.ReachFar(mage, on)
+
+			assert.ErrorIs(t, err, ErrNoFarHandWork)
+		})
+	}
+}
+
 // springByFarHand is trapsRun's floor with its first trap made a detected
 // trap of kind and a level-5 mage 3 to 5 cells from it.
 func springByFarHand(t *testing.T, kind components.TrapKind) (*Session, []uuid.UUID, *ecs.Entity, uuid.UUID, *ecs.Entity) {

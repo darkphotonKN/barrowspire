@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -22,6 +23,30 @@ func mercenaryNear(t *testing.T, s *Session, npc *ecs.Entity) (uuid.UUID, *ecs.E
 	merc, body := placeDelverAt(t, s, "mercenary", 9, 0, 0)
 	standBeside(t, s, body, npc, 3*s.bookCellSize())
 	return merc, body
+}
+
+// standOutOfReach puts the delver on open ground past Strike a Deal's 4 cells
+// from npc: the nearest such ground in a band of 5 to 8 cells, at any
+// bearing, so a floor whose walls crowd one distance still has a spot.
+func standOutOfReach(t *testing.T, s *Session, delver, npc *ecs.Entity) {
+	t.Helper()
+	at := transformOf(t, npc)
+	cell := s.bookCellSize()
+	r := constants.PlayerRadius
+	for dist := 5 * cell; dist <= 8*cell; dist += cell / 4 {
+		for step := 0.0; step < 360; step += 5 {
+			angle := step * math.Pi / 180
+			x, y := at.X+dist*math.Cos(angle), at.Y+dist*math.Sin(angle)
+			region := s.dungeon.regionAt(x, y)
+			if region == 0 || !s.dungeon.stands(centredArea(x, y, r, r), region, onDoorways) {
+				continue
+			}
+			body := transformOf(t, delver)
+			body.X, body.Y = x, y
+			return
+		}
+	}
+	t.Fatalf("no open ground 5 to 8 cells from the NPC")
 }
 
 // strikeADeal casts Strike a Deal at npc as the client does, by the entity id
@@ -139,7 +164,7 @@ func TestCastSkill_StrikeADeal_OnlyANearEncounterNPC(t *testing.T) {
 	require.NoError(t, s.castSkill(merc, types.PlayerCastSkillPayload{SkillID: "strike_a_deal", TargetID: encounter.ID.String()}))
 	assert.Nil(t, bookOf(t, body).Casting, "the encounter has no body to aim at")
 
-	standBeside(t, s, body, npc, 5*s.bookCellSize())
+	standOutOfReach(t, s, body, npc)
 	require.NoError(t, strikeADeal(s, merc, npc))
 	assert.Nil(t, bookOf(t, body).Casting, "out of range")
 	assert.Empty(t, s.sender.(*recordingSender).to(merc))

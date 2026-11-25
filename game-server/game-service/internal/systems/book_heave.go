@@ -25,13 +25,16 @@ import (
 // ErrBlockWontShove is a Heave whose block may not go the way it is shoved.
 var ErrBlockWontShove = errors.New("the stone block may not be shoved that way")
 
-// gateHeave is Heave's own condition: its target a stone block, and the cell
-// beyond it, away from the warrior, one a push may take it to over the
-// floor's cells.
+// isStoneBlock is whether e is a stone block, Heave's one target
+// (pageInteractables), judged with the page's range before gateHeave.
+func isStoneBlock(e *ecs.Entity) bool {
+	return e.HasComponent(ecs.ComponentTypeStoneBlock)
+}
+
+// gateHeave is Heave's own condition, its target a stone block in range
+// already: the cell beyond it, away from the warrior, one a push may take it
+// to over the floor's cells.
 func gateHeave(world *ecs.EntityManager, cast BookCast) error {
-	if cast.Target == nil || !cast.Target.HasComponent(ecs.ComponentTypeStoneBlock) {
-		return ErrBadPageTarget
-	}
 	dx, dy, ok := heaveWay(cast)
 	if !ok || !StoneBlockShovable(cast.Cells, cast.Target, dx, dy, world.GetAllEntities()) {
 		return ErrBlockWontShove

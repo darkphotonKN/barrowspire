@@ -47,7 +47,7 @@ func strikeADealCast(t *testing.T, em *ecs.EntityManager, target *ecs.Entity, de
 	merc := bookDelver(em, "mercenary", 9, 0, 0, components.PageStrikeADeal)
 	page, ok := BookPageOf(string(components.PageStrikeADeal))
 	require.True(t, ok)
-	return BookCast{Caster: merc, Page: page, Target: target, CellSize: testCell, BookGround: BookGround{Hires: desk}}, merc
+	return BookCast{Caster: merc, Page: page, Target: target, CellSize: testCell, PageEntryPoints: PageEntryPoints{Hires: desk}}, merc
 }
 
 // A mercenary strikes a deal with a group 4 cells off, named by one of its

@@ -112,7 +112,7 @@ func TestCastSkill_PickTheLock_RefusedAtTheCastsEndAndToldWhy(t *testing.T) {
 	}
 }
 
-// Only the cage is picked: the sealed floors built no locked doors or chests,
+// Only the shut cage is picked: the sealed floors built no locked doors or chests,
 // so anything else, or a cage out of reach, is refused at the cast with
 // nothing started and nothing told. R55 as reconciled at wave 2, R12; §A R4.
 func TestCastSkill_PickTheLock_OnlyTheCageInReach(t *testing.T) {
@@ -126,4 +126,19 @@ func TestCastSkill_PickTheLock_OnlyTheCageInReach(t *testing.T) {
 	require.NoError(t, pickTheLock(s, merc, cage))
 	assert.Nil(t, bookOf(t, body).Casting, "out of reach")
 	assert.Empty(t, s.sender.(*recordingSender).to(merc))
+}
+
+// A cage its key already opened is no lock to pick: the cast is refused as
+// the book refuses, nothing started and nothing told, the 4 s never spent on
+// a cage_open. R55, R4.
+func TestCastSkill_PickTheLock_AnOpenCageIsRefusedAtTheCast(t *testing.T) {
+	s, merc, body, cage := mercenaryAtTheCage(t, 4)
+	require.NoError(t, s.OpenCage(cage.ID, merc))
+	require.True(t, cageOf(t, cage).Open)
+
+	require.NoError(t, pickTheLock(s, merc, cage))
+
+	assert.Nil(t, bookOf(t, body).Casting, "nothing started")
+	assert.NotContains(t, bookOf(t, body).Cooldowns, components.PagePickTheLock)
+	assert.Empty(t, s.sender.(*recordingSender).to(merc), "nothing told")
 }
