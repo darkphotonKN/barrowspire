@@ -228,13 +228,15 @@ func (s *Session) dungeonCellSize() float64 {
 }
 
 // plateRooms is the rooms a Weighted Plates may stand in: a seal piece's
-// (sealRooms), never a treasure room, whose chest always stands, and at least
+// (sealRooms), never a treasure room, whose chest always stands, at least
 // PlateRoomLong x PlateRoomShort cells either way round (FS-5FZ4J §C R17). A
-// respite's room joins the barred ones when respites land.
+// shaped room may hold one: its footing and push search read its floor
+// (FS-KE075 §Change: Room variety R75). A respite's room joins the barred ones
+// when respites land.
 func (d *dungeonFloor) plateRooms() []int {
 	return slices.DeleteFunc(d.sealRooms(), func(room int) bool {
-		r := d.layout.Rooms[room].Rect
-		long, short := max(r.W, r.H), min(r.W, r.H)
+		r := d.layout.Rooms[room]
+		long, short := max(r.Rect.W, r.Rect.H), min(r.Rect.W, r.Rect.H)
 		return slices.Contains(d.layout.Roles.Treasure, room) || long < PlateRoomLong || short < PlateRoomShort
 	})
 }
@@ -258,7 +260,7 @@ func (d *dungeonFloor) placePlates(rng populationRand, room, n int) (plates, blo
 		drawn := slices.Clone(cells)
 		shuffle(rng, drawn)
 		plates, blocks = drawn[:n], drawn[n:2*n]
-		if platesCoverable(r.Rect.W, r.Rect.H, d.inRoom(room, plates), d.inRoom(room, blocks), start) {
+		if d.platesCoverableIn(room, plates, blocks, start) {
 			return plates, blocks, true
 		}
 	}
@@ -283,9 +285,33 @@ func (d *dungeonFloor) roomEntry(room int) components.Cell {
 	return d.inRoom(room, []components.Cell{{X: door.X, Y: door.Y}})[0]
 }
 
+// platesCoverableIn is platesCoverable on room's own cells, its cut cells
+// walls (FS-KE075 §Change: Room variety R75); start in the room's cells.
+func (d *dungeonFloor) platesCoverableIn(room int, plates, blocks []components.Cell, start components.Cell) bool {
+	r := d.layout.Rooms[room]
+	var wall []bool
+	if r.Shape != levelgen.ShapeRectangle {
+		wall = make([]bool, r.Rect.W*r.Rect.H)
+		for y := range r.Rect.H {
+			for x := range r.Rect.W {
+				wall[y*r.Rect.W+x] = !d.onFloor(room, r.Rect.X+x, r.Rect.Y+y)
+			}
+		}
+	}
+	return platesCoverableAmid(r.Rect.W, r.Rect.H, wall, d.inRoom(room, plates), d.inRoom(room, blocks), start)
+}
+
+// onFloor is whether cell (x, y) is on room's floor.
+func (d *dungeonFloor) onFloor(room, x, y int) bool {
+	l := d.layout
+	return x >= 0 && y >= 0 && x < l.Cols && y < l.Rows && d.region[y*l.Cols+x] == l.Rooms[room].Region
+}
+
 // plateFooting is the cells of room a plate or a block may stand on: at
-// least one cell from its walls and its doorways, that is inside its border
-// and beside no doorway, diagonals included (FS-5FZ4J §C R20). Row by row.
+// least one cell from its walls and its doorways, that is inside its border,
+// beside no doorway and beside nothing off its floor, a shaped room's cut
+// cells among them, diagonals included (FS-5FZ4J §C R20, FS-KE075 §Change:
+// Room variety R75). Row by row.
 func (d *dungeonFloor) plateFooting(room int) []components.Cell {
 	r := d.layout.Rooms[room]
 	var cells []components.Cell
@@ -294,6 +320,11 @@ func (d *dungeonFloor) plateFooting(room int) []components.Cell {
 			beside := slices.ContainsFunc(r.Doorways, func(c levelgen.Cell) bool {
 				return max(c.X-x, x-c.X) <= 1 && max(c.Y-y, y-c.Y) <= 1
 			})
+			for dy := -1; dy <= 1 && !beside; dy++ {
+				for dx := -1; dx <= 1 && !beside; dx++ {
+					beside = !d.onFloor(room, x+dx, y+dy)
+				}
+			}
 			if !beside {
 				cells = append(cells, components.Cell{X: x, Y: y})
 			}

@@ -315,7 +315,7 @@ func seconds(secs float64) int { return int(math.Ceil(secs * float64(constants.G
 // FS-4EC7Z §B R7, Edge States: nothing starts while the party keeps away;
 // the first delver within 3 cells of a pilgrim starts the plea.
 func TestPilgrims_ThePleaOnApproach(t *testing.T) {
-	s, bodies := pilgrimsRun(t, 4, 1)
+	s, bodies := pilgrimsRun(t, 11, 1)
 	ticks(s, seconds(PilgrimWaveDelay+1))
 	assert.False(t, waveOf(t, s).Pleaded, "ignored, nothing starts")
 	assert.Empty(t, waveOf(t, s).Wave)
@@ -449,7 +449,7 @@ func TestPilgrims_TheWaveSpawnsClearOfTheDelvers(t *testing.T) {
 	require.NotEmpty(t, openings)
 	mouth, barred := openings[0], d.barrierCells()
 	open := func(int) float64 { return math.Inf(1) }
-	walk := d.walkOut(mouth, 1000, barred, map[int]bool{}, open)
+	walk := d.walkOut(enc.Room, mouth, 1000, barred, map[int]bool{}, open)
 	require.GreaterOrEqual(t, len(walk), 4, "seed 6: a corridor of 4 cells or more")
 	index := func(c components.Cell) int { return c.Y*d.layout.Cols + c.X }
 	rank := map[int]int{}
@@ -465,7 +465,7 @@ func TestPilgrims_TheWaveSpawnsClearOfTheDelvers(t *testing.T) {
 			}
 			return MonsterDelverExclusion
 		}
-		got := d.walkOut(mouth, 2, barred, map[int]bool{}, clearance)
+		got := d.walkOut(enc.Room, mouth, 2, barred, map[int]bool{}, clearance)
 		require.Len(t, got, 2)
 		for _, c := range got {
 			assert.False(t, crowded[index(c)], "a cell within the exclusion is passed over")
@@ -473,7 +473,7 @@ func TestPilgrims_TheWaveSpawnsClearOfTheDelvers(t *testing.T) {
 	})
 	t.Run("none clear: the farthest", func(t *testing.T) {
 		clearance := func(i int) float64 { return float64(rank[i]) }
-		got := d.walkOut(mouth, 2, barred, map[int]bool{}, clearance)
+		got := d.walkOut(enc.Room, mouth, 2, barred, map[int]bool{}, clearance)
 		assert.ElementsMatch(t, walk[len(walk)-2:], got, "the two farthest from the delvers")
 	})
 	t.Run("through waveSpots, delvers in every corridor", func(t *testing.T) {

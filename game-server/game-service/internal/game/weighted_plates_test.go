@@ -180,8 +180,7 @@ func TestWeightedPlates_PlacementSearch_PassesOnEverySeed(t *testing.T) {
 			}
 			require.Len(t, blocks, len(plates))
 			room := d.roomAt(fixtures.seals[0].pieces[0].at.x, fixtures.seals[0].pieces[0].at.y)
-			r := d.layout.Rooms[room]
-			assert.True(t, platesCoverable(r.Rect.W, r.Rect.H, d.inRoom(room, plates), d.inRoom(room, blocks), d.roomEntry(room)),
+			assert.True(t, d.platesCoverableIn(room, plates, blocks, d.roomEntry(room)),
 				"floor %d seed %d: every plate can be covered", depth, seed)
 		}
 	}
@@ -424,8 +423,7 @@ func coverable(s *Session, room int, plates, blocks []*ecs.Entity) bool {
 		}
 		return out
 	}
-	r := s.dungeon.layout.Rooms[room].Rect
-	return platesCoverable(r.W, r.H, s.dungeon.inRoom(room, cells(plates)), s.dungeon.inRoom(room, cells(blocks)), s.dungeon.roomEntry(room))
+	return s.dungeon.platesCoverableIn(room, cells(plates), cells(blocks), s.dungeon.roomEntry(room))
 }
 
 /**
@@ -557,4 +555,30 @@ func TestWeightedPlates_BlockPushedOutOfThePlatesRoom_IsRefused(t *testing.T) {
 	assert.Equal(t, doorway, pieceOf(block).Cell, "the block stays in its room")
 	assert.False(t, stoneOf(block).Sliding)
 	assert.True(t, s.navGrid.Walkable(corridor.X, corridor.Y), "the corridor stays open")
+}
+
+// FS-KE075 §Change: Room variety R75: in a shaped room the plates' footing
+// keeps a cell from every cut cell, as from the walls, and every floor's
+// Weighted Plates is laid: shaped rooms leave it room enough.
+func TestPlateFooting_ShapedRoomsKeepClearOfTheirCuts(t *testing.T) {
+	shaped := 0
+	for seed := uint64(1); seed <= 20; seed++ {
+		s, _ := dungeonRun(t, seed, 1, 0, forcedSeal(components.SealWeightedPlates))
+		require.NotNil(t, s.dungeon, "seed %d: the floor is laid, its plates found a room", seed)
+		d := s.dungeon
+		for room, r := range d.layout.Rooms {
+			if r.Shape == levelgen.ShapeRectangle {
+				continue
+			}
+			shaped++
+			for _, c := range d.plateFooting(room) {
+				for dy := -1; dy <= 1; dy++ {
+					for dx := -1; dx <= 1; dx++ {
+						assert.True(t, d.onFloor(room, c.X+dx, c.Y+dy), "seed %d: footing (%d, %d) of %s room %d is beside a cut", seed, c.X, c.Y, r.Shape, room)
+					}
+				}
+			}
+		}
+	}
+	require.Positive(t, shaped)
 }

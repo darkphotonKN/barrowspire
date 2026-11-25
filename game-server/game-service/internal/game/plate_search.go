@@ -21,24 +21,35 @@ import (
 * could solve: the build then draws another, as it does for any that fails.
 **/
 func platesCoverable(w, h int, plates, blocks []components.Cell, start components.Cell) bool {
+	return platesCoverableAmid(w, h, nil, plates, blocks, start)
+}
+
+// platesCoverableAmid is platesCoverable in a room whose wall cells, by
+// index in the room's own cells, stand inside its rect: a shaped room's cut
+// cells (FS-KE075 §Change: Room variety R75). Neither a body nor a block
+// enters one. nil is a plain rectangle.
+func platesCoverableAmid(w, h int, wall []bool, plates, blocks []components.Cell, start components.Cell) bool {
 	if len(blocks) < len(plates) {
 		return false
 	}
-	r := pushRoom{w: w, h: h}
+	r := pushRoom{w: w, h: h, wall: wall}
 	return r.coverAll(plates, blocks, nil, r.index(start))
 }
 
-// pushRoom is a room as the search walks it, w x h cells.
+// pushRoom is a room as the search walks it, w x h cells, wall its cut cells
+// (nil for none).
 type pushRoom struct {
 	w, h int
+	wall []bool
 }
 
 func (r pushRoom) index(c components.Cell) int { return c.Y*r.w + c.X }
 
-// step is the cell one step from cell along (dx, dy); false off the room.
+// step is the cell one step from cell along (dx, dy); false off the room or
+// into a wall.
 func (r pushRoom) step(cell, dx, dy int) (int, bool) {
 	x, y := cell%r.w+dx, cell/r.w+dy
-	if x < 0 || y < 0 || x >= r.w || y >= r.h {
+	if x < 0 || y < 0 || x >= r.w || y >= r.h || (r.wall != nil && r.wall[y*r.w+x]) {
 		return 0, false
 	}
 	return y*r.w + x, true

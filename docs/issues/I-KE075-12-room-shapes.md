@@ -1,6 +1,6 @@
 ---
 id: I-KE075-12
-status: open
+status: done
 implements: FS-KE075
 blocked_by: [I-KE075-11]
 labels: [ready-for-agent]
@@ -20,12 +20,12 @@ extended to every shape (R76). Game side: a Weighted Plates seal takes rectangle
 
 ## Acceptance Criteria
 
-- [ ] Every room's region equals its rect less its shape's cuts, carved cells kept, pockets cut
-- [ ] Every shape comes up across 1,000 seeds; none on a room too small for it; fixed-role rooms rectangles
-- [ ] Every room's centre cell is floor; every walkable cell reachable from the start
-- [ ] Same seed, same shapes; golden re-pinned
-- [ ] `plateRooms` returns rectangle rooms only; FS-5FZ4J's tests pass
-- [ ] `go test ./...` in game-service passes
+- [x] Every room's region equals its rect less its shape's cuts, carved cells kept, pockets cut
+- [x] Every shape comes up across 1,000 seeds; none on a room too small for it; fixed-role rooms rectangles
+- [x] Every room's centre cell is floor; every walkable cell reachable from the start
+- [x] Same seed, same shapes; golden re-pinned
+- [x] A Weighted Plates seal's footing keeps clear of cut cells and its push search walks the floor; two large rooms stay plain (R72, R75 as promoted); FS-5FZ4J's tests pass
+- [x] `go test ./...` in game-service passes
 
 ## Blocked By
 

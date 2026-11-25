@@ -47,13 +47,22 @@ type DungeonParams struct {
 	// HiddenRooms is how many hidden rooms the floor has, each a dead end behind
 	// a secret door (FS-5FZ4J §F R35-R36). The game draws the count.
 	HiddenRooms int
+	// PlainRooms is how many rooms at least PlainMin either way round, besides
+	// the fixed roles and the treasure rooms, keep the rectangle when shapes
+	// are drawn (FS-KE075 §Change: Room variety R72).
+	PlainRooms int
+	PlainMin   Span
 }
+
+// Span is a size in cells.
+type Span struct{ W, H int }
 
 // DungeonFloor1Params is floor 1's parameter set (FS-KE075 §A.2–6, §Change:
 // Room variety R62–R65), sealed (FS-5FZ4J §A): 60 x 40 cells of 80 px
 // (4 800 x 3 200 px), 16–22 rooms from 4x4 to 8x7, corridors 2–3 wide in
 // segments of at most 12 cells, round(0.1 x rooms) extra connections, a start
-// room of at least 5x5, 3–4 treasure rooms, no escape door and no hidden room.
+// room of at least 5x5, 3–4 treasure rooms, no escape door and no hidden room,
+// and two rooms of at least 6x5 besides the roles kept plain (R72).
 // Floors 2+ set EscapeDoor and their hidden-room count on a copy. The 1 000-seed
 // property test is the gate for any change.
 var DungeonFloor1Params = DungeonParams{
@@ -72,6 +81,8 @@ var DungeonFloor1Params = DungeonParams{
 	StartMin:       5,
 	TreasureRooms:  IntRange{Min: 3, Max: 4},
 	RetryLimit:     32,
+	PlainRooms:     2,
+	PlainMin:       Span{W: 6, H: 5},
 }
 
 // fixedRoles is how many rooms the start, switch, escape door and stairs take.
@@ -125,6 +136,8 @@ func (p DungeonParams) Validate() error {
 			p.StartMin, p.RoomWidth.Max, p.RoomHeight.Max)
 	case p.RetryLimit < 0:
 		return invalid("retry limit %d must not be negative", p.RetryLimit)
+	case p.PlainRooms < 0:
+		return invalid("plain rooms %d must not be negative", p.PlainRooms)
 	}
 	return nil
 }
@@ -338,7 +351,7 @@ func buildDungeon(p DungeonParams, rooms int, seed uint64) (DungeonLayout, error
 		return DungeonLayout{}, err
 	}
 
-	shapes := drawShapes(rng, rects, rectangularRooms(roles))
+	shapes := drawShapes(rng, rects, rectangularRooms(p, rng, rects, roles))
 	floor, cut := roomFloors(p.Cols, p.Rows, rects, shapes, carvedCells(p.Cols, len(open), rects, edges))
 	corridor := make([]bool, len(open))
 	for c := range open {
@@ -437,14 +450,28 @@ func carvedCells(cols, n int, rects []CellRect, edges []Edge) []bool {
 }
 
 // rectangularRooms is the rooms that keep the rectangle (R72): the start,
-// stairs, switch and escape door rooms and every hidden room.
-func rectangularRooms(r roomRoles) map[int]bool {
+// stairs, switch and escape door rooms, every hidden room, and PlainRooms
+// drawn from the rest at least PlainMin either way round that are not
+// treasure rooms, so a puzzle that walks a rect finds one (a Weighted Plates
+// seal, FS-5FZ4J §C R17).
+func rectangularRooms(p DungeonParams, rng *rand.Rand, rects []CellRect, r roomRoles) map[int]bool {
 	keep := map[int]bool{r.Start: true, r.Stairs: true}
 	if r.HasEscapeDoor() {
 		keep[r.Switch], keep[r.EscapeDoor] = true, true
 	}
 	for _, h := range r.hidden {
 		keep[h.Room] = true
+	}
+	var large []int
+	for i, rect := range rects {
+		long, short := max(rect.W, rect.H), min(rect.W, rect.H)
+		if !keep[i] && !slices.Contains(r.Treasure, i) && long >= max(p.PlainMin.W, p.PlainMin.H) && short >= min(p.PlainMin.W, p.PlainMin.H) {
+			large = append(large, i)
+		}
+	}
+	shuffle(rng, large)
+	for _, i := range large[:min(p.PlainRooms, len(large))] {
+		keep[i] = true
 	}
 	return keep
 }

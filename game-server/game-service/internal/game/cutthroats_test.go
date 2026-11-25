@@ -213,8 +213,8 @@ func TestCutthroats_PeacefulDraw_PassesAnOpenedDoor(t *testing.T) {
 // on the floor, the tip is lore: `cutthroat_lore` said, nothing revealed, and
 // lore again on a later talk.
 func TestCutthroats_PeacefulDraw_NoDoor_TheTipIsLore(t *testing.T) {
-	s, ids, bodies := cutthroatsRun(t, 7, 1, 0)
-	require.Empty(t, secretDoors(s), "seed 7's floor 2 holds no secret door")
+	s, ids, bodies := cutthroatsRun(t, 9, 1, 0)
+	require.Empty(t, secretDoors(s), "seed 9's floor 2 holds no secret door")
 
 	speaker := parley(t, s, ids[0], bodies[0])
 	assert.Equal(t, components.FatePeaceful, cutthroatsOf(t, s).Fate)

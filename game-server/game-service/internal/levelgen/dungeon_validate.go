@@ -31,7 +31,7 @@ func validateDungeon(p DungeonParams, l DungeonLayout) error {
 		return bad("edges: %v", err)
 	}
 
-	if err := checkShapes(l); err != nil {
+	if err := checkShapes(p, l); err != nil {
 		return bad("shapes: %v", err)
 	}
 	// carved is every cell the rooms' rects and the corridors open, byCorridor
@@ -242,8 +242,9 @@ func floorRects(cols, rows int, floor []int, region int) []CellRect {
 
 // checkShapes checks every room's shape (FS-KE075 §Change: Room variety
 // R70-R72): one its size fits, the rectangle for the start, stairs, switch,
-// escape door and hidden rooms.
-func checkShapes(l DungeonLayout) error {
+// escape door and hidden rooms, and for at least PlainRooms of the rest at
+// least PlainMin either way round that are not treasure rooms.
+func checkShapes(p DungeonParams, l DungeonLayout) error {
 	r := l.Roles
 	plain := []int{r.Start, r.Stairs}
 	if r.HasEscapeDoor() {
@@ -252,13 +253,25 @@ func checkShapes(l DungeonLayout) error {
 	for _, h := range l.Hidden {
 		plain = append(plain, h.Room)
 	}
+	large, plainLarge := 0, 0
 	for i, room := range l.Rooms {
+		long, short := max(room.Rect.W, room.Rect.H), min(room.Rect.W, room.Rect.H)
+		if !slices.Contains(plain, i) && !slices.Contains(r.Treasure, i) &&
+			long >= max(p.PlainMin.W, p.PlainMin.H) && short >= min(p.PlainMin.W, p.PlainMin.H) {
+			large++
+			if room.Shape == ShapeRectangle {
+				plainLarge++
+			}
+		}
 		switch {
 		case !room.Shape.Fits(room.Rect.W, room.Rect.H):
 			return fmt.Errorf("room %d is %dx%d, too small or unknown for shape %q", i, room.Rect.W, room.Rect.H, room.Shape)
 		case slices.Contains(plain, i) && room.Shape != ShapeRectangle:
 			return fmt.Errorf("room %d holds a fixed role but is shaped %s", i, room.Shape)
 		}
+	}
+	if plainLarge < min(p.PlainRooms, large) {
+		return fmt.Errorf("%d of %d rooms of at least %dx%d besides the roles are plain, want %d", plainLarge, large, p.PlainMin.W, p.PlainMin.H, p.PlainRooms)
 	}
 	return nil
 }

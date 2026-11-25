@@ -262,7 +262,8 @@ func escapeFarFromStairs(l DungeonLayout, barred []BarredRoom) error {
 	isBarred := func(i int) bool {
 		return slices.ContainsFunc(barred, func(b BarredRoom) bool { return b.Room == i })
 	}
-	fromStairs := walkFrom(l, openMask(l), roomCentre(l, r.Stairs))
+	// the roles read the rooms whole, before they were shaped
+	fromStairs := walkFrom(l, wholeMask(l), roomCentre(l, r.Stairs))
 	best := -1
 	for i, room := range l.Rooms {
 		if i == r.Start || isBarred(i) || room.Distance < median {

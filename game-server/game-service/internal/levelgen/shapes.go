@@ -35,7 +35,7 @@ var shapeDraw = []struct {
 	shape  RoomShape
 	weight int
 }{
-	{ShapeRectangle, 30},
+	{ShapeRectangle, 10},
 	{ShapeLNorthWest, 20},
 	{ShapeCross, 15},
 	{ShapePillared, 15},

@@ -790,15 +790,19 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
 70. **Which shapes a room may take.** Rectangle: any room. L and cut corners: at least 5 × 5.
     Cross: at least 6 × 6. Pillared: at least 7 × 6, a hall (R66). *(charter default — reason: below
     these an L is one cell and a cross has no arms)*
-71. **The draw.** Each room draws its shape from those it may take, weighted rectangle 30, L 20,
+71. **The draw.** Each room draws its shape from those it may take, weighted rectangle 10, L 20,
     cross 15, pillared 15, cut corners 20, on the attempt's own seeded stream, after its corridors
-    and roles: the same seed gives the same shapes. *(charter default — reason: about a third of
-    rooms stay plain, so a shaped room reads as one)*
+    and roles: the same seed gives the same shapes. *(charter default — reason: a room under 5 × 5
+    can only be a rectangle, and the fixed-role rooms are, so about half the floor stays plain
+    anyway; measured at a weight of 30, two rooms in three came out rectangles)*
 72. **Rooms that stay rectangles.** The start, stairs, switch and escape door rooms and every
     hidden room are always rectangles. *(charter default — reason: the party's start formation,
     the Chasm, the seals' barrier and the secret doors read those rooms as rects; a shape there
     buys nothing the owner asked for and puts R14 and FS-5FZ4J's dead ends at risk)* A treasure
-    room may take any shape.
+    room may take any shape. **Two rooms of at least 6 × 5** either way round besides these and the
+    treasure rooms, drawn, also stay rectangles. *(charter default — reason: a Weighted Plates
+    seal needs a 6 × 5 room it can lay its blocks in solvably, FS-5FZ4J §C R17, R20; measured
+    with every large room free to be shaped, one floor-1 layout in 500 had none)*
 73. **Corridors keep their way through.** A cell a corridor carves inside a room is never cut, so
     every corridor still reaches its rooms' centres and every doorway still joins the room's
     centre. A floor cell no longer 4-connected to the room's centre once the cuts are made is cut
@@ -808,8 +812,10 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
     rects. A doorway is a floor cell 4-adjacent to a corridor cell (R6). Server-only: the shape's
     name is never sent; the client sees the region's cells and the walls, as today (R31).
 75. **Placements read the floor.** Everything stood in a room stands on its floor cells, as every
-    spot already reads the region (R16). A **Weighted Plates** seal takes a rectangle room only
-    (FS-5FZ4J §C R17): its footing and push search walk the rect. *(charter default)*
+    spot already reads the region (R16). A **Weighted Plates** seal may take a shaped room: its
+    plates and blocks stand only on cells whose eight neighbours are all the room's floor, and
+    its push search treats the cut cells as walls (FS-5FZ4J §C R20). *(charter default — reason:
+    rectangles only, too many floors had no room for it)*
 76. **The gate.** The 1,000-seed property test (R8, FS-5FZ4J §A) holds on every sealed-floor
     parameter set, with every room's region its expected floor, every shape coming up, every
     fixed-role room a rectangle and every room's centre cell on its floor.
@@ -899,7 +905,8 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
       room; the trap count per depth is unchanged; no trap in the encounter's room.
 - [ ] Every chest-or-sack room holds one container; no other ordinary room holds one; each treasure
       room still holds its chest.
-- [ ] A Weighted Plates seal stands only in a rectangle room; every sealed floor's escape door,
+- [ ] A Weighted Plates seal's plates and blocks keep a cell from every cut cell and its push
+      search walks the floor; two large rooms stay plain on every floor; every sealed floor's escape door,
       switch, stairs gate and hidden rooms keep FS-5FZ4J's guarantees (their tests pass).
 - [ ] The floor map carries `quiet_rooms`, the rolled quiet rooms' region ids.
 

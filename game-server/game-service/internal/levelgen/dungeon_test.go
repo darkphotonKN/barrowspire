@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -28,6 +29,62 @@ func openMask(l DungeonLayout) []bool {
 	open := make([]bool, l.Cols*l.Rows)
 	for i, id := range l.Grid() {
 		open[i] = id > 0
+	}
+	return open
+}
+
+/**
+* shapedAsDrawn checks every room's floor against its shape, by its own reading
+* of R69 and R73 (FS-KE075 §Change: Room variety) rather than the generator's:
+* a rect cell off the room's floor is one the shape cuts, walled or left to a
+* corridor that crossed it; a cell the shape cuts is never the room's unless a
+* corridor carved it; a carved cell is never walled. It counts the shapes.
+**/
+func shapedAsDrawn(l DungeonLayout, shapes map[RoomShape]int) error {
+	grid := l.Grid()
+	rects := make([]CellRect, len(l.Rooms))
+	for i, room := range l.Rooms {
+		rects[i] = room.Rect
+	}
+	carved := map[int]bool{}
+	for _, e := range l.Edges {
+		for _, c := range corridorCells(l.Cols, rects[e.A], rects[e.B], e.Width, e.HorizontalFirst) {
+			carved[c] = true
+		}
+	}
+	for i, room := range l.Rooms {
+		shapes[room.Shape]++
+		r := room.Rect
+		cuts := map[int]bool{}
+		for _, c := range shapeCuts(room.Shape, r.W, r.H) {
+			cuts[(r.Y+c.Y)*l.Cols+r.X+c.X] = true
+		}
+		for _, c := range rectCells(l.Cols, r) {
+			switch id := grid[c]; {
+			case id == room.Region && cuts[c] && !carved[c]:
+				return fmt.Errorf("room %d (%s) keeps cut cell (%d, %d) on its floor", i, room.Shape, c%l.Cols, c/l.Cols)
+			case id != room.Region && id != 0 && id <= len(l.Rooms):
+				return fmt.Errorf("room %d's rect holds room %d's floor", i, id-1)
+			case id == 0 && carved[c]:
+				return fmt.Errorf("room %d (%s) walls cell (%d, %d), which a corridor carved", i, room.Shape, c%l.Cols, c/l.Cols)
+			case id == 0 && !cuts[c]:
+				// no shape leaves a pocket, so the pocket rule cuts nothing more
+				return fmt.Errorf("room %d (%s) loses cell (%d, %d), which its shape does not cut", i, room.Shape, c%l.Cols, c/l.Cols)
+			}
+		}
+	}
+	return nil
+}
+
+// wholeMask is the floor as the roles read it, before any room was shaped
+// (FS-KE075 §Change: Room variety R73): the walkable cells and every room's
+// whole rect, since every cut cell lies in a rect.
+func wholeMask(l DungeonLayout) []bool {
+	open := openMask(l)
+	for _, room := range l.Rooms {
+		for _, c := range rectCells(l.Cols, room.Rect) {
+			open[c] = true
+		}
 	}
 	return open
 }
@@ -256,6 +313,7 @@ func everySeedValid(t *testing.T, p DungeonParams) {
 		minSegment                                = math.MaxInt
 	)
 	chasm := 0
+	shapes := map[RoomShape]int{}
 	for seed := uint64(0); seed < seeds; seed++ {
 		l, err := GenerateDungeon(p, seed)
 		if err != nil {
@@ -269,6 +327,9 @@ func everySeedValid(t *testing.T, p DungeonParams) {
 		}
 		if l.ChasmCapable {
 			chasm++
+		}
+		if err := shapedAsDrawn(l, shapes); err != nil {
+			t.Fatalf("seed %d: %v\n%s", seed, err, renderDungeonASCII(l))
 		}
 
 		n := len(l.Rooms)
@@ -305,6 +366,13 @@ func everySeedValid(t *testing.T, p DungeonParams) {
 		maxRegions = max(maxRegions, len(l.Regions))
 		minRooms, maxRooms = min(minRooms, n), max(maxRooms, n)
 	}
+	// R71, R76: every shape comes up, each L corner among them
+	for _, shape := range append([]RoomShape{ShapeRectangle, ShapeCross, ShapePillared, ShapeCutCorners}, lShapes...) {
+		if shapes[shape] == 0 {
+			t.Errorf("no room in %d seeds is shaped %s", seeds, shape)
+		}
+	}
+	t.Logf("shapes: %v", shapes)
 	if loop4 == 0 {
 		t.Fatalf("no layout in %d has a loop through four or more rooms", seeds)
 	}
@@ -517,6 +585,7 @@ func TestDungeonFloor1Params_ApprovedNumbers(t *testing.T) {
 		{"treasure rooms", p.TreasureRooms, IntRange{Min: 3, Max: 4}},
 		{"escape door", p.EscapeDoor, false},
 		{"hidden rooms", p.HiddenRooms, 0},
+		{"plain rooms", [2]any{p.PlainRooms, p.PlainMin}, [2]any{2, Span{W: 6, H: 5}}},
 	}
 	for _, c := range checks {
 		if !reflect.DeepEqual(c.got, c.want) {
