@@ -1,5 +1,5 @@
 {
-  "paceScale": 0.5,
-  "defaultSpeed": 100,
+  "paceScale": 0.525,
+  "defaultSpeed": 105,
   "blockPushSpeedShare": 0.5
 }

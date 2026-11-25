@@ -124,6 +124,8 @@ func TestVariantSheets_MatchTheTableAtLevelOne(t *testing.T) {
 		sheet, ok := monsterSheets[archetype]
 		require.True(t, ok, "%s has a sheet", archetype)
 		got := stats{sheet.HP, sheet.Damage, sheet.Defense, sheet.MagicResistance, sheet.MoveSpeed}
+		assert.InDelta(t, w.speed, got.speed, 1e-9, "%s speed", archetype)
+		w.speed, got.speed = 0, 0
 		assert.Equal(t, w, got, archetype)
 	}
 }

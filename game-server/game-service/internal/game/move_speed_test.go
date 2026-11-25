@@ -41,8 +41,10 @@ func TestHandleMove_EveryInputWalksAtTheDelversSpeed(t *testing.T) {
 				from := *transformOf(t, delver)
 				vc, ok := delver.GetComponent(ecs.ComponentTypeVelocity)
 				require.True(t, ok)
-				speed := vc.(*components.VelocityComponent).Speed
-				require.Positive(t, speed)
+				require.Positive(t, vc.(*components.VelocityComponent).Speed)
+				// their own speed in this world: the hub's town bonus on the
+				// paced walk there (FS-TAGWA R17)
+				speed := constants.DefaultSpeed * (1 + float64(s.worldMoveBonus())/100)
 
 				require.NoError(t, s.handleMove(playerID, in.vx, in.vy))
 				ticks(s, constants.GameFrameRate)
