@@ -12,6 +12,9 @@ import {
   roundsPixels,
   stagePoint,
   viewRect,
+  WORLD_ZOOM,
+  worldZoomOf,
+  zoomWorld,
   type ViewCamera,
 } from "./camera";
 import { Viewport } from "./viewport";
@@ -667,4 +670,82 @@ describe("releaseStage (FS-C4JWH §D: the bar's stage does not survive into the 
 
     expect([cam.scrollX, cam.scrollY]).toEqual([0, 0]);
   });
+});
+
+describe("zoomWorld (FS-ZAJMH § Change: Closer world camera: a world shows the logical view ÷ WORLD_ZOOM)", () => {
+  it("should be the one knob, 1.2", () => {
+    expect(WORLD_ZOOM).toBe(1.2);
+  });
+
+  it.each([1, 1.25, 1.5, 2])(
+    "should zoom a world's camera by the render scale × WORLD_ZOOM at render scale %s, and keep it through a re-fit",
+    (rs) => {
+      const cam = fakeCamera();
+      const v = at(1);
+      fitCamera(cam as ViewCamera, v);
+      zoomWorld(cam as ViewCamera, WORLD_ZOOM, v);
+      expect(cam.zoomX).toBeCloseTo(1 * WORLD_ZOOM, 10);
+      // the re-fit a view change makes (fitGame): the render scale changes, the world's zoom holds
+      v.set({ width: 1280, height: 720, renderScale: rs });
+      fitCamera(cam as ViewCamera, v);
+      expect(cam.zoomX).toBeCloseTo(rs * WORLD_ZOOM, 10);
+      expect(cam.width).toBe(1280 * rs);
+      expect(cam.displayWidth).toBeCloseTo(1280 / WORLD_ZOOM, 10);
+      expect(cam.displayHeight).toBeCloseTo(720 / WORLD_ZOOM, 10);
+      expect(worldZoomOf(cam)).toBe(WORLD_ZOOM);
+    },
+  );
+
+  it("should leave any other camera at the render scale: the HUD's, a menu's", () => {
+    const cam = fakeCamera();
+    fitCamera(cam as ViewCamera, at(2));
+    expect(cam.zoomX).toBe(2);
+    expect(worldZoomOf(cam)).toBe(1);
+  });
+
+  it.each([1, 1.5, 2])(
+    "should still stop the closer view at the world's corners at render scale %s, after a re-fit",
+    (rs) => {
+      const cam = fakeCamera();
+      const v = at(1);
+      fitCamera(cam as ViewCamera, v);
+      zoomWorld(cam as ViewCamera, WORLD_ZOOM, v);
+      boundCamera(cam as ViewCamera, { x: -1000, y: -200, width: 2400, height: 1200 });
+      v.set({ width: 1080, height: 720, renderScale: rs });
+      fitCamera(cam as ViewCamera, v);
+      const w = 1080 / WORLD_ZOOM;
+      const h = 720 / WORLD_ZOOM;
+      cam.setScroll(-5000, -5000).preRender();
+      expect(cam.scrollX).toBeCloseTo(-1000, 6);
+      expect(cam.scrollY).toBeCloseTo(-200, 6);
+      cam.setScroll(5000, 5000).preRender();
+      // the far corner, the scroll floored onto whole backing px of the closer zoom
+      const z = rs * WORLD_ZOOM;
+      expect(cam.scrollX).toBeCloseTo(Math.floor((1400 - w) * z + 1e-6) / z, 6);
+      expect(cam.scrollY).toBeCloseTo(Math.floor((1000 - h) * z + 1e-6) / z, 6);
+      expect(cam.scrollX + w).toBeLessThanOrEqual(1400 + 1e-6);
+      expect(cam.scrollY + h).toBeLessThanOrEqual(1000 + 1e-6);
+    },
+  );
+
+  it.each([1, 1.25, 2])(
+    "should keep a followed target in the middle of the closer view at render scale %s, on whole backing px",
+    (rs) => {
+      const cam = fakeCamera();
+      const v = at(rs);
+      fitCamera(cam as ViewCamera, v);
+      zoomWorld(cam as ViewCamera, WORLD_ZOOM, v);
+      boundCamera(cam as ViewCamera, { x: -2000, y: -2000, width: 6000, height: 6000 });
+      followWith(cam as ViewCamera, { x: 1280, y: 720 });
+      cam.preRender();
+      const w = 1080 / WORLD_ZOOM;
+      const h = 720 / WORLD_ZOOM;
+      const z = rs * WORLD_ZOOM;
+      // within a backing px of the middle, the scroll on the closer zoom's px grid
+      expect(Math.abs(cam.scrollX + w / 2 - 1280)).toBeLessThan(1 / z + 1e-9);
+      expect(Math.abs(cam.scrollY + h / 2 - 720)).toBeLessThan(1 / z + 1e-9);
+      expect(Math.abs(cam.scrollX * z - Math.round(cam.scrollX * z))).toBeLessThan(1e-6);
+      expect(Math.abs(cam.scrollY * z - Math.round(cam.scrollY * z))).toBeLessThan(1e-6);
+    },
+  );
 });

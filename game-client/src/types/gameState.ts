@@ -915,6 +915,11 @@ export interface FloorMap {
    * from an older server, and from a floor with no pool.
    */
   enemy_pool?: string[];
+  /**
+   * The region ids of the rooms that hold nothing but dressing, for their dressing (FS-KE075
+   * §Change: Room variety R84). Absent from an older server and from a floor of buildings.
+   */
+  quiet_rooms?: number[];
 }
 
 /** Whether a `floor_map` payload is one: a run's floor with a size and its walls. */

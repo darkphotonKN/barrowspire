@@ -141,7 +141,7 @@ func ensureDarkWarrior(rng populationRand, pool floorPool, floor int, monsters [
 			byRole[entry.Family.Role] = append(byRole[entry.Family.Role], m)
 		}
 	}
-	if min(DarkWarriorCapMax, len(monsters)/DarkWarriorPer) == 0 {
+	if darkWarriorCap(len(monsters)) == 0 {
 		slog.Warn("Endgame test run floor holds no Dark Warrior: too few monsters for the cap",
 			"floor", floor, "monsters", len(monsters))
 		return

@@ -249,7 +249,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 
 ### Movement pace (FS-TAGWA, ADR-0099)
 
-- **Pace scale** — the one knob every travel speed is multiplied by (`PaceScale`, 0.5): walks,
+- **Pace scale** — the one knob every travel speed is multiplied by (`PaceScale`): walks,
   ambles, monster and ally pace, the variant step gain and every projectile. Never a timing or a
   reach. A speed's **full-pace figure** is its number before the scale (the delver's 200). A
   **travel budget** is a timer sized to a walk (the brazier windows, the mark's longest flight):
@@ -264,8 +264,20 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Region** — one named part of a dungeon floor's walkable cells: a **room** or a **corridor
   segment**. Every walkable cell belongs to exactly one region. Regions have ids, carried on the
   floor map; the client's fog and minimap are built on them.
-- **Room** — a rectangular region carved as a chamber, from a 4×4-cell crypt to a 10×8-cell hall.
+- **Room** — a region carved as a chamber in a rect of cells, from a 4×4 crypt to an 8×7 hall, its
+  floor the rect less its **shape**'s cut cells (FS-KE075 §Change: Room variety).
   In game-service the word means only this; the walls of floors 2–3 make **buildings**.
+- **Room shape** — which cells of a room's rect are cut: **rectangle**, **L**, **cross**,
+  **pillared** or **cut corners**. A **cut cell** is not walkable; where it touches the floor it is
+  shell wall, so a pillar is a wall cell standing on its own. Server-only: the client sees the cells.
+- **Room contents** — what a room holds, given when its floor is planned: a role room keeps its role;
+  a **claimed decision room** holds a seal's piece, the encounter or its key on the ground; every
+  other room is **ordinary** and rolls **quiet**, **monsters** (one or two, or a hall's pack) or a
+  **decision** (a trap or a chest or sack). Not a room role.
+- **Quiet room** — an ordinary room that rolled quiet: no monster, container or trap, only dressing
+  and light. Named on the floor map (`quiet_rooms`). The build's wider "quiet rooms" set
+  (`quietRooms`: plates, hidden, respite and encounter rooms, empty of rolled monsters and
+  containers) is a different thing; say *rolled quiet room* where both could be meant.
 - **Corridor segment** — a region of corridor cells: corridors are cut into segments so that a
   long corridor is not one region.
 - **Doorway** — a walkable cell of a room that touches a corridor cell. Always open: a dungeon

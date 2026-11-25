@@ -109,6 +109,9 @@ func dungeonFloorMapMessage(sessionID uuid.UUID, depth int, d *dungeonFloor, reg
 			"regions":    regions,
 			"walls":      shell,
 			"enemy_pool": pool.archetypes(),
+			// the rooms that rolled quiet, by region, for their dressing
+			// (FS-KE075 §Change: Room variety R84)
+			"quiet_rooms": d.quietRegions(),
 		},
 	}
 }

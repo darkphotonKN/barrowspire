@@ -329,7 +329,7 @@ const MaxMsgChanBuffer int = 30
 // Turning it re-paces the client too: rewrite the pace golden it reads with
 // `go test ./internal/systems -run TestPaceGolden -update`. FS-TAGWA R1-R9,
 // ADR-0099.
-const PaceScale float64 = 0.5
+const PaceScale float64 = 0.525
 
 // Game Defaults
 //
@@ -366,6 +366,12 @@ const HubMapHeight float64 = 1700
 // The fixed point every player enters and returns to. FS-29KSH §Requirements 22.
 const HubSpawnX float64 = 1000
 const HubSpawnY float64 = 800
+
+// HubMoveSpeedBonusPercent is the town bonus: a delver walks this much faster
+// in the hub, and only there. Its own number, outside PaceScale and the base
+// speeds, applied on top of everything else and past worn move speed's cap:
+// base × (1 + gear) × (1 + this). Hub residents keep their amble. FS-TAGWA R16.
+const HubMoveSpeedBonusPercent = 10
 
 // How many delvers the hub holds at once.
 //

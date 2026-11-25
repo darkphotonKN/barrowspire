@@ -13,9 +13,10 @@ import (
 
 /**
 * A dungeon floor's monsters are distributed by room and role (FS-KE075 §C
-* R18–20, ADR-0061 Decision 7): none in the start room, a pack in each hall,
-* elite guards in each treasure room, a few rolled monsters in every other
-* room and along the corridors, the floor's total held to
+* R18–20, ADR-0061 Decision 7): none in the start room, elite guards in each
+* treasure room, and, in each room that rolled monsters (§Change: Room variety
+* R79), a hall's pack or one or two rolled monsters, a few more along the
+* corridors, the floor's total held to
 * [DungeonMonstersMin, DungeonMonstersMax]. Every monster is a variant of the
 * floor's pool (FS-C8VM7 §C); levels and elite chance are the floor's own
 * (rollMonster); only the treasure guards are always elite. On every dungeon
@@ -83,6 +84,9 @@ func (s *Session) populateDungeon(d *dungeonFloor, area *spawnArea, pool floorPo
 		case room == roles.Start, quiet[room]:
 		case slices.Contains(roles.Treasure, room):
 			p.treasureGuards(room)
+		// only a room that rolled monsters holds rolled ones (FS-KE075
+		// §Change: Room variety R79)
+		case d.content(room) != contentMonsters:
 		case d.isHall(room):
 			p.hallPack(room)
 		default:
@@ -264,16 +268,44 @@ func (p *dungeonPopulation) corridors() {
 /**
 * holdTotal holds the floor's monsters to [DungeonMonstersMin,
 * DungeonMonstersMax] (FS-KE075 §C R18, FS-5FZ4J §D R21): below, single rolled
-* monsters go to random ordinary rooms, none past RoomMonstersTopUpMax; above,
-* monsters are removed from ordinary rooms, then corridors, then hall packs'
+* monsters go to random ordinary rooms, none past RoomMonstersTopUpMax, and
+* once those are full a rolled quiet room that is not a hall turns to
+* monsters, one at a time, the floor map naming it quiet no more (§Change: Room
+* variety R83); above, monsters are removed from ordinary rooms holding two,
+* down to one each (R79), then corridors, then hall packs'
 * fodder, then treasure-guard packs, the last two room by room from the one
 * farthest from the start. A hall keeps its pack's leader and a treasure room
 * one guard, so every guarded chest keeps a guard.
 **/
 func (p *dungeonPopulation) holdTotal(ordinary []int) {
-	// the ordinary rooms a top-up may still go to
+	// the ordinary rooms a top-up may still go to; once they are full, a
+	// rolled quiet room that is not a hall, drawn, takes a top-up and turns
+	// to monsters (FS-KE075 §Change: Room variety R83). A hall would owe a
+	// pack. Nothing is drawn for them unless the top-up gets that far, so a
+	// floor already at its minimum draws as it did.
 	room := slices.Clone(ordinary)
-	for len(p.spawns) < DungeonMonstersMin && len(room) > 0 {
+	var rolledQuiet []int
+	quietListed := false
+	for len(p.spawns) < DungeonMonstersMin {
+		if len(room) == 0 {
+			if !quietListed {
+				rolledQuiet = slices.DeleteFunc(p.floor.roomsHolding(contentQuiet), p.floor.isHall)
+				quietListed = true
+			}
+			if len(rolledQuiet) == 0 {
+				break
+			}
+			j := p.rng.IntN(len(rolledQuiet))
+			turn := rolledQuiet[j]
+			rolledQuiet = slices.Delete(rolledQuiet, j, j+1)
+			// it turns only once a monster stands in it, so an empty room is
+			// never named anything but quiet
+			if p.single(turn) {
+				p.floor.contents[turn] = contentMonsters
+				room = append(room, turn)
+			}
+			continue
+		}
 		i := p.rng.IntN(len(room))
 		if p.inRoom(room[i]) >= RoomMonstersTopUpMax || !p.single(room[i]) {
 			room = slices.Delete(room, i, i+1)
@@ -284,11 +316,15 @@ func (p *dungeonPopulation) holdTotal(ordinary []int) {
 			"sessionID", p.session, "monsters", len(p.spawns), "min", DungeonMonstersMin)
 	}
 
-	for _, role := range []spawnRole{spawnRoom, spawnCorridor} {
-		for len(p.spawns) > DungeonMonstersMax {
-			if !p.trimOne(role) {
-				break
-			}
+	// a monsters room keeps one (R79): a room holding two gives one up first
+	for len(p.spawns) > DungeonMonstersMax {
+		if !p.trimDoubled() {
+			break
+		}
+	}
+	for len(p.spawns) > DungeonMonstersMax {
+		if !p.trimCorridor() {
+			break
 		}
 	}
 	for _, role := range []spawnRole{spawnHallPack, spawnTreasureGuard} {
@@ -320,11 +356,28 @@ func (p *dungeonPopulation) monsters() []*MonsterConfig {
 	return monsters
 }
 
-// trimOne removes one random monster placed as role; false when there is none.
-func (p *dungeonPopulation) trimOne(role spawnRole) bool {
+// trimCorridor removes one random corridor monster; false when there is none.
+func (p *dungeonPopulation) trimCorridor() bool {
 	var of []int
 	for i, spawn := range p.spawns {
-		if spawn.role == role {
+		if spawn.role == spawnCorridor {
+			of = append(of, i)
+		}
+	}
+	if len(of) == 0 {
+		return false
+	}
+	i := of[p.rng.IntN(len(of))]
+	p.spawns = slices.Delete(p.spawns, i, i+1)
+	return true
+}
+
+// trimDoubled removes one rolled monster, drawn, from the ordinary rooms
+// holding more than one; false when each holds one at most.
+func (p *dungeonPopulation) trimDoubled() bool {
+	var of []int
+	for i, spawn := range p.spawns {
+		if spawn.role == spawnRoom && p.inRoom(spawn.room) > 1 {
 			of = append(of, i)
 		}
 	}

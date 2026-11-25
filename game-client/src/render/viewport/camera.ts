@@ -3,7 +3,8 @@
  *
  * One camera per scene, sized to the backing store, zoomed by the render scale, origin 0: a
  * camera-fixed object at logical (x, y) draws at backing (rs·x, rs·y), so the HUD keeps its
- * logical coordinates. Phaser's follow, bounds and view maths assume origin 0.5, so scenes
+ * logical coordinates. A world's camera stands closer, zoomed by {@link WORLD_ZOOM} beyond the
+ * render scale ({@link zoomWorld}), and its HUD is drawn by a camera of its own (`worldView`). Phaser's follow, bounds and view maths assume origin 0.5, so scenes
  * reach `setBounds` and `startFollow` only through here, and never read `worldView` or
  * `midPoint` (both wrong under origin 0): {@link viewRect} is the visible world.
  */
@@ -86,6 +87,14 @@ export type PixelGridCamera = Pick<
   | "matrixCombined"
 >;
 
+/**
+ * How much closer every world camera stands than the logical view: the knob. A world's camera is
+ * zoomed by the render scale times this, so a world (the run, the town, a field) shows the logical
+ * view divided by it, and its HUD stays at the logical view (FS-ZAJMH § Change: Closer world
+ * camera). 1 is the view as it was.
+ */
+export const WORLD_ZOOM = 1.2;
+
 /** How fast the camera catches its target, as every world has always followed. */
 const FOLLOW_LERP = 0.1;
 
@@ -95,6 +104,8 @@ interface Fitted {
   target?: Point;
   /** A canvas menu's stage width, centred in the view ({@link centreStage}). */
   stage?: number;
+  /** A world camera's zoom beyond the render scale ({@link zoomWorld}). */
+  zoom?: number;
 }
 
 /**
@@ -115,20 +126,42 @@ function stateOf(cam: ViewCamera): Fitted {
 }
 
 /**
- * Sizes `cam` to the backing store at the view's render scale, zoomed by it, origin 0. Safe to
- * call again on a re-fit: bounds and follow set through here are put back for the new size. The
- * first fit also puts the camera on the pixel grid ({@link keepOnPixelGrid}, once per camera).
+ * Sizes `cam` to the backing store at the view's render scale, zoomed by it (and by a world's
+ * {@link zoomWorld} factor), origin 0. Safe to call again on a re-fit: bounds, follow and the
+ * world's zoom set through here are put back for the new size. The first fit also puts the camera
+ * on the pixel grid ({@link keepOnPixelGrid}, once per camera), which floors the scroll on the
+ * 1/zoom grid: whole backing px at any zoom.
  */
 export function fitCamera(cam: ViewCamera, view: View = viewport): void {
   keepOnPixelGrid(cam);
   const state = stateOf(cam);
   const { width, height } = backingSize(view);
   cam.setSize(width, height);
-  cam.setZoom(view.renderScale);
+  cam.setZoom(view.renderScale * (state.zoom ?? 1));
   cam.setOrigin(0, 0);
   if (state.bounds) applyBounds(cam, state.bounds);
   if (state.target) centreOn(cam, state.target);
   if (state.stage !== undefined) applyStage(cam, state.stage);
+}
+
+/**
+ * Stands a world's camera `zoom` times closer than the logical view, now and after every re-fit
+ * (FS-ZAJMH § Change: Closer world camera): it shows the logical view divided by `zoom`, its
+ * bounds and follow kept through the zoom as through the render scale. Only a world's camera; the
+ * HUD's stays at the render scale.
+ */
+export function zoomWorld(
+  cam: ViewCamera,
+  zoom: number = WORLD_ZOOM,
+  view: View = viewport,
+): void {
+  stateOf(cam).zoom = zoom;
+  fitCamera(cam, view);
+}
+
+/** How much closer than the logical view `cam` stands ({@link zoomWorld}); 1 for any other camera. */
+export function worldZoomOf(cam: object): number {
+  return fitted.get(cam as ViewCamera)?.zoom ?? 1;
 }
 
 /**

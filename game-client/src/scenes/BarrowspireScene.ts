@@ -190,7 +190,7 @@ import {
   type MonsterEffects,
   type MonsterTargeting,
 } from "@/render/creatures";
-import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
+import { MARKER_MODES, markerMode, type MarkerMode, type MarkerModes } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { Minimap, type MinimapFixture } from "@/ui/minimap";
@@ -287,6 +287,7 @@ import {
   relayoutOn,
   viewRect,
   viewport,
+  zoomWorldView,
 } from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
@@ -479,6 +480,8 @@ interface DungeonFloor {
   mapName?: MinimapName;
   /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
   dressed: DressedPiece[];
+  /** Its quiet rooms by region id, from its floor map, dressed for ambience (FS-KE075 §Change: Room variety R85). */
+  quiet: ReadonlySet<number>;
   /** Its wall pieces as planned, once its walls stand: what a secret door's cracks are laid over (FS-5FZ4J §J R51). */
   faces?: readonly WallFace[];
   /** The flames its wall pieces carry, once its walls stand: what a rebuild of its walls takes away (FS-5FZ4J §J R56). */
@@ -1210,6 +1213,12 @@ export class BarrowspireScene extends Phaser.Scene {
     },
     hit: () => this.gameplaySounds?.play("hit_monster"),
   };
+  /**
+   * The table the floor's marker mode is read from: the shipped one, which names no floor today, or
+   * the entry a test opts a floor in by (FS-48CTQ § Change: Floor 1 carries overhead markers; no
+   * floor uses the target frame, 26).
+   */
+  private markerModes: MarkerModes = MARKER_MODES;
   /** The floor's marker mode (FS-48CTQ §A.1): overhead plates, or the target frame. */
   private markers: MarkerMode = "overhead";
   /** The top-centre frame naming one monster on a `frame` floor (FS-48CTQ §C). */
@@ -3571,6 +3580,10 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   create(): void {
+    // the world stands closer than the logical view, its HUD on a camera of its own at the logical
+    // view; first, so whatever is laid out for the world camera sees its zoom (FS-ZAJMH § Change:
+    // Closer world camera)
+    zoomWorldView(this);
     // an arrival is dark before anything of the floor is made: the world's fade-in opens on the
     // dark, and the card comes with the first broadcast's floor (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.dark();
@@ -4352,7 +4365,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36), plated or not
     // as the floor's marker mode says (FS-48CTQ §A.1); a drop in the last-hit monster's health may
     // be the player's own hit (§C.6)
-    this.markers = markerMode("run", state.floor);
+    this.markers = markerMode("run", state.floor, this.markerModes);
     this.monsters?.setMarkerMode(this.markers);
     this.monsters?.sync(state.monsters ?? []);
     this.lastHit.observe(state.monsters ?? [], this.time.now);
@@ -4590,6 +4603,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ),
       seen: new Exploration(grid),
       dressed: [],
+      quiet: new Set(map.quiet_rooms ?? []),
     };
   }
 
@@ -5738,7 +5752,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const plan = !look.dressing
       ? []
       : dungeon
-        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid))
+        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid, dungeon.quiet))
         : planDressing(look.dressing, look.seed, statics);
     // piece by piece, so each sprite and flame keeps where it stands (FS-9PN7X §C.2, §D.6)
     this.dressing = [];

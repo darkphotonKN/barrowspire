@@ -37,7 +37,7 @@ export type CharacterAnimation =
  * World px per second the walk clip covers at 1x: the stride the bake keyed, over one cycle at
  * its authored fps. A fact of the baked clip, not a speed: the walk plays at the speed drawn over
  * it, so planted feet stay planted at any pace. At the server's paced `DefaultSpeed`
- * (`BASE_MOVE_SPEED`, 100 world px/s at the pace's 0.5, FS-TAGWA R11) a walk plays at about 1.35x.
+ * (`BASE_MOVE_SPEED`, 105 world px/s at the pace's 0.525, FS-TAGWA R11) a walk plays at about 1.4x.
  */
 export const WALK_PACE = 74;
 /**
@@ -45,7 +45,7 @@ export const WALK_PACE = 74;
  * the speed the planted foot slides back under the body, averaged over the time a foot is down,
  * with the clip at its authored 14 fps on the archer's legs (tools/bake/page/characters/pace.js,
  * which reads the walk at about 80 against WALK_PACE's 74). 193.7 measured; clips.test.mjs holds
- * this to it. At the paced base walk (100 px/s at the pace's 0.5) the run plays at about 0.52x,
+ * this to it. At the paced base walk (105 px/s at the pace's 0.525) the run plays at about 0.54x,
  * its feet planted (FS-TAGWA R11).
  */
 export const RUN_PACE = 194;

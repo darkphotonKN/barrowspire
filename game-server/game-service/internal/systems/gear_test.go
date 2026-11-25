@@ -460,3 +460,32 @@ func TestGearSystem_VitalityChange_NeverHealsAndLossClamps(t *testing.T) {
 		assert.Equal(t, seatedMax-2*5, healthOf(d).CurrentHealth)
 	})
 }
+
+// The town bonus (FS-TAGWA R16): a world's move bonus multiplies the walk on
+// top of worn move speed, past its cap: base × (1 + gear) × (1 + world).
+func TestGearSystem_WorldMoveBonus_MultipliesPastTheCap(t *testing.T) {
+	tests := []struct {
+		name           string
+		worn, world    int
+		wantMultiplier float64
+	}{
+		{"no bonus, no gear", 0, 0, 1},
+		{"the bonus alone", 0, 10, 1.1},
+		{"the bonus on worn move speed", 10, 10, 1.1 * 1.1},
+		{"past the 30% cap", 50, 10, 1.3 * 1.1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			walker := delver(em, 100, 100)
+			walker.AddComponent(components.NewVelocityComponent(0, 0, constants.DefaultSpeed))
+			wear(em, walker, legsSlot, types.ItemTypeArmor, affix(types.AffixMoveSpeed, tt.worn))
+
+			NewGearSystem(em, testGearCaps, testUniqueEffects, vitalityAside).WithWorldMoveBonus(tt.world).Update(tickSeconds, em.GetAllEntities())
+
+			vc, _ := walker.GetComponent(ecs.ComponentTypeVelocity)
+			assert.InDelta(t, constants.DefaultSpeed*tt.wantMultiplier, vc.(*components.VelocityComponent).Speed, 1e-9)
+			assert.Equal(t, min(tt.worn, 30), gearOf(walker).MoveSpeedPercent, "the bonus is never gear's")
+		})
+	}
+}

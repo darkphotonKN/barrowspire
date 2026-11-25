@@ -233,7 +233,16 @@ export interface DressingArea {
   rect: Rect;
   /** Whether a footprint square (world px) may stand in the room (FS-KE075 §H.47). */
   clear(square: Rect): boolean;
+  /** A quiet room, holding nothing but dressing: dressed for ambience (FS-KE075 §Change: Room variety R85). */
+  quiet?: boolean;
+  /** Its walkable area, world px²: a shaped room's rect less its cut cells (R86); the rect's area when not given. */
+  area?: number;
 }
+
+/** A quiet room's share of dressing, against a room of its size that is not quiet (R85). */
+export const QUIET_DRESSING_SHARE = 2;
+/** The most braziers quiet rooms light on a floor whose lean sets no brazier most of its own (R85). */
+export const QUIET_BRAZIERS_MOST = 3;
 
 /**
  * A dungeon floor's dressing (FS-KE075 §H.47): each room strewn at FS-8RBQY §C's density for its
@@ -248,21 +257,29 @@ export function planRoomDressing(
   rooms: readonly DressingArea[],
 ): DressingPiece[] {
   const perFloor = Math.min(lean.count, DRESSING_MAX);
-  const strewn = new Strewing(lean, statics);
+  const strewn = new Strewing({ ...lean, most: { brazier: QUIET_BRAZIERS_MOST, ...lean.most } }, statics);
+  const span = (from: number, size: number, r: number, h: number) =>
+    Math.round(from + r + ((h & 0xffff) / 0xffff) * (size - 2 * r));
+  const spotIn = (room: DressingArea, k: number, own: number) => (r: number) => ({
+    x: span(room.rect.x, room.rect.width, r, tileHash(k, 1, own)),
+    y: span(room.rect.y, room.rect.height, r, tileHash(k, 2, own)),
+  });
+  // a quiet room's brazier first, so the floor's brazier budget lights the quiet rooms before any
+  // other (FS-KE075 §Change: Room variety R85)
+  for (const room of rooms.filter((r) => r.quiet)) {
+    const own = tileHash(room.id, 0x4c49_4748, seed);
+    const before = strewn.placed.length;
+    for (let k = 0; k < TRIES_PER_PIECE && strewn.placed.length === before; k++)
+      strewn.try(k, own, spotIn(room, k, own), room.clear, "brazier");
+  }
   for (const room of rooms) {
-    const quota = Math.round((perFloor * room.rect.width * room.rect.height) / DRESSING_AREA);
+    const share = room.quiet ? QUIET_DRESSING_SHARE : 1;
+    const area = room.area ?? room.rect.width * room.rect.height;
+    const quota = Math.round((share * perFloor * area) / DRESSING_AREA);
     const own = tileHash(room.id, 0x524f_4f4d, seed);
-    const { x, y, width, height } = room.rect;
-    const span = (from: number, size: number, r: number, h: number) =>
-      Math.round(from + r + ((h & 0xffff) / 0xffff) * (size - 2 * r));
     const before = strewn.placed.length;
     for (let k = 0; k < quota * TRIES_PER_PIECE && strewn.placed.length - before < quota; k++)
-      strewn.try(
-        k,
-        own,
-        (r) => ({ x: span(x, width, r, tileHash(k, 1, own)), y: span(y, height, r, tileHash(k, 2, own)) }),
-        room.clear,
-      );
+      strewn.try(k, own, spotIn(room, k, own), room.clear);
   }
   return strewn.placed;
 }
@@ -278,12 +295,12 @@ class Strewing {
   ) {}
 
   /**
-   * Candidate `k` of `seed`: its sheet by the lean, its place by `spot`, kept when it clears the
-   * keep-out, the area's own test and the spacing, dropped otherwise, never nudged (§C.5).
+   * Candidate `k` of `seed`: its sheet by the lean (or `as`), its place by `spot`, kept when it
+   * clears the keep-out, the area's own test and the spacing, dropped otherwise, never nudged (§C.5).
    */
-  try(k: number, seed: number, spot: (r: number) => Point, clear?: (square: Rect) => boolean): void {
+  try(k: number, seed: number, spot: (r: number) => Point, clear?: (square: Rect) => boolean, as?: DressingSheet): void {
     const pick = tileHash(k, 3, seed);
-    const sheet = this.lean.weights.find(([cut]) => pick % 100 < cut)?.[1];
+    const sheet = as ?? this.lean.weights.find(([cut]) => pick % 100 < cut)?.[1];
     if (!sheet || (this.used.get(sheet) ?? 0) >= (this.lean.most?.[sheet] ?? Infinity)) return;
     const r = FOOTPRINT[sheet];
     const at = spot(r);

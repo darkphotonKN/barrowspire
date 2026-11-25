@@ -103,11 +103,23 @@ func TestRoomDoorways_RoomCellsTouchingCorridor(t *testing.T) {
 	)
 	room := CellRect{X: 1, Y: 1, W: 3, H: 3}
 
-	got := roomDoorways(cols, len(corridor)/cols, room, corridor)
+	floor := make([]int, len(corridor))
+	for _, c := range rectCells(cols, room) {
+		floor[c] = 1
+	}
+
+	got := roomDoorways(cols, len(corridor)/cols, room, floor, corridor)
 
 	want := []Cell{{X: 3, Y: 2}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("roomDoorways() = %v, want %v", got, want)
+	}
+
+	// FS-KE075 §Change: Room variety R74: a cut cell beside a corridor is no
+	// doorway; only the room's floor is
+	floor[2*cols+3] = 0
+	if got := roomDoorways(cols, len(corridor)/cols, room, floor, corridor); len(got) != 0 {
+		t.Fatalf("roomDoorways() with the doorway cell cut = %v, want none", got)
 	}
 }
 

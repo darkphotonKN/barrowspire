@@ -135,6 +135,8 @@ import {
 import {
   HUB_INDOOR_DRESSING,
   furnishingOf,
+  isChapel,
+  isInn,
   partitionInside,
   placeholderWarning,
   residentFacing,
@@ -182,7 +184,7 @@ import {
   type WallSheets,
 } from "@/render/world/walls";
 import { buildingWallShadows, shadowsWithin, type GroundShadows } from "@/render/world/wallShadows";
-import { afterFrameSetUp, boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { afterFrameSetUp, boundCamera, crispen, followWith, relayoutOn, viewport, zoomWorldView } from "@/render/viewport";
 import type { MinimapStage } from "@/ui/minimap";
 import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
 import type { ModeIconStage } from "@/ui/minimapModeIcon";
@@ -192,7 +194,8 @@ import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "@/ui
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
-import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
+import { preloadMusic, sceneMusicStage } from "@/audio/worldMusic";
+import { TOWN_TRACKS, TownMusic, townMusic, type TownPlace } from "@/audio/townMusic";
 import { browserMusicStore } from "@/audio/musicSetting";
 
 /** Moves a world position a step toward its target. */
@@ -796,9 +799,10 @@ export class HubScene extends Phaser.Scene {
   private oneShots?: OneShotHandlers;
   /**
    * The town's music (FS-28DDG R20): made with the first visit, and kept with this scene instance,
-   * which is this game's, across its stops, as the fade-out outlives the stop (R3).
+   * which is this game's, across its stops, as the fade-out outlives the stop (R3). The village's
+   * on the street, the chapel's and the Inn's indoors (§ Change: The chapel's and the Inn's music).
    */
-  private music?: WorldMusic;
+  private music?: TownMusic;
   /**
    * What the player's actions that can open or close a window, and the minimap's step, run through:
    * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
@@ -836,12 +840,16 @@ export class HubScene extends Phaser.Scene {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
-    // the town's music, with its art, so the torch bar counts it; skipped while still cached
-    // (FS-28DDG R12, R13)
-    preloadMusic(this, worldTrack("hub"));
+    // the town's music, the chapel's and the Inn's with it, beside its art, so the torch bar counts
+    // them; each skipped while still cached (FS-28DDG R12, R13; § Change: The chapel's and the Inn's music, M3)
+    for (const track of Object.values(TOWN_TRACKS)) preloadMusic(this, track);
   }
 
   create(): void {
+    // the world stands closer than the logical view, its HUD on a camera of its own at the logical
+    // view; first, so whatever is laid out for the world camera sees its zoom (FS-ZAJMH § Change:
+    // Closer world camera)
+    zoomWorldView(this);
     // an arrival is dark before anything of the town is made: the world's fade-in opens on the
     // dark, and the town's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.play(placeCard({ world: "hub" }), { built: false });
@@ -1006,10 +1014,29 @@ export class HubScene extends Phaser.Scene {
     return !!(this.ui.ui.inventory || this.ui.ui.character);
   }
 
+  /**
+   * Whether the gear overlay is open in stash mode, as the UI scene's gear reports it (FS-VPD8Y R34);
+   * absent before its first report, which reads as closed.
+   */
+  private get stashOpen(): boolean {
+    return !!this.ui.ui.stash;
+  }
+
   /** The town's music rises as the hub is entered; release() tells it the hub was left (FS-28DDG R2). */
   private enterMusic(): void {
-    this.music ??= new WorldMusic(sceneMusicStage(this, worldTrack("hub")), browserMusicStore);
-    this.music.enter();
+    this.music ??= townMusic((track) => sceneMusicStage(this, track), browserMusicStore);
+    this.music.enter(this.musicPlace);
+  }
+
+  /**
+   * Where the player stands, as the town's music hears it: the chapel, the Inn, or anywhere else,
+   * the street and every other house (§ Change: The chapel's and the Inn's music, M1).
+   */
+  private get musicPlace(): TownPlace {
+    const house = this.playerBuilding;
+    if (house && isChapel(house)) return "chapel";
+    if (house && isInn(house)) return "inn";
+    return "street";
   }
 
   /** A window opening closes the letter panel first (FS-3EBCA R16). */
@@ -1285,6 +1312,7 @@ export class HubScene extends Phaser.Scene {
     this.keepMapNameClear();
     this.offerConversation();
     this.updateBuildings();
+    this.music?.moveTo(this.musicPlace);
     this.hideWhoIsElsewhere();
     this.followAuras(time);
     this.showStashChest();
@@ -1295,7 +1323,7 @@ export class HubScene extends Phaser.Scene {
   private showStashChest(): void {
     const chest = this.stashChest;
     if (!chest) return;
-    const frame = chestFrame(this.ui.ui.stash ?? false);
+    const frame = chestFrame(this.stashOpen);
     if (frame === chest.frame) return;
     chest.frame = frame;
     showState(chest.sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
@@ -2062,18 +2090,20 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * Sends velocity only when it changes, rather than every frame, and always on a visit's first
-   * frame, a stop included ({@link lastSent}). While the menu, the letter panel or an NPC's card is
-   * open the keys are theirs (FS-G4VMQ §Requirements 5, FS-1GZGD R40, FS-TQZ5J § Change: A
-   * conversation holds the player still, R141): they read as released, so a stride any of them
-   * interrupted is stopped once (the server holds the last velocity) and nothing more is sent until
-   * it closes, the keys held then walking on at once (R142, R147). The Spire door's panel holds
-   * nothing: it opens on walking into the gate and closes on walking out (R143).
+   * frame, a stop included ({@link lastSent}). While the menu, the letter panel, an NPC's card or the
+   * stash is open the keys are theirs (FS-G4VMQ §Requirements 5, FS-1GZGD R40, FS-TQZ5J § Change: A
+   * conversation holds the player still, R141, FS-VPD8Y § Change: Opening the stash holds the player
+   * still, R45): they read as released, so a stride any of them interrupted is stopped once (the
+   * server holds the last velocity) and nothing more is sent until it closes, the keys held then
+   * walking on at once (FS-TQZ5J R142, R147; FS-VPD8Y R47, R49). The Spire door's panel holds
+   * nothing: it opens on walking into the gate and closes on walking out (FS-TQZ5J R143), and the
+   * plain overlay (I, B or the Inventory icon) still walks (FS-VPD8Y R46, FS-HRH2J R7).
    */
   private sendMovementIntent(): void {
     if (!this.cursors || !this.wasd) return;
 
     const talking = !!this.dialogue && !this.doorOpen;
-    const owned = this.menuOpen || !!this.mailbox?.isOpen() || talking;
+    const owned = this.menuOpen || !!this.mailbox?.isOpen() || talking || this.stashOpen;
     const held = (k: Phaser.Input.Keyboard.Key) => !owned && k.isDown;
     const left = held(this.cursors.left) || held(this.wasd.left);
     const right = held(this.cursors.right) || held(this.wasd.right);

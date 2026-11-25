@@ -115,10 +115,10 @@ func TestDungeonFloors_SizeAndCellSizeOnEveryFloor(t *testing.T) {
 	s, _ := dungeonRun(t, 3, 2, 0)
 
 	width, height := floorSize(firstFloor)
-	assert.Equal(t, [2]float64{5760, 3840}, [2]float64{width, height})
+	assert.Equal(t, [2]float64{4800, 3200}, [2]float64{width, height})
 	assert.Equal(t, RunBounds().Width, width, "a run is created at its first floor's normal size")
 	assert.Equal(t, RunBounds().Height, height)
-	assert.Equal(t, [2]float64{5760, 3840}, [2]float64{s.mapWidth, s.mapHeight})
+	assert.Equal(t, [2]float64{4800, 3200}, [2]float64{s.mapWidth, s.mapHeight})
 	assert.Equal(t, s.dungeon.layout.Bounds.W, s.mapWidth, "the map and the layout are one build")
 	assert.Equal(t, 80.0, currentFloor(t, s).CellSize)
 
@@ -127,7 +127,7 @@ func TestDungeonFloors_SizeAndCellSizeOnEveryFloor(t *testing.T) {
 		require.NoError(t, s.regenerateFloor())
 		require.NotNil(t, s.dungeon, "floor %d is a dungeon", depth)
 		assert.NotEqual(t, previous, s.dungeon.layout.Seed, "floor %d has a layout of its own", depth)
-		assert.Equal(t, [2]float64{5760, 3840}, [2]float64{s.mapWidth, s.mapHeight}, "floor %d", depth)
+		assert.Equal(t, [2]float64{4800, 3200}, [2]float64{s.mapWidth, s.mapHeight}, "floor %d", depth)
 		assert.Equal(t, 80.0, currentFloor(t, s).CellSize, "floor %d", depth)
 		assert.Empty(t, buildingDoorIDs(s), "floor %d has no buildings", depth)
 	}
@@ -332,18 +332,23 @@ func cellWalk(d *dungeonFloor, from int) []int {
 	return dist
 }
 
-// Floor 1 holds clamp(round(rooms / 2), 10, 14) containers: one chest per
-// treasure room, then at most one per room among the rest, never the start
-// room's, each a sack at today's share. FS-KE075 §B Requirement 15.
+// Floor 1's containers are one chest per treasure room and one in each room
+// that rolled a chest or sack, at most one a room, never the start room's,
+// each a sack at today's share. FS-KE075 §B Requirement 15, as §Change: Room
+// variety R81 has it.
 func TestDungeonFloor1_ContainersPerRoom(t *testing.T) {
 	for seed := uint64(1); seed <= 40; seed++ {
 		s, _ := dungeonRun(t, seed, 2, 0)
 		d := s.dungeon
 		found := containers(s)
 
-		assert.Equal(t, dungeonContainers(len(d.layout.Rooms)), len(found), "seed %d", seed)
-		assert.GreaterOrEqual(t, len(found), 10, "seed %d", seed)
-		assert.LessOrEqual(t, len(found), 14, "seed %d", seed)
+		want := len(d.layout.Roles.Treasure)
+		for room := range d.layout.Rooms {
+			if d.content(room) == contentContainer {
+				want++
+			}
+		}
+		assert.Equal(t, want, len(found), "seed %d", seed)
 
 		perRoom := map[int]int{}
 		for _, c := range found {
@@ -483,11 +488,11 @@ func TestDungeonFloor1_FloorMapCarriesCellSizeAndRegions(t *testing.T) {
 	for k := range payload {
 		keys = append(keys, k)
 	}
-	assert.ElementsMatch(t, []string{"session_id", "floor", "width", "height", "cell_size", "regions", "walls", "enemy_pool"}, keys,
-		"no room roles on the wire; the floor's enemy pool (FS-C8VM7 §G R40)")
+	assert.ElementsMatch(t, []string{"session_id", "floor", "width", "height", "cell_size", "regions", "walls", "enemy_pool", "quiet_rooms"}, keys,
+		"no room roles on the wire; the floor's enemy pool (FS-C8VM7 §G R40); its quiet rooms (FS-KE075 §Change: Room variety R84)")
 	assert.Equal(t, 80.0, payload["cell_size"])
-	assert.Equal(t, 5760.0, payload["width"])
-	assert.Equal(t, 3840.0, payload["height"])
+	assert.Equal(t, 4800.0, payload["width"])
+	assert.Equal(t, 3200.0, payload["height"])
 
 	raw, err := json.Marshal(s.dungeon.layout.Regions)
 	require.NoError(t, err)

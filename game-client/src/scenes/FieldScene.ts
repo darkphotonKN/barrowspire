@@ -77,7 +77,7 @@ import type { Rect } from "@/ui/partyPanelLayout";
 import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
-import { afterFrameSetUp, boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { afterFrameSetUp, boundCamera, followWith, relayoutOn, viewport, zoomWorldView } from "@/render/viewport";
 import { usePartyStore } from "@/stores/partyStore";
 import { useGameStore } from "@/stores/gameStore";
 import { browserFieldChartStore, type FieldChartStore } from "@/ui/fieldChart";
@@ -297,6 +297,10 @@ export class FieldScene extends Phaser.Scene {
   }
 
   create(): void {
+    // the world stands closer than the logical view, its HUD on a camera of its own at the logical
+    // view; first, so whatever is laid out for the world camera sees its zoom (FS-ZAJMH § Change:
+    // Closer world camera)
+    zoomWorldView(this);
     // an arrival is dark before anything of the field is made: the world's fade-in opens on the
     // dark, and the field's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.play(placeCard({ world: "field", field: this.field }), { built: false });
