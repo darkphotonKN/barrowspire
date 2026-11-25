@@ -1,6 +1,5 @@
-// The chapel and its graveyard (FS-R4MYX §H R36): the chapel's pews, altar, lectern and dais, the
-// belfry by its door, and the graveyard's headstones, grave flowers, fresh mounds, stone cross and
-// low broken wall. Authored in code (ADR-0020, ADR-0021) on the shared materials and key light, at
+// The chapel and its graveyard (FS-R4MYX §H R36): the chapel's pews, altar, lectern and dais, and
+// the graveyard's headstones, grave flowers, fresh mounds, stone cross and low broken wall. Authored in code (ADR-0020, ADR-0021) on the shared materials and key light, at
 // the town's scale: one three.js unit is one tile edge (40 world px), +x is world +x, +z is world
 // +y, +y is up, and each model's origin is the centre of its footprint, the point the scene places
 // it on. Footprints, in world px (x × y):
@@ -13,8 +12,6 @@
 //                   stands on the dais behind it), a closed book on it
 //   dais            130 × 200, flat: a low stone platform's flagged top and its front edge, laid
 //                   on the floor decal layer like the Inn's rug, so no ground shadow
-//   belfry          40 × 40 (r 20): a ruined bell frame on a rubble-stone pier, a dark bell under a
-//                   little shingled roof, an iron cross bent off true on its ridge; tall
 //   headstone       within 26 × 30, each facing east (its inscription toward the camera); frames
 //                   by HEADSTONES: intact, weathered, broken
 //   grave_flowers   within 16 × 16, a posy laid on a grave: fresh, the yard's one warm note, or
@@ -82,8 +79,6 @@ const CLAY = mix("barrowBrown", "barrowDeep", 0.55);
 const CLOTH = mix(mix("oxblood", "barrowDeep", 0.45), "pitch", 0.55);
 const GILT = mix(mix("brass", "barrowDeep", 0.45), "umber", 0.15);
 const PEWTER = mix("slateLight", "slate", 0.35);
-/** The bell: bronze darkened and gone green at the lip. */
-const BRONZE = mix(mix(mix("brass", "barrowDeep", 0.6), "charcoal", 0.45), "necrotic", 0.2);
 const WAX = mix("vellum", "vellumDark", 0.4);
 /** Old linen, the crucifix figure's loincloth: its paint's last pale. */
 const LINEN = mix(mix("vellum", "vellumDark", 0.3), "vellumFaint", 0.2);
@@ -163,7 +158,6 @@ function chapelMaterials() {
     ),
     gilt: plain(GILT, { rough: 0.6, metal: 0.5 }),
     pewter: plain(PEWTER, { rough: 0.45, metal: 0.7 }),
-    bronze: plain(BRONZE, { rough: 0.6, metal: 0.45, side: D }),
     wax: plain(WAX, { rough: 0.6 }),
     linen: plain(LINEN, { rough: 0.95 }),
     bloomRed: plain(BLOOM_RED, { rough: 0.8 }),
@@ -659,152 +653,6 @@ export function dais() {
   };
   kerb("z", DAIS_W / 2 - 0.06, DAIS_L, "x");
   kerb("x", DAIS_L / 2 - 0.06, DAIS_W - 0.12, "z");
-  return g;
-}
-
-// ── The belfry ───────────────────────────────────────────────────────────────────────────
-
-/** The bell frame's corner posts stand this far either side of the centre. */
-const POST = 0.36;
-const PIER_H = 1.15;
-const FRAME_TOP = 3.55;
-
-/** A rubble-stone pier: coursed blocks round a dark core, a corner of its top course gone. */
-function pier(g, M, C, R) {
-  const W = 0.9;
-  g.add(box(W - 0.12, PIER_H - 0.02, W - 0.12, M.black, { y: (PIER_H - 0.02) / 2 }));
-  let y = 0;
-  while (y < PIER_H - 0.02) {
-    const ch = Math.min(0.16 + R() * 0.08, PIER_H - y);
-    const top = y + ch >= PIER_H - 0.02;
-    for (const [axis, side] of [
-      ["x", -1],
-      ["x", 1],
-      ["z", -1],
-      ["z", 1],
-    ]) {
-      // random block lengths break the joints from course to course
-      let s = -W / 2;
-      while (s < W / 2 - 0.02) {
-        const l = Math.min(0.22 + R() * 0.2, W / 2 - s);
-        // the ruined corner: the top course gone at the south-east
-        const ruin = top && side === 1 && s + l / 2 > 0.05;
-        if (!ruin) {
-          const mat = R() > 0.75 ? C.fieldstoneMossy : C.block;
-          const geo = roughStone(axis === "x" ? l - 0.015 : 0.13, ch - 0.012, axis === "x" ? 0.13 : l - 0.015, Math.floor(R() * 1000), 0.14, 2);
-          const c = s + l / 2;
-          const off = side * (W / 2 - 0.065);
-          g.add(part(geo, mat, axis === "x" ? { x: c, y: y + ch / 2, z: off } : { x: off, y: y + ch / 2, z: c }));
-        }
-        s += l;
-      }
-    }
-    y += ch;
-  }
-  // the stone that fell from the ruined corner, at the pier's foot
-  g.add(part(roughStone(0.2, 0.12, 0.13, 711, 0.2, 2), C.block, { x: 0.36, y: 0.05, z: 0.34, ry: 0.7, rz: 0.2 }));
-  mossFoot(g, R, 12, { rx: 0.42, rz: 0.42 });
-}
-
-/** The bent iron cross on the ridge: straight to a kink, then the rest bent off true. */
-function bentCross(g, M, y) {
-  g.add(box(0.12, 0.06, 0.12, M.iron, { y: y + 0.03 }));
-  g.add(box(0.045, 0.34, 0.045, M.rust, { y: y + 0.06 + 0.17 }));
-  const upper = new THREE.Group();
-  upper.position.set(0, y + 0.4, 0);
-  upper.rotation.set(0.07, 0, 0.2);
-  upper.add(box(0.045, 0.42, 0.045, M.rust, { y: 0.21 }));
-  // the arms run along y (north–south): the cross faces east, the way the chapel's door does
-  const arms = new THREE.Group();
-  arms.position.set(0, 0.24, 0);
-  arms.rotation.x = 0.1;
-  arms.add(box(0.04, 0.04, 0.36, M.rust));
-  for (const sz of [-1, 1]) arms.add(part(new THREE.SphereGeometry(0.028, 8, 6), M.iron, { z: sz * 0.18 }));
-  upper.add(arms);
-  upper.add(part(new THREE.SphereGeometry(0.03, 8, 6), M.iron, { y: 0.43 }));
-  g.add(upper);
-}
-
-/**
- * The belfry: a ruined bell frame of weathered timber on a rubble-stone pier, braced on its sides
- * (one brace snapped and hanging), a dark bronze bell hung from its headstock, under a little
- * shingled roof with shingles gone, an iron cross on the ridge bent a little off true.
- */
-export function belfry() {
-  const M = materials();
-  const C = chapelMaterials();
-  const g = new THREE.Group();
-  const R = rng(721);
-  pier(g, M, C, R);
-  // sill beams on the pier, posts at the corners, a top plate
-  for (const sz of [-1, 1]) g.add(box(2 * POST + 0.1, 0.09, 0.1, M.beam, { y: PIER_H + 0.045, z: sz * POST }));
-  for (const sx of [-1, 1]) g.add(box(0.1, 0.09, 2 * POST - 0.1, M.beam, { x: sx * POST, y: PIER_H + 0.045 }));
-  for (const sx of [-1, 1])
-    for (const sz of [-1, 1]) {
-      const h = FRAME_TOP - PIER_H;
-      g.add(box(0.09, h, 0.09, M.beam, { x: sx * POST, y: PIER_H + h / 2, z: sz * POST, rx: (R() - 0.5) * 0.03, rz: (R() - 0.5) * 0.03 }));
-    }
-  for (const sz of [-1, 1]) g.add(box(2 * POST + 0.12, 0.1, 0.1, M.beam, { y: FRAME_TOP + 0.05, z: sz * POST }));
-  for (const sx of [-1, 1]) g.add(box(0.1, 0.1, 2 * POST - 0.1, M.beam, { x: sx * POST, y: FRAME_TOP + 0.05 }));
-  // braces: a saltire on each side, the south-east one snapped and hanging
-  const lo = PIER_H + 0.1;
-  const hi = PIER_H + 1.15;
-  for (const sz of [-1, 1]) {
-    g.add(rod(V3(-POST, lo, sz * POST), V3(POST, hi, sz * POST), 0.03, 0.03, M.woodDark, 5));
-    if (sz === 1) {
-      g.add(rod(V3(POST, lo, POST), V3(0.08, lo + 0.62, POST), 0.03, 0.028, M.woodDark, 5));
-      g.add(rod(V3(-POST, hi, POST), V3(-0.12, hi - 0.15, POST + 0.02), 0.03, 0.028, M.woodDark, 5));
-    } else g.add(rod(V3(POST, lo, sz * POST), V3(-POST, hi, sz * POST), 0.03, 0.03, M.woodDark, 5));
-  }
-  for (const sx of [-1, 1]) {
-    g.add(rod(V3(sx * POST, lo, -POST), V3(sx * POST, hi, POST), 0.03, 0.03, M.woodDark, 5));
-    g.add(rod(V3(sx * POST, lo, POST), V3(sx * POST, hi, -POST), 0.03, 0.03, M.woodDark, 5));
-  }
-  // bearers between the posts, the headstock across them, the bell hung from it
-  const stockY = FRAME_TOP - 0.3;
-  for (const sx of [-1, 1]) g.add(box(0.08, 0.08, 2 * POST - 0.1, M.woodDark, { x: sx * 0.28, y: stockY - 0.06 }));
-  g.add(box(0.64, 0.12, 0.12, M.beam, { y: stockY + 0.04 }));
-  for (const sx of [-1, 1]) g.add(box(0.025, 0.16, 0.13, M.iron, { x: sx * 0.08, y: stockY - 0.06 }));
-  const bell = [
-    [0.21, 0],
-    [0.225, 0.025],
-    [0.19, 0.07],
-    [0.155, 0.2],
-    [0.135, 0.34],
-    [0.115, 0.4],
-    [0.06, 0.45],
-    [0.001, 0.46],
-  ].map(([r, y]) => new THREE.Vector2(r, y));
-  const bellY = stockY - 0.14 - 0.46;
-  g.add(part(new THREE.LatheGeometry(bell, 20), C.bronze, { y: bellY }));
-  g.add(part(new THREE.TorusGeometry(0.2, 0.012, 5, 20), C.bronze, { y: bellY + 0.045, rx: Math.PI / 2 }));
-  g.add(part(new THREE.SphereGeometry(0.045, 8, 6), M.iron, { y: bellY - 0.02 }));
-  // the bell rope, rotted through and hanging short
-  g.add(rod(V3(0.05, bellY + 0.05, 0.02), V3(0.08, bellY - 0.55, 0.05), 0.012, 0.01, C.twine, 4));
-  // the little roof: shingles in rows down each slope, a few gone, a ridge beam, the cross
-  const half = 0.44;
-  const rise = 0.4;
-  const roofY = FRAME_TOP + 0.1;
-  const pitch = Math.atan2(rise, half);
-  const slopeLen = Math.hypot(half, rise);
-  for (const sz of [-1, 1]) {
-    const rows = 5;
-    for (let r = 0; r < rows; r++) {
-      const t = (r + 0.5) / rows;
-      const y = roofY + rise * (1 - t);
-      const z = sz * half * t;
-      for (let k = 0; k < 6; k++) {
-        if (R() < 0.12 && r > 0) continue;
-        const x = -0.45 + (k + 0.5) * 0.15 + (r % 2 ? 0.04 : 0) - 0.02;
-        if (Math.abs(x) > 0.47) continue;
-        g.add(box(0.145, 0.025, slopeLen / rows + 0.04, R() > 0.3 ? M.woodDark : M.beam, { x, y: y + 0.02, z, rx: sz * pitch, rz: (R() - 0.5) * 0.05 }));
-      }
-    }
-    // the slope's boards under the shingles, dark where the shingles are gone
-    g.add(box(0.96, 0.02, slopeLen, M.black, { y: roofY + rise / 2, z: (sz * half) / 2, rx: sz * pitch }));
-  }
-  g.add(box(0.98, 0.07, 0.08, M.beam, { y: roofY + rise + 0.02 }));
-  bentCross(g, M, roofY + rise + 0.05);
   return g;
 }
 

@@ -95,11 +95,12 @@ const pixelsOf = (t) => t.image.getContext("2d").getImageData(0, 0, t.image.widt
  *   sills     [{ x0, x1, y }] px: grime run down from under each
  *   damp      0..1 rising damp at the foot, with its tide line; `tide` its height in tile edges
  *   moss      0..1 moss in the very foot
- *   patches   how many places the lime has fallen away to the stone
+ *   patches   how many places the lime has fallen away to the stone; `patchReach` how high up the
+ *             face they lie, px (three tile edges unless given: the damp lifts the lime low down)
  *   lift      overall tone
  *   east      the face is turned east, out of the sun (LIME_EAST)
  */
-function limewash(W, Hp, o = {}) {
+export function limewash(W, Hp, o = {}) {
   const key = o.key ?? 9100;
   const seed = o.seed ?? 1;
   const stone = masonry(W, Hp, { key: o.stoneKey ?? 5100, seed: seed + 3, grime: 0.2, damp: 0.25, flaws: 1 });
@@ -116,7 +117,7 @@ function limewash(W, Hp, o = {}) {
   // the lime fallen away: ragged patches, most of them low where the damp lifts it
   const patches = Array.from({ length: o.patches ?? 2 }, () => ({
     x: 22 + R() * (W - 44),
-    y: (0.25 + R() * R() * 0.6) * Math.min(Hp, PX * 3),
+    y: (0.25 + R() * R() * 0.6) * (o.patchReach ?? Math.min(Hp, PX * 3)),
     rx: 13 + R() * 12,
     ry: 10 + R() * 9,
   }));
@@ -197,7 +198,7 @@ function limewash(W, Hp, o = {}) {
 let CHAPEL = null;
 
 /** The chapel building's shared materials, built once per bake (seeded, so deterministic). */
-function chapelBuildingMaterials() {
+export function chapelBuildingMaterials() {
   if (CHAPEL) return CHAPEL;
   const ashlar = (base, s) =>
     pixelTexture(128, 128, (x, y) => {
@@ -269,7 +270,7 @@ function chapelBuildingMaterials() {
 }
 
 /** Dressed stone on a face `w` × `h` tile edges: the ashlar at its own scale, not stretched. */
-function dressedAt(m, w, h) {
+export function dressedAt(m, w, h) {
   const map = m.map.clone();
   map.repeat.set(w, h);
   map.needsUpdate = true;
@@ -292,7 +293,7 @@ function body(L, H, T, face, ends, top) {
  * x and height): `face` on its ±z sides, mapped once across the piece as the box's are, `edge` on
  * its ends, top and the hole's sides.
  */
-function piercedBody(L, H, T, hole, face, edge) {
+export function piercedBody(L, H, T, hole, face, edge) {
   const outline = new THREE.Shape([new THREE.Vector2(-L / 2, 0), new THREE.Vector2(L / 2, 0), new THREE.Vector2(L / 2, H), new THREE.Vector2(-L / 2, H)]);
   outline.holes.push(hole);
   const geo = new THREE.ExtrudeGeometry(outline, { depth: T, bevelEnabled: false, curveSegments: 1 });
@@ -306,10 +307,10 @@ function piercedBody(L, H, T, hole, face, edge) {
 }
 
 /** A box from a flat options object. */
-const box = (w, h, d, material, o = {}) => part(new THREE.BoxGeometry(w, h, d), material, o);
+export const box = (w, h, d, material, o = {}) => part(new THREE.BoxGeometry(w, h, d), material, o);
 
 /** Extrudes a shape `depth` toward +z from `z`, its UVs the shape's own units (1 a tile edge). */
-function slab(shape, depth, material, z) {
+export function slab(shape, depth, material, z) {
   const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
   return part(geo, material, { z });
 }
@@ -349,7 +350,7 @@ function pointedArc(half, r, spring, n = 10) {
 }
 
 /** The apex height of a pointed arch over its springing. */
-const archRise = (half, r) => Math.sqrt(r * r - (r - half) * (r - half));
+export const archRise = (half, r) => Math.sqrt(r * r - (r - half) * (r - half));
 
 /**
  * A lancet's outline as points, counter-clockwise seen from its face: the sill's two ends, then up
@@ -359,7 +360,7 @@ const archRise = (half, r) => Math.sqrt(r * r - (r - half) * (r - half));
 const lancetPoints = (half, r, sill, spring) => [[-half, sill], [half, sill], ...pointedArc(half, r, spring).reverse()];
 
 /** A closed lancet outline: sill, jambs, pointed head. */
-function lancetShape(half, r, sill, spring) {
+export function lancetShape(half, r, sill, spring) {
   const [first, ...rest] = lancetPoints(half, r, sill, spring);
   const s = new THREE.Shape();
   s.moveTo(...first);
@@ -416,7 +417,7 @@ function leadedGlass(g, C, z) {
  * A band following a pointed arch, open at both feet: outer arc over, inner arc back. A foot below
  * the springing carries the band down plumb to it; one above starts the band there.
  */
-function archBand(halfOut, rOut, halfIn, rIn, spring, footOut = spring, footIn = spring) {
+export function archBand(halfOut, rOut, halfIn, rIn, spring, footOut = spring, footIn = spring) {
   const outer = pointedArc(halfOut, rOut, spring, 14).filter(([, y]) => y >= footOut);
   const inner = pointedArc(halfIn, rIn, spring, 14).reverse().filter(([, y]) => y >= footIn);
   const s = new THREE.Shape();

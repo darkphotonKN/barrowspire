@@ -44,12 +44,17 @@ func TestHubResidents_QuartersClearOfFunctionNPCs_KeepTalkRangePlusMargin(t *tes
 
 // ----- The town's layout (FS-B0H2D §A) -----
 
-// The hub grew south to make room for the chapel and its graveyard: 2000 wide,
-// as before, and 1700 deep, the movement clamp with it. FS-R4MYX
-// §Requirements 1.
+// The hub grew south to make room for the chapel and its graveyard, and again
+// when the chapel moved to the far left with its graveyard along its south
+// wall, and once more when the owner had the graveyard strip made twice as
+// deep: 2000 wide, as before, and 2200 deep, the movement clamp with it, and
+// never deeper. FS-R4MYX §Requirements 1; §Change: The chapel moves to the far
+// left and gains a bell tower, T4 (amended, A5).
 func TestHubBounds_TheTownGrewSouth(t *testing.T) {
 	bounds := HubBounds()
-	assert.Equal(t, [2]float64{2000, 1700}, [2]float64{bounds.Width, bounds.Height}, "the hub's size")
+	assert.Equal(t, [2]float64{2000, 2200}, [2]float64{bounds.Width, bounds.Height}, "the hub's size")
+	assert.LessOrEqual(t, constants.HubMapHeight, 2200.0, "a layout needing more is an escalation, not a bigger constant")
+	assert.Zero(t, math.Mod(constants.HubMapHeight, 100), "the hub's depth is a multiple of 100")
 }
 
 // box is a rectangle in world space: a wall, a building's footprint, a strip of
@@ -110,9 +115,36 @@ func segmentsCross(ax, ay, bx, by, cx, cy, dx, dy float64) bool {
 	return d1*d2 <= 0 && d3*d4 <= 0
 }
 
-// hubWalls is every wall the built hub holds, grouped by the building it
-// belongs to.
+// hubWalls is every wall of the built hub's town buildings, grouped by the
+// building it belongs to. The bell tower is not a building (T6): its one wall
+// is left out, and everyHubWall and bellTowerWalls hold it.
 func hubWalls(t *testing.T) map[uuid.UUID][]box {
+	t.Helper()
+
+	houses := wallsByHouseID(t)
+	for id, walls := range houses {
+		if len(walls) == 1 && walls[0] == bellTowerBox() {
+			delete(houses, id)
+		}
+	}
+	require.NotEmpty(t, houses, "the hub has no buildings")
+	return houses
+}
+
+// bellTowerBox is the bell tower's rect as hub_map.go lays it out.
+func bellTowerBox() box {
+	return box{X: hubBellTower.X, Y: hubBellTower.Y, W: hubBellTower.W, H: hubBellTower.H}
+}
+
+// everyHubWall is every wall the built hub holds: the buildings', their
+// furnishings' and the bell tower's. What a body collides with.
+func everyHubWall(t *testing.T) []box {
+	t.Helper()
+	return allWalls(wallsByHouseID(t))
+}
+
+// wallsByHouseID is every wall the built hub holds, grouped by its house id.
+func wallsByHouseID(t *testing.T) map[uuid.UUID][]box {
 	t.Helper()
 
 	houses := map[uuid.UUID][]box{}
@@ -127,7 +159,6 @@ func hubWalls(t *testing.T) map[uuid.UUID][]box {
 		at := transformComp.(*components.TransformComponent)
 		houses[wall.HouseID] = append(houses[wall.HouseID], box{X: at.X, Y: at.Y, W: wall.Width, H: wall.Height})
 	}
-	require.NotEmpty(t, houses, "the hub has no buildings")
 	return houses
 }
 
@@ -166,7 +197,7 @@ const laneHalfWidth = 120
 // Nothing walls off the way out of town: the straight corridor from the spawn
 // to each gate is crossed by no wall. FS-B0H2D §Requirements 4.
 func TestHubLayout_LanesToEveryGate_CrossedByNoWall(t *testing.T) {
-	walls := allWalls(hubWalls(t))
+	walls := everyHubWall(t)
 
 	for _, gate := range hubGates {
 		t.Run(string(gate.Destination), func(t *testing.T) {
@@ -330,7 +361,7 @@ func TestHubLayout_Chapel_HasItsDoorInItsEastWall(t *testing.T) {
 	gap, face, ok := doorGapOf(house)
 	require.True(t, ok, "the chapel has no single door gap")
 	assert.Equal(t, hubDoorEast, face, "the chapel's door face")
-	assert.Equal(t, box{X: 1560, Y: 1280, W: hubWallThickness, H: runDoorWidth}, gap, "the chapel's door gap")
+	assert.Equal(t, box{X: 820, Y: 1480, W: hubWallThickness, H: runDoorWidth}, gap, "the chapel's door gap")
 	assert.Len(t, facingWalls(house, hubDoorEast), 2, "the chapel's east wall, either side of its door")
 	assert.Len(t, facingWalls(house, hubDoorSouth), 1, "the chapel's south wall")
 }
@@ -384,11 +415,16 @@ func TestHubLayout_NoWall_StandsInADoorGap(t *testing.T) {
 // The town keeps four buildings, every one enterable: the Inn the largest, a
 // great hall and a taproom of about 640x440, the store and the smithy a run
 // house's width and deep enough to talk to someone inside without talking
-// through a wall, and the chapel 620x440, long east to west, south of the spawn
-// and its centre left of it on screen (a smaller x - y). FS-B0H2D §Requirements 1, 2 (the Inn's size as enlarged); FS-R4MYX
-// §Requirements 2-4.
+// through a wall, and the chapel 620x440, long east to west, in the map's
+// south-west: south of the spawn, its west wall no more than 240 px from the
+// map's west edge (the bell tower and a walk round it lie between), and its
+// centre screen-left of every other building's (the smallest x - y). The bell
+// tower's wall is no fifth building. FS-B0H2D §Requirements 1, 2 (the Inn's
+// size as enlarged); FS-R4MYX §Requirements 2-3; §Change: The chapel moves to
+// the far left and gains a bell tower, T1, T6.
 func TestHubLayout_FourTownBuildings_SizedByWhatTheyHold(t *testing.T) {
 	assert.Len(t, hubWalls(t), 4, "the hub's buildings, as walled")
+	assert.Len(t, wallsByHouseID(t), 5, "the four buildings' wall groups and the bell tower's")
 
 	byName := map[string]hubBuilding{}
 	for _, b := range hubBuildings {
@@ -399,9 +435,17 @@ func TestHubLayout_FourTownBuildings_SizedByWhatTheyHold(t *testing.T) {
 	chapel, ok := byName["Chapel"]
 	require.True(t, ok, "the town has no chapel")
 	assert.Equal(t, [2]float64{620, 440}, [2]float64{chapel.W, chapel.H}, "the chapel's size")
-	centreX, centreY := chapel.X+chapel.W/2, chapel.Y+chapel.H/2
-	assert.Less(t, centreX-centreY, constants.HubSpawnX-constants.HubSpawnY, "the chapel's centre is not left of the spawn on screen")
+	screenX := func(b hubBuilding) float64 { return b.X + b.W/2 - (b.Y + b.H/2) }
+	for _, b := range hubBuildings {
+		if b.Name != "Chapel" {
+			assert.Less(t, screenX(chapel), screenX(b), "the chapel's centre is not screen-left of the %s's", b.Name)
+		}
+	}
 	assert.Greater(t, chapel.Y, constants.HubSpawnY, "the chapel is not south of the spawn")
+	assert.LessOrEqual(t, chapel.X, 240.0, "the chapel's west wall stands more than 240 px from the map's west edge")
+	assert.GreaterOrEqual(t, chapel.Y, 1020.0, "the chapel stands north of the ground the graveyard held")
+	hub := box{X: 0, Y: 0, W: constants.HubMapWidth, H: constants.HubMapHeight}
+	assert.True(t, hub.contains(chapel.X, chapel.Y) && hub.contains(chapel.X+chapel.W, chapel.Y+chapel.H), "the chapel runs off the map")
 
 	inn, ok := byName["Inn"]
 	require.True(t, ok, "the town has no Inn")
@@ -421,7 +465,7 @@ func TestHubLayout_FourTownBuildings_SizedByWhatTheyHold(t *testing.T) {
 // FS-B0H2D §Requirements 5; FS-R4MYX §Requirements 5.
 func TestHubLayout_EveryDoorGap_OpensOntoClearGround(t *testing.T) {
 	houses := hubWalls(t)
-	walls := allWalls(houses)
+	walls := everyHubWall(t)
 	hub := box{X: 0, Y: 0, W: constants.HubMapWidth, H: constants.HubMapHeight}
 
 	for _, house := range houses {
@@ -560,8 +604,8 @@ func TestHubLayout_NobodyIndoors_IsTalkedToThroughAWall(t *testing.T) {
 	assert.ElementsMatch(t, hubMourners, outdoors, "the fixed residents standing outdoors")
 }
 
-// hubMourners are the fixed residents who stand outdoors, at the graves west of
-// the chapel. FS-R4MYX §Requirements 17, 20.
+// hubMourners are the fixed residents who stand outdoors, at the graves along
+// the outside of the chapel's south wall. FS-R4MYX §Requirements 17, 20; T21.
 var hubMourners = []string{"Keener", "Widower", "Veteran"}
 
 // A mourner stands outdoors, so nothing but placement keeps them apart from
@@ -572,8 +616,8 @@ var hubMourners = []string{"Keener", "Widower", "Veteran"}
 // gate, a dev build's test room gate included. FS-R4MYX §Requirements 20.
 func TestHubFixedResidents_Outdoors_StandClearOfWallsNPCsAndLanes(t *testing.T) {
 	hub := box{X: 0, Y: 0, W: constants.HubMapWidth, H: constants.HubMapHeight}
-	houses := hubWalls(t)
-	feet, walls := footprints(houses), allWalls(houses)
+	feet, walls := footprints(hubWalls(t)), everyHubWall(t)
+	require.Contains(t, walls, bellTowerBox(), "every wall, the bell tower's included (T7, T21)")
 	gates := append(append([]hubGate{}, hubGates...), devTestRoomHubGate)
 
 	at := map[string]hubFixedResident{}
@@ -764,7 +808,7 @@ const wallBacked = "hall_hearth"
 // Inn's furnishings as enlarged); FS-R4MYX §Requirements 12.
 func TestHubFurnishings_StandInsideTheirBuilding_WithRoomAround(t *testing.T) {
 	houses := hubWalls(t)
-	walls := allWalls(houses)
+	walls := everyHubWall(t)
 
 	kinds := map[string][]string{}
 	for _, b := range hubBuildings {
@@ -933,7 +977,13 @@ func walkerFits(p point, walls []box) bool {
 // reachableFrom is every grid point inside a building's footprint a player can
 // walk to from start without crossing a wall or a furnishing.
 func reachableFrom(start point, walls []box) []point {
-	foot := footprintOf(walls)
+	return reachableWithin(start, footprintOf(walls), walls)
+}
+
+// reachableWithin is every grid point of foot a player can walk to from start
+// without crossing a wall: a building's footprint, or the whole hub inside its
+// movement clamp.
+func reachableWithin(start point, foot box, walls []box) []point {
 	if !walkerFits(start, walls) {
 		return nil
 	}
@@ -1063,12 +1113,12 @@ func TestHubLayout_Chapel_HoldsTheConfessorAndTheFourWorshippers(t *testing.T) {
 // The chapel's aisle runs from its east door to the altar between the pew rows,
 // at least 100 wide, and the Confessor stands at its head, east of the altar on
 // the open floor before the first pews, not behind the altar: the flood fill
-// from the east door, started at its centre (1570, 1320), walks the aisle from
+// from the east door, started at its centre (830, 1520), walks the aisle from
 // the door to within talk range of him. FS-R4MYX §Requirements 8, 12, 13, 17.
 func TestHubLayout_Chapel_AisleLeadsFromTheEastDoorToTheConfessor(t *testing.T) {
 	house := houseOf(t, hubWalls(t), "Chapel")
 	door := doorwayOf(t, house)
-	require.Equal(t, point{x: 1570, y: 1320}, door, "the chapel's doorway")
+	require.Equal(t, point{x: 830, y: 1520}, door, "the chapel's doorway")
 
 	reached := map[point]bool{}
 	for _, p := range reachableFrom(door, house) {
@@ -1167,4 +1217,220 @@ func TestHubLayout_Alewife_IsTalkedToAcrossHerCounter(t *testing.T) {
 	}
 	assert.True(t, withinTalkRange(nearSide, alewife.X, alewife.Y),
 		"nobody on the door's side of the counter can talk to the Alewife")
+}
+
+// ----- The chapel moved, and its bell tower (FS-R4MYX §Change: The chapel moves to the far left and gains a bell tower) -----
+
+// chapelOf is the chapel as hub_map.go lays it out.
+func chapelOf(t *testing.T) hubBuilding {
+	t.Helper()
+
+	for _, b := range hubBuildings {
+		if b.Name == "Chapel" {
+			return b
+		}
+	}
+	require.Fail(t, "the town has no chapel")
+	return hubBuilding{}
+}
+
+// The chapel moved whole: every furnishing and everyone indoors keeps the place
+// it had relative to the chapel's north-west corner in the shipped layout (the
+// chapel at (960, 1100)), so nothing inside was rearranged. T1.
+func TestHubLayout_Chapel_MovedWhole_EverythingInsideKeepsItsOffset(t *testing.T) {
+	chapel := chapelOf(t)
+
+	furnishings := [][2]float64{}
+	for _, f := range chapel.Furnishings {
+		furnishings = append(furnishings, [2]float64{f.X - chapel.X, f.Y - chapel.Y})
+	}
+	assert.Equal(t, [][2]float64{
+		{350, 70}, {420, 70}, {490, 70},
+		{350, 270}, {420, 270}, {490, 270},
+		{160, 180},
+	}, furnishings, "the pews' and the altar's offsets from the chapel's corner")
+
+	want := map[string][2]float64{
+		"Confessor": {245, 220},
+		"Penitent":  {395, 155},
+		"Chandler":  {465, 155},
+		"Goodwife":  {325, 285},
+		"Ploughman": {395, 285},
+	}
+	got := map[string][2]float64{}
+	for _, r := range hubFixedResidents {
+		if _, indoors := want[r.Name]; indoors {
+			got[r.Name] = [2]float64{r.X - chapel.X, r.Y - chapel.Y}
+		}
+	}
+	assert.Equal(t, want, got, "the Confessor's and the worshippers' offsets from the chapel's corner")
+}
+
+// Nothing else in town moved with the chapel: the spawn, the gates and their
+// arrivals, the dev test room's gate and arrival, the three other buildings
+// with their furnishings and people, the function NPCs and the four quarters
+// keep their numbers. T2.
+func TestHubLayout_NothingButTheChapelAndItsPeople_Moved(t *testing.T) {
+	assert.Equal(t, [2]float64{1000, 800}, [2]float64{constants.HubSpawnX, constants.HubSpawnY}, "the spawn")
+	assert.Equal(t, 2000.0, constants.HubMapWidth, "the hub's width")
+
+	type gateAt struct {
+		Destination components.GateDestination
+		X, Y        float64
+		Arrival     *[2]float64
+	}
+	gates := []gateAt{}
+	for _, g := range append(append([]hubGate{}, hubGates...), devTestRoomHubGate) {
+		at := gateAt{Destination: g.Destination, X: g.X, Y: g.Y}
+		if g.Arrival != nil {
+			at.Arrival = &[2]float64{g.Arrival.X, g.Arrival.Y}
+		}
+		gates = append(gates, at)
+	}
+	assert.Equal(t, []gateAt{
+		{Destination: components.GateDestinationSpire, X: 1000, Y: 50},
+		{Destination: components.GateDestinationForest, X: 40, Y: 580, Arrival: &[2]float64{180, 580}},
+		{Destination: components.GateDestinationMeadows, X: 1960, Y: 360, Arrival: &[2]float64{1820, 360}},
+		{Destination: components.GateDestinationDevTestRoom, X: 120, Y: 900, Arrival: &[2]float64{260, 900}},
+	}, gates, "the gates and their arrivals")
+
+	others := []hubBuilding{}
+	for _, b := range hubBuildings {
+		if b.Name != "Chapel" {
+			others = append(others, b)
+		}
+	}
+	assert.Equal(t, []hubBuilding{
+		{Name: "Inn", X: 230, Y: 50, W: 640, H: 440, Partition: &hubPartition{X: 505, DoorOnEastFace: true}, Furnishings: []hubFurnishing{
+			{Kind: "long_table", X: 352, Y: 175, W: 50, H: 240},
+			{Kind: "hall_hearth", X: 300, Y: 70, W: 144, H: 48},
+			{Kind: "counter", X: 715, Y: 190, W: 25, H: 140},
+			{Kind: "table", X: 600, Y: 130, W: 30, H: 40},
+			{Kind: "table", X: 600, Y: 300, W: 45, H: 40},
+		}},
+		{Name: "Quartermaster's store", X: 1130, Y: 150, W: 300, H: 240},
+		{Name: "Smithy", X: 1480, Y: 50, W: 300, H: 240, Furnishings: []hubFurnishing{
+			{Kind: "forge", X: 1595, Y: 120, W: 70, H: 35},
+		}},
+	}, others, "the three other buildings")
+
+	npcs := map[string][2]float64{}
+	for _, n := range hubNPCs {
+		npcs[n.Name] = [2]float64{n.X, n.Y}
+	}
+	assert.Equal(t, map[string][2]float64{"Elder": {1140, 680}, "Quartermaster": {1280, 270}}, npcs, "the function NPCs")
+
+	quarters := map[string]components.WanderRegion{}
+	for _, r := range hubResidents {
+		quarters[r.Name] = r.Region
+	}
+	assert.Equal(t, map[string]components.WanderRegion{
+		"Cottar":     {X: 560, Y: 560, W: 180, H: 200},
+		"Herbwife":   {X: 1260, Y: 540, W: 240, H: 220},
+		"Woodcutter": {X: 1780, Y: 1000, W: 180, H: 160},
+		"Bellringer": {X: 1780, Y: 1240, W: 180, H: 160},
+	}, quarters, "the wandering residents' quarters")
+
+	elsewhere := map[string][2]float64{}
+	for _, r := range hubFixedResidents[:5] {
+		elsewhere[r.Name] = [2]float64{r.X, r.Y}
+	}
+	assert.Equal(t, map[string][2]float64{
+		"Alewife": {765, 260}, "Drover": {418, 223}, "Gravedigger": {418, 319}, "Pilgrim": {336, 271}, "Smith": {1630, 175},
+	}, elsewhere, "the Inn's and the smithy's people")
+}
+
+// The bell tower is one square wall, 130 to 150 a side, standing outside the
+// chapel's footprint against its west end: its east face on the west wall's
+// outer face, its centre on the ridge's line. T6, T7.
+func TestHubBellTower_AbutsTheChapelsWestWall_CentredOnTheRidgesLine(t *testing.T) {
+	chapel, tower := chapelOf(t), bellTowerBox()
+
+	assert.Equal(t, tower.W, tower.H, "the tower is not square")
+	assert.GreaterOrEqual(t, tower.W, 130.0, "the tower's side")
+	assert.LessOrEqual(t, tower.W, 150.0, "the tower's side")
+	assert.Equal(t, chapel.X, tower.X+tower.W, "the tower's east face is not on the chapel's west wall's outer face")
+	assert.Equal(t, chapel.Y+chapel.H/2, tower.Y+tower.H/2, "the tower is not centred on the ridge's line")
+	assert.False(t, tower.overlaps(box{X: chapel.X, Y: chapel.Y, W: chapel.W, H: chapel.H}), "the tower stands in the chapel's footprint")
+}
+
+// The built hub holds the tower as exactly one wall on its rect, under a house
+// id no other wall carries, so the client grows no building's footprint to take
+// it in; and it is no town building: not in hubBuildings, with no door gap, no
+// furnishing and nobody in it. T6, T8.
+func TestHubBellTower_IsOneWallWithALoneHouseID_AndNoBuilding(t *testing.T) {
+	tower := bellTowerBox()
+
+	groups := 0
+	for id, walls := range wallsByHouseID(t) {
+		for _, w := range walls {
+			if w != tower {
+				continue
+			}
+			groups++
+			assert.NotEqual(t, uuid.Nil, id, "the tower's wall carries no house id")
+			assert.Len(t, walls, 1, "the tower's house id is shared with another wall")
+		}
+	}
+	assert.Equal(t, 1, groups, "the walls standing on the tower's rect")
+
+	for _, b := range hubBuildings {
+		assert.False(t, tower.overlaps(box{X: b.X, Y: b.Y, W: b.W, H: b.H}), "the tower stands in the %s", b.Name)
+	}
+	for _, npc := range npcsIn(builtHub()) {
+		assert.False(t, tower.contains(npc.At.X, npc.At.Y), "the %s stands in the tower", npc.Name)
+	}
+}
+
+// The tower seals nobody in and nothing off: it lies inside the map with a
+// body's width and 20 px to spare (60) between it and the west edge, and a
+// player-sized walker from the spawn reaches the ground on its north, west and
+// south sides. T7.
+func TestHubBellTower_LeavesAWalkRoundIt_ReachedFromTheSpawn(t *testing.T) {
+	tower := bellTowerBox()
+	hub := box{X: 0, Y: 0, W: constants.HubMapWidth, H: constants.HubMapHeight}
+	require.True(t, hub.contains(tower.X, tower.Y) && hub.contains(tower.X+tower.W, tower.Y+tower.H), "the tower runs off the map")
+	assert.GreaterOrEqual(t, tower.X, 2*constants.PlayerRadius+20, "the ground between the tower and the map's west edge")
+
+	r := constants.PlayerRadius
+	clamp := box{X: r, Y: r, W: constants.HubMapWidth - 2*r, H: constants.HubMapHeight - 2*r}
+	reached := map[point]bool{}
+	for _, p := range reachableWithin(point{x: constants.HubSpawnX, y: constants.HubSpawnY}, clamp, everyHubWall(t)) {
+		reached[p] = true
+	}
+	require.NotEmpty(t, reached, "a player cannot stand on the spawn")
+
+	// a body touching each free face at its middle, on the flood fill's grid
+	midX, midY := tower.X+tower.W/2, tower.Y+tower.H/2
+	sides := map[string]point{
+		"north": {x: midX, y: tower.Y - r},
+		"west":  {x: tower.X - r, y: midY},
+		"south": {x: midX, y: tower.Y + tower.H + r},
+	}
+	for side, at := range sides {
+		assert.True(t, reached[at], "nobody walking from the spawn reaches the tower's %s side at (%.0f, %.0f)", side, at.x, at.y)
+	}
+	assert.False(t, reached[point{x: midX, y: midY}], "a walker stands inside the tower: it is not solid")
+}
+
+// The tower stands in nobody's way: out of every lane from the spawn to a gate,
+// the dev test room's included, and the spawn, every arrival and every quarter
+// lie outside it. T7.
+func TestHubBellTower_StandsClearOfLanesArrivalsAndQuarters(t *testing.T) {
+	tower := bellTowerBox()
+
+	for _, gate := range append(append([]hubGate{}, hubGates...), devTestRoomHubGate) {
+		got := tower.distanceToSegment(constants.HubSpawnX, constants.HubSpawnY, gate.X, gate.Y)
+		assert.Greater(t, got, float64(laneHalfWidth), "the tower stands in the lane to the %s gate", gate.Destination)
+		if gate.Arrival != nil {
+			assert.Greater(t, tower.distanceTo(gate.Arrival.X, gate.Arrival.Y), constants.PlayerRadius,
+				"the %s arrival touches the tower", gate.Destination)
+		}
+	}
+	assert.Greater(t, tower.distanceTo(constants.HubSpawnX, constants.HubSpawnY), constants.PlayerRadius, "the spawn touches the tower")
+
+	for _, resident := range hubResidents {
+		q := resident.Region
+		assert.False(t, tower.overlaps(box{X: q.X, Y: q.Y, W: q.W, H: q.H}), "%s's quarter reaches into the tower", resident.Name)
+	}
 }

@@ -126,7 +126,6 @@ import {
   type PropSpot,
 } from "@/render/world/hubKeepOut";
 import {
-  HUB_BELFRY,
   HUB_GRAVEYARD,
   HUB_GRAVEYARD_WALL,
   HUB_WAYSIDE_CROSS,
@@ -138,6 +137,10 @@ import {
   partitionInside,
   placeholderWarning,
   residentFacing,
+  splitBellTower,
+  BELL_TOWER_SHEET,
+  HUB_BELL_TOWER_AT,
+  HUB_BELL_TOWER_SORT,
   splitFurnishings,
   townHouseLook,
   type RoofSet,
@@ -230,6 +233,11 @@ const FURNISHING_PLACEHOLDER_HEIGHT = 8;
  * it stands for, so the camera sees over it into either hall; taller than furniture.
  */
 const PARTITION_PLACEHOLDER_HEIGHT = 12;
+/**
+ * World px tall: the bell tower's placeholder block on a client without its sheet, well over a
+ * wall's so it reads as a tower (FS-R4MYX T10).
+ */
+const BELL_TOWER_PLACEHOLDER_HEIGHT = 120;
 /** How hard sprites chase the server's position each frame. Matches the run scene. */
 const POSITION_LERP = 0.3;
 /** Stride advance per server tick, matching the run scene. */
@@ -1867,7 +1875,7 @@ export class HubScene extends Phaser.Scene {
     };
     for (const spot of HUB_DRESSING) dress(spot);
 
-    // The graveyard, the belfry and the wayside cross (FS-R4MYX R27–R30, R41), dressing like the
+    // The graveyard and the wayside cross (FS-R4MYX R27–R29, R41, T17–T20), dressing like the
     // rest: a piece lying on another sorts over it, and the low wall is laid as a fence is, by tile,
     // its last cut short.
     const lay = (piece: GraveyardPiece): Phaser.GameObjects.Sprite | null => {
@@ -1881,7 +1889,7 @@ export class HubScene extends Phaser.Scene {
         sprite.setDepth(worldDepth(piece.depthAt.x, piece.depthAt.y, piece.layer ?? 0));
       return sprite;
     };
-    for (const piece of [...HUB_GRAVEYARD, HUB_BELFRY, HUB_WAYSIDE_CROSS]) lay(piece);
+    for (const piece of [...HUB_GRAVEYARD, HUB_WAYSIDE_CROSS]) lay(piece);
     for (const piece of HUB_GRAVEYARD_WALL) {
       const sprite = lay(piece);
       if (sprite) trim(sprite, piece.sheet, piece.animation, piece.keep);
@@ -2523,10 +2531,16 @@ export class HubScene extends Phaser.Scene {
    * (the hub sends no DoorState: the door is only drawn, §B.5 amended 2026-11-03),
    * a roof and gables that never fade (§E.4); placeholder blocks without art (§B.7). A wall of no
    * house is drawn and faded as it always was.
+   *
+   * The chapel's bell tower is one wall under a house id of its own, and no house (FS-R4MYX T10):
+   * its wall is taken out before the houses are built, so it gets no roof, floor, door, exterior,
+   * interior or inside test, and is not drawn as loose wall pieces either (`drawBellTower`).
    */
-  private renderStructures(all: WallState[]): void {
-    if (this.structuresDrawn || all.length === 0) return;
+  private renderStructures(broadcast: WallState[]): void {
+    if (this.structuresDrawn || broadcast.length === 0) return;
 
+    const { tower, rest: all } = splitBellTower(broadcast);
+    if (tower) this.drawBellTower(tower);
     const houses = housesFrom(all);
     const { building: walls, partitions, furnishings } = splitFurnishings(all);
     const seed = worldSeed("hub");
@@ -2568,7 +2582,7 @@ export class HubScene extends Phaser.Scene {
       const { prefix } = set;
       const roof = addRoof(this, this.art, house, prefix);
       const own = walls.find((w) => w.house_id === house.id);
-      const gables = own ? addGables(this, this.art, house, Math.min(own.width, own.height), prefix) : [];
+      const gables = own ? addGables(this, this.art, house, Math.min(own.width, own.height), prefix, set.plainGables) : [];
       const top = [...(roof ?? []), ...gables];
       this.roofCover.push(...top.map(coverOf));
       if (roof) {
@@ -2611,6 +2625,30 @@ export class HubScene extends Phaser.Scene {
 
     // One flag covers both: the walls and their roofs are drawn together.
     this.structuresDrawn = true;
+  }
+
+  /**
+   * The chapel's bell tower on its wall's rect (FS-R4MYX T10–T15): one baked prop on the rect's
+   * centre, or without its sheet a placeholder block, never nothing, since it is solid.
+   *
+   * It sorts by its own point (`HUB_BELL_TOWER_SORT`): behind the chapel's west end, in front of
+   * whoever stands north or west of it. It is a piece of the chapel's exterior: it covers the
+   * player as the roofs do, so they show through it as the silhouette, and it never joins the
+   * occluders that fade (T12). It takes no part in the roof's lift; standing outside every
+   * building, it hides by footprint with the street while the player is in one (T13). It carries
+   * no light (T15).
+   */
+  private drawBellTower(wall: WallState): void {
+    const { x, y } = wall.position;
+    if (!this.art.has(BELL_TOWER_SHEET)) {
+      const parts = addUprightBlock(this, x, y, wall.width, wall.height, PLACEHOLDER_STONE, BELL_TOWER_PLACEHOLDER_HEIGHT);
+      this.outdoors.push({ parts, at: HUB_BELL_TOWER_AT });
+      return;
+    }
+    const { sprite } = addProp(this, this.art, BELL_TOWER_SHEET, HUB_BELL_TOWER_AT);
+    sprite.setDepth(worldDepth(HUB_BELL_TOWER_SORT.x, HUB_BELL_TOWER_SORT.y));
+    this.roofCover.push(coverOf(sprite));
+    this.outdoors.push({ parts: [sprite], at: HUB_BELL_TOWER_AT });
   }
 
   /**

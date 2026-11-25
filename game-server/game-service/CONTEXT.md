@@ -190,11 +190,19 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   name, not a function: nothing is bought or sold there.
 - **Smithy** — the town building with the forge, where the smith stands. Nothing is repaired,
   made or sold.
-- **The chapel** (FS-R4MYX) — the stone town building south-west of the spawn, its door on its
+- **The chapel** (FS-R4MYX) — the stone town building in the map's far south-west, its door on its
   east face: a centre aisle between three **pews** a side, and the **altar** on the dais at the
   west end, the Confessor in front of it. Pews and altar are furnishings. Nothing is offered there yet.
-- **Graveyard** — the ground west of the chapel, behind a low broken wall. Client dressing only:
+- **Graveyard** — the walled strip along the outside of the chapel's south wall, behind a low
+  broken wall (FS-R4MYX §Change: The chapel moves to the far left and gains a bell tower; before
+  it, the ground west of the chapel). Client dressing only:
   the server holds nothing of it but where the mourners stand. Not a field, not a building.
+- **Bell tower** (FS-R4MYX, same Change) — the solid square tower against the chapel's west end,
+  centred on its ridge's line: **one wall entity outside the chapel's footprint, with a
+  `house_id` of its own**. Not a town building (not in `hubBuildings`: no door gap, no interior,
+  nobody in it) and not a furnishing (it stands outside every footprint). Players walk round it.
+  The golden records its rect; the client tells it by that rect. Not "the tower" unqualified:
+  that is the Spire.
 - **Lane** (FS-B0H2D) — a straight walkable corridor, at least 240 px wide, from the hub spawn to
   a gate (the Spire's door, the Forest gate, the Meadows gate) that no wall crosses. Map data's
   promise that nothing blocks the way out of town; tested, not eyeballed. A lane is not the

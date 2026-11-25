@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EventEmitter } from "eventemitter3";
 import type Phaser from "phaser";
 import { worldToScreen } from "@/render/iso/projection";
+import { HUB_SIZE } from "@/render/world/hubKeepOut";
 import { contrastRatio } from "@/render/lighting/lighting";
 import { createPartyStore } from "@/stores/partyStore";
 import { PartyInvitePrompt } from "./PartyInvitePrompt";
@@ -144,6 +145,22 @@ describe("WorldMinimap (FS-P0HSP §A.4, §B)", () => {
     // the diamond's top at the inset, its bottom at the inset from the panel's foot: 100 px tall
     expect(Math.min(...ys)).toBeCloseTo(MINIMAP.inset, 6);
     expect(Math.max(...ys)).toBeCloseTo(MINIMAP.height - MINIMAP.inset, 6);
+  });
+
+  it("should draw the 2000 × 2200 town at 0.0595 of the world's projection: 0.0833 × 3000 / (2000 + 2200) (FS-R4MYX R22, T26 as amended, A5)", () => {
+    expect(HUB_SIZE).toEqual({ width: 2000, height: 2200 });
+    const { stage } = fakeStage();
+    const asked: number[] = [];
+    const map = new WorldMinimap(stage, HUB_SIZE);
+    const whole = [
+      { x: 0, y: 0 },
+      { x: HUB_SIZE.width, y: 0 },
+      { x: HUB_SIZE.width, y: HUB_SIZE.height },
+      { x: 0, y: HUB_SIZE.height },
+    ];
+    map.show({ key: "town", ground: [whole], solids: (k) => (asked.push(k), [HOUSE]), lines: [], marks: [] });
+    expect(asked[0]).toBeCloseTo(0.059524, 6);
+    expect(asked[0]).toBeCloseTo(((1 / 12) * 3000) / (HUB_SIZE.width + HUB_SIZE.height), 6);
   });
 
   it("should ask the footprints at the scale the map is drawn at, each mode its own", () => {

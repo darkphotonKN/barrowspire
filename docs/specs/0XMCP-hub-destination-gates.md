@@ -359,3 +359,5 @@ FS-JEAVX) never collided, so the effect only showed among players on one pod.
 ## Change: The chapel and the graveyard → FS-R4MYX
 
 ## Change: Plainer door choices, no random queue in a party → FS-BJNYC
+
+## Change: The chapel moves to the far left and gains a bell tower → FS-R4MYX

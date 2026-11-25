@@ -1,8 +1,8 @@
 /**
  * The town as game-server/game-service/internal/game/hub_map.go lays it out (FS-B0H2D R19, R23),
  * typed: the map's size (common/constants/game.go HubMapWidth × HubMapHeight), its buildings with
- * their partitions and furnishings, the fixed residents and the wandering residents' quarters, in
- * hub_map.go's order.
+ * their partitions and furnishings, the bell tower's rect, the fixed residents and the wandering
+ * residents' quarters, in hub_map.go's order.
  *
  * `hubTown.golden.json` is written by the Go test that holds hub_map.go to it
  * (internal/game/hub_town_golden_test.go, `-update` to rewrite) and is never hand-edited. The
@@ -50,6 +50,11 @@ export interface TownGolden {
   /** The hub's size, HubMapWidth × HubMapHeight (FS-R4MYX R1, R22). */
   mapSize: { w: number; h: number };
   buildings: TownBuilding[];
+  /**
+   * The chapel's bell tower (hub_map.go hubBellTower; FS-R4MYX T8): one solid wall under a
+   * `house_id` of its own, no building.
+   */
+  bellTower: TownRect;
   fixedResidents: { name: string; x: number; y: number }[];
   /** Each wandering resident's quarter (hub_map.go hubResidents; FS-R4MYX R40). */
   wanderRegions: (TownRect & { name: string })[];

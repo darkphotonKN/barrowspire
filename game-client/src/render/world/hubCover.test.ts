@@ -1,18 +1,22 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { TILE_HEIGHT, TILE_WIDTH, WORLD_PX_PER_TILE, worldToScreen, type Point, type Rect } from "@/render/iso/projection";
+import { TILE_HEIGHT, TILE_WIDTH, WORLD_PX_PER_TILE, screenToWorld, worldToScreen, type Point, type Rect } from "@/render/iso/projection";
 import { decodePng } from "../../../tools/bake/lib/png.mjs";
 import { BAKE } from "./bake";
 import {
+  BELL_TOWER_TOP,
   CHIMNEY_ALLOWANCE,
+  HUB_DEV_GATE,
   NPC_BODY_HALF,
   RIDGE_ALLOWANCE,
   ROOF_OVERDRAW,
   bodyHiddenBehind,
   bulkOf,
+  devGateGround,
   hiddenBehind,
   ridgeAllowance,
+  bellTowerBulk,
   type Bulk,
 } from "./hubCover";
 import { HUB_GRAVEYARD, HUB_GRAVEYARD_WALL } from "./hubGraveyard";
@@ -29,7 +33,7 @@ interface Sheet {
   atlas: string;
   frameWidth: number;
   frameHeight: number;
-  anchor: { y: number };
+  anchor: { x: number; y: number };
   animations: Record<string, { frames: { x: number; y: number }[][] }>;
 }
 const manifest = JSON.parse(readFileSync(join(ART, "manifest.json"), "utf8")) as {
@@ -71,13 +75,18 @@ const TOWN: { name: string; foot: Rect; roof: RoofSet; bulk: Bulk }[] = HUB_TOWN
   return { name: b.name, foot, roof, bulk: bulkOf(foot, roof) };
 });
 const CHAPEL = TOWN.find((b) => b.name === "Chapel")!;
+/** The chapel's bell tower as the golden lays it out, and its bulk: a box to its drawn top (T23). */
+const TOWER_FOOT: Rect = (({ x, y, w, h }) => ({ x, y, width: w, height: h }))(HUB_TOWN_GOLDEN.bellTower);
+const TOWER = { name: "Bell tower", foot: TOWER_FOOT, bulk: bellTowerBulk(TOWER_FOOT) };
+/** Everything tall enough to be drawn over someone outdoors: the four buildings and the tower. */
+const COVER: { name: string; bulk: Bulk }[] = [...TOWN, TOWER];
 
 const inside = (p: Point, r: Rect) => p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
 const outdoors = (p: Point) => TOWN.every((b) => !inside(p, b.foot));
-/** The buildings drawn over a body standing at `p`; empty when none is. */
-const bodyBehind = (p: Point) => TOWN.filter((b) => bodyHiddenBehind(p, b.bulk)).map((b) => b.name);
-/** The buildings drawn over the point `p`; empty when none is. */
-const pointBehind = (p: Point) => TOWN.filter((b) => hiddenBehind(p, b.bulk)).map((b) => b.name);
+/** The buildings (and the tower) drawn over a body standing at `p`; empty when none is. */
+const bodyBehind = (p: Point, cover = COVER) => cover.filter((b) => bodyHiddenBehind(p, b.bulk)).map((b) => b.name);
+/** The buildings (and the tower) drawn over the point `p`; empty when none is. */
+const pointBehind = (p: Point) => COVER.filter((b) => hiddenBehind(p, b.bulk)).map((b) => b.name);
 
 /** A rect's points on a grid no coarser than `step`, its corners and edges included. */
 function grid(x: number, y: number, w: number, h: number, step = 20): Point[] {
@@ -172,7 +181,8 @@ describe("the bulk's allowances cover the art drawn there", () => {
     (_, prefix) => {
       const needs = TOWN.filter((b) => b.roof.prefix === prefix).flatMap((b) => {
         const ridgeLift = ridgeLiftOf(b.foot, prefix);
-        const apexes = planGables({ id: "", ...b.foot }, WALL, prefix).filter((g) => g.index === GABLE_APEX);
+        // the gables as the building wears them: the chapel's allowance is its east apex's, its west end plain (T16)
+        const apexes = planGables({ id: "", ...b.foot }, WALL, prefix, b.roof.plainGables).filter((g) => g.index === GABLE_APEX);
         expect(apexes).not.toEqual([]);
         return [aboveOrigin(`${prefix}roof_ridge`), ...apexes.map((g) => g.lift + aboveOrigin(g.sheet) - ridgeLift)];
       });
@@ -188,7 +198,7 @@ describe("the bulk's allowances cover the art drawn there", () => {
   });
 
   it("raises each building's ridge row by its own roof's allowance: no chimney counted on the chapel", () => {
-    expect(CHAPEL.roof).toEqual({ prefix: "chapel_", chimney: false });
+    expect(CHAPEL.roof).toMatchObject({ prefix: "chapel_", chimney: false });
     expect(ridgeAllowance(CHAPEL.roof)).toBe(RIDGE_ALLOWANCE.chapel_);
     for (const b of TOWN.filter((t) => t !== CHAPEL)) expect(ridgeAllowance(b.roof), b.name).toBe(Math.max(RIDGE_ALLOWANCE[""], CHIMNEY_ALLOWANCE));
   });
@@ -198,7 +208,7 @@ describe("the bulk's allowances cover the art drawn there", () => {
     (_, b) => {
       const alongX = b.foot.width >= b.foot.height;
       const midAcross = alongX ? b.foot.y + b.foot.height / 2 : b.foot.x + b.foot.width / 2;
-      const gables = planGables({ id: "", ...b.foot }, WALL, b.roof.prefix);
+      const gables = planGables({ id: "", ...b.foot }, WALL, b.roof.prefix, b.roof.plainGables);
       expect(gables.every((g) => g.sheet.startsWith(`${b.roof.prefix}roof_gable_`))).toBe(true);
       for (const g of gables) {
         // its top edge is highest at its ridge-side end, half a tile toward the ridge; the bulk
@@ -224,7 +234,134 @@ describe("the bulk's allowances cover the art drawn there", () => {
   );
 });
 
-describe("nobody outdoors is drawn hidden behind a town building (FS-R4MYX R39)", () => {
+describe("the bell tower's bulk (FS-R4MYX T23)", () => {
+  const { x, y, width, height } = TOWER_FOOT;
+  const [midX, midY] = [x + width / 2, y + height / 2];
+
+  it("is a box on the tower's footprint, drawn up to BELL_TOWER_TOP over every point of it", () => {
+    expect(TOWER.bulk.tiles).toHaveLength(1);
+    const [box] = TOWER.bulk.tiles;
+    expect(box.square).toEqual(TOWER_FOOT);
+    for (const p of [{ x, y }, { x: midX, y: midY }, { x: x + width, y: y + height }]) expect(box.heightAt(p)).toBe(BELL_TOWER_TOP);
+    // the model's cross tops out about 592 screen px over the ground (T24 as built, A4): the box stands over it
+    expect(BELL_TOWER_TOP).toBeGreaterThanOrEqual(592);
+  });
+
+  it("stands as tall as the chapel_tower sheet's frame reaches above its origin: the art and the number never part", () => {
+    expect(BELL_TOWER_TOP).toBe(Math.ceil(aboveOrigin("chapel_tower")));
+    // and the tower's pixels do reach that high: its cross, not padding, tops the frame
+    expect(BELL_TOWER_TOP - drawnAbove("chapel_tower", "default", 0)).toBeLessThanOrEqual(ROOF_OVERDRAW);
+  });
+
+  it("holds every drawn pixel of the tower under its bulk: on its footprint's ground, or over ground the box hides", () => {
+    const s = manifest.sheets.chapel_tower;
+    const atlas = decodePng(readFileSync(join(ART, manifest.atlases[s.atlas].image)));
+    const f = s.animations.default.frames[0][0];
+    const origin = worldToScreen(midX, midY);
+    const stray: string[] = [];
+    let drawn = 0;
+    for (let py = 0; py < s.frameHeight; py++)
+      for (let px = 0; px < s.frameWidth; px++) {
+        if (atlas.rgba[((f.y + py) * atlas.width + f.x + px) * 4 + 3] === 0) continue;
+        drawn++;
+        // the ground point this pixel is drawn over, at the pixel's centre
+        const p = screenToWorld(origin.x + px + 0.5 - s.anchor.x * s.frameWidth, origin.y + py + 0.5 - s.anchor.y * s.frameHeight);
+        const onFoot = p.x >= x && p.x <= x + width && p.y >= y && p.y <= y + height;
+        if (!onFoot && !hiddenBehind(p, TOWER.bulk)) stray.push(`(${px}, ${py})`);
+      }
+    expect(drawn).toBeGreaterThan(10_000);
+    expect(stray).toEqual([]);
+  });
+
+  it("hides a point just north-west of the tower: the check can fail", () => {
+    expect(hiddenBehind({ x: x - 20, y: y - 20 }, TOWER.bulk)).toBe(true);
+    expect(bodyBehind({ x: x - 20, y: y - 20 })).toContain("Bell tower");
+  });
+
+  it("hides the pocket north and west of it, in its columns, as far as its top reaches", () => {
+    expect(hiddenBehind({ x: midX, y: y - 40 }, TOWER.bulk)).toBe(true);
+    expect(hiddenBehind({ x: x - 40, y: midY }, TOWER.bulk)).toBe(true);
+    // a column falls TILE_HEIGHT / T screen px per world px: up the column through its north-west
+    // corner, the ground shows past the top's reach
+    const reach = (BELL_TOWER_TOP + ROOF_OVERDRAW) / (TILE_HEIGHT / T);
+    expect(hiddenBehind({ x: x - reach + 2, y: y - reach + 2 }, TOWER.bulk)).toBe(true);
+    expect(hiddenBehind({ x: x - reach - 2, y: y - reach - 2 }, TOWER.bulk)).toBe(false);
+  });
+
+  it("never hides a point south or east of it: in front of it, or off its columns", () => {
+    for (const px of [x - 100, x, midX, x + width]) expect(hiddenBehind({ x: px, y: y + height + 1 }, TOWER.bulk), `south, x ${px}`).toBe(false);
+    for (const py of [y - 100, y, midY, y + height]) expect(hiddenBehind({ x: x + width + 1, y: py }, TOWER.bulk), `east, y ${py}`).toBe(false);
+  });
+
+  it("stands wholly west of the chapel's west wall's outer face, on the ridge's line (T6, T14)", () => {
+    expect(x + width).toBe(CHAPEL.foot.x);
+    expect(midY).toBe(CHAPEL.foot.y + CHAPEL.foot.height / 2);
+  });
+});
+
+describe("the dev test room's gate stays in sight (FS-R4MYX T3)", () => {
+  const { at, range, arrival, walkHalf } = HUB_DEV_GATE;
+  const GROUND = devGateGround();
+  /** The chapel's bulk with its footprint moved by (dx, dy), under the roof it wears. */
+  const chapelMoved = (dx: number, dy: number) => ({
+    name: "Chapel",
+    bulk: bulkOf({ ...CHAPEL.foot, x: CHAPEL.foot.x + dx, y: CHAPEL.foot.y + dy }, CHAPEL.roof),
+  });
+  const hiddenBy = (cover: { name: string; bulk: Bulk }[]) => GROUND.filter((p) => bodyBehind(p, cover).length > 0);
+
+  it("is the gate at (120, 900) with GateRange, its arrival at (260, 900) and a walk a player wide (dev_test_room.go)", () => {
+    expect(HUB_DEV_GATE).toEqual({ at: { x: 120, y: 900 }, range: 80, arrival: { x: 260, y: 900 }, walkHalf: 20 });
+  });
+
+  it("covers the gate's point, its range, its arrival and the walk between, on a grid no coarser than 10 px", () => {
+    expect(GROUND).toContainEqual(at);
+    expect(GROUND).toContainEqual(arrival);
+    // the range's four ends, and the walk's two sides at its middle and at the arrival
+    for (const p of [
+      { x: at.x - range, y: at.y },
+      { x: at.x + range, y: at.y },
+      { x: at.x, y: at.y - range },
+      { x: at.x, y: at.y + range },
+      { x: (at.x + arrival.x) / 2, y: at.y - walkHalf },
+      { x: (at.x + arrival.x) / 2, y: at.y + walkHalf },
+      { x: arrival.x, y: arrival.y + walkHalf },
+    ])
+      expect(GROUND, `(${p.x}, ${p.y})`).toContainEqual(p);
+    // every point has a neighbour within 10 px along each axis it can step on: no hole in the grid
+    const xs = [...new Set(GROUND.map((p) => p.x))].sort((a, b) => a - b);
+    const ys = [...new Set(GROUND.map((p) => p.y))].sort((a, b) => a - b);
+    for (const line of [xs, ys]) line.slice(1).forEach((v, i) => expect(v - line[i]).toBeLessThanOrEqual(10));
+    // and nothing beyond the ground: within the range, or on the walk
+    for (const p of GROUND) {
+      const onTheWalk = p.x >= at.x && p.x <= arrival.x + walkHalf && Math.abs(p.y - at.y) <= walkHalf;
+      expect(Math.hypot(p.x - at.x, p.y - at.y) <= range || onTheWalk, `(${p.x}, ${p.y})`).toBe(true);
+    }
+  });
+
+  it("hides no point of the gate's ground, each as a body, behind the chapel's bulk or the tower's", () => {
+    expect(hiddenBy([CHAPEL, TOWER])).toEqual([]);
+  });
+
+  it("reports the gate's ground hidden with the chapel's bulk 100 px further north: the check can fail", () => {
+    expect(hiddenBy([chapelMoved(0, -100)]).length).toBeGreaterThan(0);
+  });
+
+  it("reports it hidden with the chapel on the graveyard's old ground, at y 1020: why it stands further south", () => {
+    expect(hiddenBy([chapelMoved(0, 1020 - CHAPEL.foot.y)]).length).toBeGreaterThan(0);
+  });
+
+  it("keeps the tower's columns clear of the gate's, so no height of tower can cover it", () => {
+    const column = (p: Point) => p.x - p.y;
+    const { x, y, width, height } = TOWER_FOOT;
+    const towerEast = column({ x: x + width, y });
+    const bodyHalf = (NPC_BODY_HALF * T) / TILE_WIDTH;
+    expect(Math.min(...GROUND.map(column)) - 2 * bodyHalf).toBeGreaterThan(towerEast);
+    expect(hiddenBy([{ name: "a tower of any height", bulk: bellTowerBulk(TOWER_FOOT, 100_000) }])).toEqual([]);
+    expect(height).toBe(width);
+  });
+});
+
+describe("nobody outdoors is drawn hidden behind a town building or the bell tower (FS-R4MYX R39, T23)", () => {
   it("finds the outdoor people: the Elder and the three mourners", () => {
     const fnNpcs = HUB_KEEP_OUT.npcs.at.filter(outdoors);
     expect(fnNpcs).toEqual([{ x: 1140, y: 680 }]);

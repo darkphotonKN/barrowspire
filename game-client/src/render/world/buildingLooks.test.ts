@@ -195,8 +195,8 @@ describe("the chapel's fixed kinds: its window bays and the plain wall behind it
     return p;
   };
   const kindOf = (p: { sheet: string }) => p.sheet.split("_")[3];
-  /** The wall's centrelines: north y 1110, south 1530, west x 970, east 1570. */
-  const [NORTH, SOUTH, WEST, EAST] = [1110, 1530, 970, 1570];
+  /** The wall's centrelines: north y 1310, south 1730, west x 230, east 830 (the chapel at (220, 1300), T1). */
+  const [NORTH, SOUTH, WEST, EAST] = [1310, 1730, 230, 830];
   const north = (seed: number) => plan(seed).shared.pieces.filter((p) => p.axis === "x" && p.at.y === NORTH);
   const southOut = (seed: number) => plan(seed).exterior.pieces.filter((p) => p.axis === "x" && p.at.y === SOUTH);
   const lancetsAlong = (pieces: readonly { sheet: string; at: { x: number; y: number }; axis: string }[]) =>
@@ -233,10 +233,10 @@ describe("the chapel's fixed kinds: its window bays and the plain wall behind it
     },
   );
 
-  it("should share one piece grid on the north and south walls: x 960–1580, a piece every 40 px from 980 (W4)", () => {
+  it("should share one piece grid on the north and south walls: x 220–840, a piece every 40 px from 240 (W4)", () => {
     const xs = (pieces: readonly { at: { x: number } }[]) => pieces.map((p) => p.at.x);
     expect(xs(north(3))).toEqual(xs(southOut(3)));
-    expect(xs(north(3))).toEqual(Array.from({ length: 16 }, (_, k) => 980 + 40 * k));
+    expect(xs(north(3))).toEqual(Array.from({ length: 16 }, (_, k) => 240 + 40 * k));
   });
 
   /** Every piece of a plan, in all three looks. */
@@ -276,7 +276,7 @@ describe("the chapel's fixed kinds: its window bays and the plain wall behind it
     }
   });
 
-  it("should alternate lancet and buttress along the south outward face, mirrored about x 1270 (W3)", () => {
+  it("should alternate lancet and buttress along the south outward face, mirrored about x 530 (W3)", () => {
     const run = southOut(3).map((p) => ({ x: p.at.x, kind: kindOf(p) }));
     const lancets = run.flatMap((p, i) => (p.kind === "lancet" ? [i] : []));
     expect(lancets.length).toBeGreaterThan(1);
@@ -292,10 +292,10 @@ describe("the chapel's fixed kinds: its window bays and the plain wall behind it
     for (const [i, p] of run.entries()) if (!flanking.has(i)) expect(p.kind, `x ${p.x}`).toBe("plain");
     // each lancet's mirror about the wall's middle has a lancet within half a tile
     const xs = lancets.map((i) => run[i].x);
-    for (const x of xs) expect(Math.min(...xs.map((m) => Math.abs(m - (2 * 1270 - x)))), `x ${x}`).toBeLessThanOrEqual(T / 2);
+    for (const x of xs) expect(Math.min(...xs.map((m) => Math.abs(m - (2 * 530 - x)))), `x ${x}`).toBeLessThanOrEqual(T / 2);
   });
 
-  it("should stand a lancet each side of the east door, none adjoining, mirrored about y 1320 (W5)", () => {
+  it("should stand a lancet each side of the east door, none adjoining, mirrored about y 1520 (W5)", () => {
     const east = plan(3).exterior.pieces.filter((p) => p.axis === "y" && p.at.x === EAST);
     const segments = [...new Set(east.map((p) => p.wallId))];
     expect(segments).toHaveLength(2);
@@ -303,7 +303,7 @@ describe("the chapel's fixed kinds: its window bays and the plain wall behind it
     for (const id of segments) expect(lancetsAlong(east.filter((p) => p.wallId === id)).length, id).toBeGreaterThan(0);
     for (const y of ys) {
       expect(ys.filter((o) => Math.abs(o - y) === T), `y ${y}`).toEqual([]);
-      expect(Math.min(...ys.map((m) => Math.abs(m - (2 * 1320 - y)))), `y ${y}`).toBeLessThanOrEqual(T / 2);
+      expect(Math.min(...ys.map((m) => Math.abs(m - (2 * 1520 - y)))), `y ${y}`).toBeLessThanOrEqual(T / 2);
     }
     for (const p of east.filter((q) => kindOf(q) !== "lancet")) expect(["plain", "buttress"]).toContain(kindOf(p));
   });

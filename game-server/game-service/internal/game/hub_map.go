@@ -161,10 +161,11 @@ type hubFurnishing struct {
 // the hub is somewhere a delver returns to, and "in the Quartermaster's store"
 // has to mean the same thing tomorrow. The store, the Inn and the smithy stand
 // north of the trails to the Forest and the Meadows and clear of the walk to the
-// Spire, the chapel far south of all three trails, so nothing walls off the way
-// out of town: a lane 240 px wide runs from the spawn to every gate (tested in
-// hub_map_test.go). Each door faces the town. FS-B0H2D §Requirements 2-6;
-// FS-R4MYX §Requirements 2-5.
+// Spire, the chapel in the far south-west, south of all three trails, so
+// nothing walls off the way out of town: a lane 240 px wide runs from the spawn
+// to every gate (tested in hub_map_test.go). Each door faces the town.
+// FS-B0H2D §Requirements 2-6; FS-R4MYX §Requirements 2-5; §Change: The chapel
+// moves to the far left and gains a bell tower, T1.
 var hubBuildings = []hubBuilding{
 	// the largest, filling the north-west, west of the walk to the Spire and
 	// above the Forest trail. A partition parts the great hall (west) from the
@@ -192,25 +193,44 @@ var hubBuildings = []hubBuilding{
 	{Name: "Smithy", X: 1480, Y: 50, W: 300, H: 240, Furnishings: []hubFurnishing{
 		{Kind: "forge", X: 1595, Y: 120, W: 70, H: 35},
 	}},
-	// in the ground the hub grew south, below the spawn and a little left of it
-	// on screen, far enough east that the graveyard lies screen-left of it
-	// where its roof hides none of it (FS-R4MYX §Requirements 4, 39); its door
+	// in the map's south-west, the screen's far left, on the ground its
+	// graveyard held and south of it: at y 1300 and no further north, so that
+	// neither its roof nor its bell tower is drawn over the dev test room's
+	// gate at (120, 900), its arrival or the walk between them (the client's
+	// test, T3). Moved whole, by (-740, +200): everything inside keeps its
+	// place relative to the north-west corner (T1). Its door
 	// in its east wall, facing down-right on screen. The aisle runs west from
 	// the door, 100 wide, between three pews a side, each pew's back to the
 	// door, to the altar at the west end, with open floor between the altar and
 	// the first pews where the Confessor stands. Every pew stands free, 50 px
 	// clear all round (ADR-0070 Decision 5): 440 deep is the least that fits
 	// pews 100 long so (20 + 50 + 100 + 100 + 100 + 50 + 20)
-	{Name: "Chapel", X: 960, Y: 1100, W: 620, H: 440, DoorFace: hubDoorEast, Furnishings: []hubFurnishing{
-		{Kind: "pew", X: 1310, Y: 1170, W: 20, H: 100},
-		{Kind: "pew", X: 1380, Y: 1170, W: 20, H: 100},
-		{Kind: "pew", X: 1450, Y: 1170, W: 20, H: 100},
-		{Kind: "pew", X: 1310, Y: 1370, W: 20, H: 100},
-		{Kind: "pew", X: 1380, Y: 1370, W: 20, H: 100},
-		{Kind: "pew", X: 1450, Y: 1370, W: 20, H: 100},
-		{Kind: "altar", X: 1120, Y: 1280, W: 30, H: 80},
+	{Name: "Chapel", X: 220, Y: 1300, W: 620, H: 440, DoorFace: hubDoorEast, Furnishings: []hubFurnishing{
+		{Kind: "pew", X: 570, Y: 1370, W: 20, H: 100},
+		{Kind: "pew", X: 640, Y: 1370, W: 20, H: 100},
+		{Kind: "pew", X: 710, Y: 1370, W: 20, H: 100},
+		{Kind: "pew", X: 570, Y: 1570, W: 20, H: 100},
+		{Kind: "pew", X: 640, Y: 1570, W: 20, H: 100},
+		{Kind: "pew", X: 710, Y: 1570, W: 20, H: 100},
+		{Kind: "altar", X: 380, Y: 1480, W: 30, H: 80},
 	}},
 }
+
+// hubSolid is a solid block of the town that is no building: one wall, with no
+// door gap, no interior and nobody in it.
+type hubSolid struct {
+	X, Y, W, H float64
+}
+
+// The chapel's bell tower: a solid square against the chapel's west end,
+// outside its footprint, its east face on the west wall's outer face and its
+// centre on the ridge's line. Players walk round it; nobody goes in.
+//
+// Not a town building, so not in hubBuildings: the building rules (a door gap,
+// ground in front of it, a room reached from it) do not apply. The town golden
+// records its rect, and the client tells it by that rect. FS-R4MYX §Change: The
+// chapel moves to the far left and gains a bell tower, T6-T8.
+var hubBellTower = hubSolid{X: 80, Y: 1450, W: 140, H: 140}
 
 const hubWallThickness = 20
 
@@ -228,10 +248,11 @@ type hubResident struct {
 	Region     components.WanderRegion
 }
 
-// Their quarters sit in the open ground south of the town buildings and east of
-// the chapel, wholly outside every one and in front of each on screen, so no
-// roof is drawn over anyone in them (FS-R4MYX §Requirements 39, the client's
-// test): a walk is a straight line between two points of a quarter,
+// Their quarters sit in the open ground south of the Inn, the store and the
+// smithy and far east of the chapel, wholly outside every building and in
+// front of each on screen, so no roof is drawn over anyone in them (FS-R4MYX
+// §Requirements 39, the client's test): a walk is a straight line between two
+// points of a quarter,
 // so no resident ever crosses a door gap into a room (FS-B0H2D §Requirements 7).
 // They keep away from the spawn and the two function NPCs so nobody has to walk
 // through a crowd to reach the Elder: each quarter keeps a function NPC's
@@ -241,9 +262,9 @@ type hubResident struct {
 var hubResidents = []hubResident{
 	{Name: "Cottar", Appearance: "rust_trousers", Region: components.WanderRegion{X: 560, Y: 560, W: 180, H: 200}},
 	{Name: "Herbwife", Appearance: "green_skirt", Region: components.WanderRegion{X: 1260, Y: 540, W: 240, H: 220}},
-	// in the open field east of the chapel, in front of it on screen: their old
-	// quarters south of the spawn lay behind the chapel's roof (FS-R4MYX
-	// §Requirements 5, 39)
+	// in the open east field, where they moved when the chapel stood south of
+	// the spawn; they stay there now it has moved west, no rule forcing a move
+	// (FS-R4MYX §Requirements 5, 39; T2)
 	{Name: "Woodcutter", Appearance: "slate_trousers", Region: components.WanderRegion{X: 1780, Y: 1000, W: 180, H: 160}},
 	{Name: "Bellringer", Appearance: "flax_skirt", Region: components.WanderRegion{X: 1780, Y: 1240, W: 180, H: 160}},
 }
@@ -280,18 +301,19 @@ var hubFixedResidents = []hubFixedResident{
 	// altar and the first pews at the head of the aisle, facing the east door
 	// down it, in a bespoke look of his own (FS-R4MYX §Requirements 17, 18); each
 	// worshipper in the bay west of their pew, near the aisle, facing the altar
-	{Name: "Confessor", Appearance: "confessor", X: 1205, Y: 1320},
-	{Name: "Penitent", Appearance: "rust_trousers", X: 1355, Y: 1255},
-	{Name: "Chandler", Appearance: "flax_skirt", X: 1425, Y: 1255},
-	{Name: "Goodwife", Appearance: "green_skirt", X: 1285, Y: 1385},
-	{Name: "Ploughman", Appearance: "slate_trousers", X: 1355, Y: 1385},
+	{Name: "Confessor", Appearance: "confessor", X: 465, Y: 1520},
+	{Name: "Penitent", Appearance: "rust_trousers", X: 615, Y: 1455},
+	{Name: "Chandler", Appearance: "flax_skirt", X: 685, Y: 1455},
+	{Name: "Goodwife", Appearance: "green_skirt", X: 545, Y: 1585},
+	{Name: "Ploughman", Appearance: "slate_trousers", X: 615, Y: 1585},
 	// Outdoors, the only fixed residents who are: the mourners at their graves
-	// screen-left of the chapel, more than talk range from its west wall. The server
-	// knows only their points; the graves are the client's dressing
-	// (FS-R4MYX §Requirements 20)
-	{Name: "Keener", Appearance: "flax_skirt", X: 520, Y: 1320},
-	{Name: "Widower", Appearance: "slate_trousers", X: 500, Y: 1200},
-	{Name: "Veteran", Appearance: "rust_trousers", X: 300, Y: 1380},
+	// in the strip along the outside of the chapel's south wall, more than talk
+	// range from it and from the bell tower. The server knows only their
+	// points; the graves are the client's dressing (FS-R4MYX §Requirements 20;
+	// T21)
+	{Name: "Keener", Appearance: "flax_skirt", X: 805, Y: 1940},
+	{Name: "Widower", Appearance: "slate_trousers", X: 800, Y: 2115},
+	{Name: "Veteran", Appearance: "rust_trousers", X: 411, Y: 2025},
 }
 
 /**
@@ -317,6 +339,8 @@ func (s *Session) InitialHubMapObjects() {
 	for _, building := range hubBuildings {
 		s.addHubBuilding(building)
 	}
+
+	s.addHubSolid(hubBellTower)
 
 	for _, resident := range hubResidents {
 		CreateResidentEntity(s.EntityManager, resident)
@@ -357,6 +381,16 @@ func (s *Session) addHubBuilding(building hubBuilding) {
 	for _, wall := range walls {
 		CreateWallEntity(s.EntityManager, wall, houseID)
 	}
+}
+
+// addHubSolid stands a solid block in the town: one wall under a house id of
+// its own, shared with no other wall, as a field obstacle carries
+// (field_place.go). Never a building's id, which would have the client grow
+// that building's footprint to take the block in, and never uuid.Nil, which
+// reaches the client as a non-empty string it would read as a house too.
+// FS-R4MYX §Change: The chapel moves to the far left and gains a bell tower, T6.
+func (s *Session) addHubSolid(solid hubSolid) {
+	CreateWallEntity(s.EntityManager, WallConfig{X: solid.X, Y: solid.Y, Width: solid.W, Height: solid.H}, uuid.New())
 }
 
 // outerWalls is the five walls round a building: the north and west walls

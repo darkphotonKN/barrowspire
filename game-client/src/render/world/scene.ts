@@ -59,7 +59,7 @@ import {
 import type { House } from "./houses";
 import { FADED_ALPHA, occludes, stepAlpha, type Sorted } from "./occlusion";
 import { planPerimeter } from "./perimeter";
-import { planGables, planRoof } from "./roofs";
+import { planGables, planRoof, type GableEnd } from "./roofs";
 import type { DressingPiece } from "./runDressing";
 import {
   TIMBER_WALLS,
@@ -682,7 +682,7 @@ export function addRoof(
  * lifted to the roof's line and sorted behind the end wall it rises from, which hides its foot.
  * They are the roof's: shown and hidden with it, and never faded (§E.4). None without a manifest
  * or the gable sheets of the roof set `prefix` names: the roof then stands open at its ends, as it
- * did before them.
+ * did before them. `plain` names the ends nothing crowns (`planGables`).
  */
 export function addGables(
   scene: Phaser.Scene,
@@ -690,8 +690,9 @@ export function addGables(
   house: House,
   wallThickness: number,
   prefix = "",
+  plain: readonly GableEnd[] = [],
 ): Phaser.GameObjects.Sprite[] {
-  const pieces = planGables(house, wallThickness, prefix);
+  const pieces = planGables(house, wallThickness, prefix, plain);
   if (pieces.length === 0 || !art.has(pieces[0].sheet)) return [];
   return pieces.map((p) => {
     const s = worldToScreen(p.at.x, p.at.y);

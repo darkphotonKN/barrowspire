@@ -21,6 +21,7 @@ import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso/projectio
 import type { WallState } from "@/types/gameState";
 import { housesFrom, onOutline, type House } from "./houses";
 import type { PropSpot } from "./hubKeepOut";
+import type { GableEnd } from "./roofs";
 import { CHAPEL_WALLS, TIMBER_WALLS, unlitSheets, type FixedKinds, type VariantTable, type WallSheets } from "./walls";
 
 /**
@@ -125,14 +126,14 @@ export const HUB_FURNISHINGS: Furnishing[] = [
   { kind: "table", rect: { x: 600, y: 130, width: 30, height: 40 }, sheet: "inn_table", animation: "narrow", tall: false },
   { kind: "table", rect: { x: 600, y: 300, width: 45, height: 40 }, sheet: "inn_table", animation: "wide", tall: false },
   { kind: "forge", rect: { x: 1595, y: 120, width: 70, height: 35 }, sheet: "forge", tall: true },
-  pew(1310, 1170),
-  pew(1380, 1170),
-  pew(1450, 1170),
-  pew(1310, 1370),
-  pew(1380, 1370),
-  pew(1450, 1370),
+  pew(570, 1370),
+  pew(640, 1370),
+  pew(710, 1370),
+  pew(570, 1570),
+  pew(640, 1570),
+  pew(710, 1570),
   // `chapel_altar`, never `altar`: that sheet is the run's Altar of Consecration
-  { kind: "altar", rect: { x: 1120, y: 1280, width: 30, height: 80 }, sheet: "chapel_altar", tall: false },
+  { kind: "altar", rect: { x: 380, y: 1480, width: 30, height: 80 }, sheet: "chapel_altar", tall: false },
 ];
 
 /**
@@ -142,10 +143,63 @@ export const HUB_FURNISHINGS: Furnishing[] = [
 export const HUB_INN: Rect = { x: 230, y: 50, width: 640, height: 440 };
 
 /**
- * The chapel's footprint (hub_map.go hubBuildings; FS-R4MYX R2–R4), held to the golden by
- * `hubInteriors.test.ts`: how the scene knows which house is the chapel, as `HUB_INN` the Inn.
+ * The chapel's footprint (hub_map.go hubBuildings; FS-R4MYX R2–R4, moved to the map's south-west
+ * by T1), held to the golden by `hubInteriors.test.ts`: how the scene knows which house is the
+ * chapel, as `HUB_INN` the Inn.
  */
-export const HUB_CHAPEL: Rect = { x: 960, y: 1100, width: 620, height: 440 };
+export const HUB_CHAPEL: Rect = { x: 220, y: 1300, width: 620, height: 440 };
+
+/**
+ * The chapel's bell tower's rect (hub_map.go hubBellTower; FS-R4MYX T6, T9), held to the golden's
+ * `bellTower` by `hubInteriors.test.ts`: one solid wall against the chapel's west end, outside its
+ * footprint. It is no house: the scene tells its wall by this rect and takes it out before it
+ * builds houses (T10).
+ */
+export const HUB_BELL_TOWER: Rect = { x: 80, y: 1450, width: 140, height: 140 };
+
+/** The bell tower's baked prop (FS-R4MYX T10, T24): one frame, framed round the tower's footprint. */
+export const BELL_TOWER_SHEET = "chapel_tower";
+
+/** Where the tower's prop is drawn: on its footprint's centre, where its sheet's anchor stands. */
+export const HUB_BELL_TOWER_AT: Point = {
+  x: HUB_BELL_TOWER.x + HUB_BELL_TOWER.width / 2,
+  y: HUB_BELL_TOWER.y + HUB_BELL_TOWER.height / 2,
+};
+
+/**
+ * How far behind its footprint's centre the tower sorts, in depth key (world px of x + y).
+ *
+ * The centre's own key is where a square footprint parts those behind it from those in front, and
+ * no key passes the tower's two neighbours but one in this window (T11):
+ * - nearer than 20 (a body's radius) behind it, a body pressed against the tower's north face at
+ *   its east end, or its west face at its south end, would be drawn over the tower it stands behind;
+ * - 10 behind it stands the chapel's west gable's piece against the ridge, which sorts from the
+ *   west wall's back face (`planGables`) and must be drawn over the tower.
+ * So 15, between the two. `bellTowerOrder.test.ts` holds both, the second from the baked pixels.
+ */
+const BELL_TOWER_SORT_BACK = 15;
+
+/** The point the tower sorts by (`depthKey`): its centre, `BELL_TOWER_SORT_BACK` of key further back. */
+export const HUB_BELL_TOWER_SORT: Point = {
+  x: HUB_BELL_TOWER_AT.x - BELL_TOWER_SORT_BACK / 2,
+  y: HUB_BELL_TOWER_AT.y - BELL_TOWER_SORT_BACK / 2,
+};
+
+/** Whether a wall is the bell tower's: it stands on exactly the tower's rect. */
+export function isBellTower(wall: WallState): boolean {
+  const { x, y, width, height } = HUB_BELL_TOWER;
+  return wall.position.x === x && wall.position.y === y && wall.width === width && wall.height === height;
+}
+
+/**
+ * The broadcast walls with the bell tower's taken out (T10): `tower` is the wall standing on the
+ * tower's rect, if the state carries one, and `rest` every other wall, which is what houses are
+ * built from. A wall with a `house_id` of its own on any other rect stays in `rest`, a house as
+ * before: the tower is told by its rect, not by standing alone.
+ */
+export function splitBellTower(walls: readonly WallState[]): { tower?: WallState; rest: WallState[] } {
+  return { tower: walls.find(isBellTower), rest: walls.filter((w) => !isBellTower(w)) };
+}
 
 /** Whether a house stands on exactly this footprint. */
 const standsOn = (house: House, at: Rect): boolean =>
@@ -179,6 +233,11 @@ export interface RoofSet {
   /** Before every roof sheet name: `""` for the town's `roof_` set, `"chapel_"` for the chapel's slate. */
   prefix: string;
   chimney: boolean;
+  /**
+   * The ends whose gable lays its plain frame at the apex, so nothing crowns it (`planGables`):
+   * the chapel's west end, where its bell tower stands (FS-R4MYX T16). Absent, both ends are crowned.
+   */
+  plainGables?: readonly GableEnd[];
 }
 
 /** The town's shingle roof with its chimney: what a house wears unless its look names another. */
@@ -422,36 +481,36 @@ export const HUB_INDOOR_DRESSING: IndoorSpot[] = [
   crate(1528, 96),
   crate(1734, 242),
   barrel(1526, 242),
-  // the chapel (960, 1100, 620 × 440, its door east; FS-R4MYX R14): the altar's stone dais laid
+  // the chapel (220, 1300, 620 × 440, its door east; FS-R4MYX R14, T1): the altar's stone dais laid
   // flat at the west end, the lectern by its north-east corner, and a candelabra either side of
   // the altar, the room's only lights (R15); the Confessor stands on the floor east of the dais.
   // Behind him on the west wall, on the aisle's line, the crucifix, with a fresco either side of
   // it, the saint to the north and the dead rising to the south (W12); none of them lit (W14)
-  { sheet: "dais", at: { x: 1105, y: 1320 }, r: 65, size: [130, 200], flat: true },
-  { sheet: "lectern", at: { x: 1190, y: 1250 }, r: 10, size: [20, 20] },
-  candelabra(1135, 1250),
-  candelabra(1135, 1390),
-  crucifix(982, 1320),
-  mural(982, 1210, 0),
-  mural(982, 1430, 1),
+  { sheet: "dais", at: { x: 365, y: 1520 }, r: 65, size: [130, 200], flat: true },
+  { sheet: "lectern", at: { x: 450, y: 1450 }, r: 10, size: [20, 20] },
+  candelabra(395, 1450),
+  candelabra(395, 1590),
+  crucifix(242, 1520),
+  mural(242, 1410, 0),
+  mural(242, 1630, 1),
 ];
 
 /**
  * The x of each of the nave's six bays (FS-R4MYX §Change: the chapel's windows match inside and
  * out, W3, W4): a lancet on the south wall's outward face and one at the same x on the north
  * wall's inner face, so the windows face each other across the nave. The pieces stand at
- * 980 + 40k; the six mirror about the wall's middle (x 1270) to within half a tile, and none stands
- * on the corner post's piece (980) or the trimmed one (1580) (W2).
+ * 240 + 40k; the six mirror about the wall's middle (x 530) to within half a tile, and none stands
+ * on the corner post's piece (240) or the trimmed one (840) (W2).
  */
-export const CHAPEL_NAVE_LANCETS: readonly number[] = [1060, 1140, 1220, 1300, 1380, 1460];
+export const CHAPEL_NAVE_LANCETS: readonly number[] = [320, 400, 480, 560, 640, 720];
 
 /**
- * The y of the east wall's lancets, one each side of the door gap (1280–1360) and mirrored about
- * its centre to within half a tile (W5): clear of the post pieces (1120, 1380) and the trimmed
- * ones (1280, 1540), and as far as that leaves from the belfry (1635, 1220) and the wayside cross
- * (1635, 1480) on screen, which stand in front of the pieces at about y 1160 and 1420.
+ * The y of the east wall's lancets, one each side of the door gap (1480–1560) and mirrored about
+ * its centre to within half a tile (W5): clear of the post pieces (1320, 1580) and the trimmed
+ * ones (1480, 1740), and as far as that leaves from the wayside cross (895, 1680) on screen, which
+ * stands in front of the piece at about y 1620.
  */
-export const CHAPEL_EAST_LANCETS: readonly number[] = [1200, 1460];
+export const CHAPEL_EAST_LANCETS: readonly number[] = [1400, 1660];
 
 const T = WORLD_PX_PER_TILE;
 /** The chapel's west wall's inner face: what its hung dressing stands on. */
@@ -504,11 +563,13 @@ function chapelFixedKinds(): FixedKinds {
  * The chapel (FS-R4MYX R23, R42): its own whitewashed walls (`CHAPEL_WALLS`, unlit and capless) on
  * the town's flagstone, under its own slate roof with no chimney (a church has no hearth to vent).
  * Its age is baked into the sheets, never tinted over them (owner feedback F6: a tint greyed the
- * white walls). Its walls fix their bays and the plain wall behind the hung dressing (W1–W7).
+ * white walls). Its walls fix their bays and the plain wall behind the hung dressing (W1–W7). Its
+ * west gable is plain: the bell tower stands against that end and carries the cross (T16); the
+ * east gable keeps its cross and rose window.
  */
 const CHAPEL_LOOK: TownHouseLook = {
   sheets: CHAPEL_WALLS,
-  roof: { prefix: "chapel_", chimney: false },
+  roof: { prefix: "chapel_", chimney: false, plainGables: ["w"] },
   fixed: chapelFixedKinds(),
 };
 
@@ -532,14 +593,14 @@ export const HUB_FIXED_RESIDENTS: { name: string; at: Point; facing: Facing8; fa
   { name: "Gravedigger", at: { x: 418, y: 319 }, facing: "w", faces: "long_table" },
   { name: "Pilgrim", at: { x: 336, y: 271 }, facing: "e", faces: "long_table" },
   { name: "Smith", at: { x: 1630, y: 175 }, facing: "n", faces: "forge" },
-  { name: "Confessor", at: { x: 1205, y: 1320 }, facing: "e", faces: "door" },
-  { name: "Penitent", at: { x: 1355, y: 1255 }, facing: "w", faces: "altar" },
-  { name: "Chandler", at: { x: 1425, y: 1255 }, facing: "w", faces: "altar" },
-  { name: "Goodwife", at: { x: 1285, y: 1385 }, facing: "w", faces: "altar" },
-  { name: "Ploughman", at: { x: 1355, y: 1385 }, facing: "w", faces: "altar" },
-  { name: "Keener", at: { x: 520, y: 1320 }, facing: "w", faces: "grave" },
-  { name: "Widower", at: { x: 500, y: 1200 }, facing: "w", faces: "grave" },
-  { name: "Veteran", at: { x: 300, y: 1380 }, facing: "w", faces: "grave" },
+  { name: "Confessor", at: { x: 465, y: 1520 }, facing: "e", faces: "door" },
+  { name: "Penitent", at: { x: 615, y: 1455 }, facing: "w", faces: "altar" },
+  { name: "Chandler", at: { x: 685, y: 1455 }, facing: "w", faces: "altar" },
+  { name: "Goodwife", at: { x: 545, y: 1585 }, facing: "w", faces: "altar" },
+  { name: "Ploughman", at: { x: 615, y: 1585 }, facing: "w", faces: "altar" },
+  { name: "Keener", at: { x: 805, y: 1940 }, facing: "w", faces: "grave" },
+  { name: "Widower", at: { x: 800, y: 2115 }, facing: "w", faces: "grave" },
+  { name: "Veteran", at: { x: 411, y: 2025 }, facing: "w", faces: "grave" },
 ];
 
 /** A fixed resident's facing by name; undefined for anyone else, who keeps the default. */

@@ -443,3 +443,5 @@ today.
 ## Change: Wider doors → FS-MMA2H
 
 ## Change: Wall shadow layer → FS-V8FT3
+
+## Change: The chapel moves to the far left and gains a bell tower → FS-R4MYX

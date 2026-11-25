@@ -54,11 +54,9 @@ describe("nearestInReach (FS-B0H2D R28; FS-VPD8Y R34)", () => {
     const folk = HUB_FIXED_RESIDENTS.map((r) => ({ at: r.at, who: r.name }));
 
     it.each([
-      // in the aisle by the Penitent (1355, 1255) and the Chandler (1425, 1255), nearer the Penitent
-      ["two worshippers, nearer the Penitent", { x: 1380, y: 1290 }, "Penitent"],
-      ["two worshippers, nearer the Chandler", { x: 1400, y: 1290 }, "Chandler"],
-      // between the Widower (500, 1200) and the Keener (520, 1320)
-      ["two mourners, nearer the Widower", { x: 510, y: 1250 }, "Widower"],
+      // in the aisle by the Penitent (615, 1455) and the Chandler (685, 1455), nearer the Penitent
+      ["two worshippers, nearer the Penitent", { x: 640, y: 1490 }, "Penitent"],
+      ["two worshippers, nearer the Chandler", { x: 660, y: 1490 }, "Chandler"],
     ])("should answer the nearest of %s", (_case, player, want) => {
       const inReach = folk.filter((f) => Math.hypot(f.at.x - player.x, f.at.y - player.y) <= 80);
       expect(inReach.length).toBeGreaterThanOrEqual(2);

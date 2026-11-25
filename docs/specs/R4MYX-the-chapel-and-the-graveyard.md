@@ -987,3 +987,653 @@ Numbered 1–15 below and cited as **W1–W15**, separate from the work order's 
   lines.
 - Any server, map, golden or wire change.
 - The talent reset and anything that hints at it (still a later FS).
+
+## Change: The chapel moves to the far left and gains a bell tower
+Status: shipped
+Date: 2026-11-25
+
+> **Owner request (Nick, 2026-11-25), after the chapel shipped:** the chapel gains a bell tower
+> and moves to the ground its graveyard holds; the graveyard moves to a strip along the chapel's
+> south wall. Written `--from-thread` with no interview: the charter's decisions M1–M8 (the move)
+> and K1–K9 (the tower) are owner-approved, each marked **(charter default Mn / Kn)**. Where the
+> charter left a point open the smaller v1 was taken and marked **(v1 pick)** with its reason.
+> Agent lane for game-service too, **within the charter's bounds only**: hub map data (the
+> buildings' and people's places, one new solid), the map height constant, the golden and their
+> tests. Checked `docs/adr/`: ADR-0036 (a building's two looks) and ADR-0070 Decision 5 (free
+> pews) are honoured unchanged; ADR-0020 / ADR-0021 govern the new sheet; nothing else constrains
+> this.
+>
+> **The charter's priority when rules compete:** the dev gate and the outdoor people not hidden
+> > the chapel at the screen's far left > the graveyard along the south wall.
+>
+> **Coordinates.** The town is isometric (`render/iso/projection.ts`): world +x runs down-right
+> on screen and +y down-left, so `x − y` is screen x and `x + y` screen depth; the map's
+> south-west is the screen's far left, and a tall thing hides what stands up-screen of it, toward
+> (−x, −y), on its own screen column. Every figure marked **indicative** was checked at spec time
+> (2026-11-25, `d500fecb`) by a throwaway script that re-types `hubCover.ts`'s model (`planRoof`,
+> `bulkOf`, `hiddenBehind`, the chapel's 73 px ridge allowance) and the keep-out rules K1, K2 and
+> K7: all passed. The tests decide; the implementing issue moves a figure where a test needs and
+> notes the final numbers.
+>
+> **What this changes in the work order above:**
+> - R1, R22: the map's height (1700) becomes 2000 under the indicative layout (T4).
+>   *(Amended 2026-11-25, A5: 2200 as built.)*
+> - R4, R12, R14, R17 and W3–W5, W12 of the windows Change: every **indicative** chapel figure
+>   moves by one offset; the rules themselves stand (T1).
+> - R27 ("screen-left of the chapel"), R28 (the enclosure "about twice the old area", four rows
+>   of seven) and R29 (the runs, the gap in the south-east corner): replaced by the strip (T19–T21).
+> - R30 (the belfry prop) and R36's `belfry` sheet: removed (T17).
+> - R31 (the paths' routing) and R41's as-built point: redrawn (T22, T18).
+> - R39: its model gains the tower's bulk, and a new thing it protects, the dev gate (T3, T23).
+> - R42: the chapel's sheet list gains `chapel_tower`; the west gable loses its apex (T16, T24).
+>
+> **Supersedes in part** (each carries a stub
+> `## Change: The chapel moves to the far left and gains a bell tower → FS-R4MYX`; their text is
+> not edited): FS-29KSH R3, FS-0XMCP R11 and FS-KYPQ9 §A.3 K7 (the hub's size, again);
+> FS-P0HSP's facts and §B.5 (the town is 2000 × 2000, drawn at 0.0625); FS-9PN7X §A.1 (a group
+> of walls sharing a `house_id` is a building: the tower's one wall is not) and FS-B0H2D R10
+> (every hub wall carries a building's `house_id`). FS-BDRTJ is **not** touched: its hub gate
+> and arrival stay at (120, 900) and (260, 900).
+>
+> **Unchanged:** every rule not named above, the chapel's size and relative layout, the eight
+> people's names, looks, facings and lines, the lights (R15), every hub coordinate that does not
+> belong to the chapel, its people, its graveyard, its paths or its outdoor crosses.
+>
+> **Vocabulary** (added to both `CONTEXT.md` files with this Change): **bell tower**; *belfry*
+> is redefined as the tower's open bell stage and stops naming a prop.
+>
+> **Amended 2026-11-25** after code review of I-R4MYX-17/18/19, before the branch was merged
+> (reason: code review). The review found no code defect; in three places this section and the
+> code disagreed and the code is right, so the section now records what is built:
+> - **A1 (T5 against T22).** T22's lane runs down the west 70 px of the chapel's old footprint,
+>   which T5 forbade. T22 stands as built; T5, its acceptance criterion and an edge state now
+>   except that lane.
+> - **A2 (T11).** The spec-time arithmetic was wrong: the footprint centre's key draws the tower
+>   over the west gable's ridge piece. T11 records the key that is built and the second rule as
+>   the test holds it.
+> - **A3 (T24, user story 13).** Two bells, not one, and the heights as built. Wherever this
+>   section says "the bell" in the tower, read the two. Built; the owner judges at the browser
+>   check (I-R4MYX-20).
+>
+> Each corrected item says *(Amended 2026-11-25, An; was: …)*.
+>
+> **Amended 2026-11-25** after the owner saw the branch in the browser (reason: owner feedback):
+> - **A4 (T24).** "鐘塔是不是要再高一點 被屋頂切到了": the chapel's ridge crossed the bottom of
+>   the east belfry opening. The tower is raised 1.7 edges, all of it in the lower shaft, so the
+>   whole belfry stage, its string course included, stands above the roof. The belfry stage, the
+>   spire and the cross keep their own measures. The footprint, the tower's place and every
+>   coordinate are unchanged; no rule of T3, T11 or T23 needed a move.
+> - **A5 (T4, T19–T21, T26).** "墓地可以再寬一些 有點窄", then "再寬一倍": the graveyard strip is
+>   twice as deep (190 → 380, y 1790–2170), the same 24 stones and pieces spread more loosely
+>   over it, and the map grows south to hold it: `HubMapHeight` 2000 → 2200. This supersedes
+>   T4's "never more than 2000" (the charter's limit) for this Change, by the owner's word.
+>   No existing coordinate outside the strip moves; the mourners move with their graves.
+
+### Summary
+
+The chapel leaves the ground below the square and stands at the screen's far left, in the map's
+south-west, where its graveyard lay. Against its west end, on the ridge's line, rises a square
+bell tower of the same aged whitewashed limestone: a solid lower stage with one slit window, an
+open belfry above it where a dark bell hangs behind pointed openings, and a slate pyramid spire
+under a cross, well above the roof's ridge. It is solid: players walk round it, and nobody goes
+in. The graveyard is now a walled strip along the outside of the chapel's south wall, a small
+walkway between them, with every stone, mound, flower, cross and dead tree it had, and its three
+mourners. The trodden path runs from the square down to the east door and on to the graveyard's
+gap. The old site is plain ground. The ruined bell frame by the door is gone: the bell hangs in
+the tower. The town grows south to make room, and the dev test room's gate stays in plain sight.
+
+### Requirements
+
+Numbered 1–26 below and cited as **T1–T26**, separate from the work order's R1–R42 and the
+windows Change's W1–W15.
+
+#### §T-A. Where the chapel stands (game-service map data and constants)
+
+1. **The chapel moves whole (charter default M1).** Its footprint (620 × 440), its east door,
+   pews, altar, the Confessor and the four worshippers, and on the client its dais, lectern,
+   candelabra, crucifix, murals and window bays all move by **one offset**: every one keeps its
+   place relative to the chapel's north-west corner. Nothing inside is rearranged, resized or
+   re-faced. The rules that placed them (R3, R5, R12–R15, R17–R19, R23–R26, W1–W13) hold as
+   written; their indicative figures follow the offset.
+   - **Placement rules**, replacing R4's: the chapel stands in the map's south-west, on the
+     ground the graveyard held (x 40–580, y 1020–1520) or south of it under T3; its west wall is
+     no more than 240 px from the map's west edge (the tower and a walk round it lie between);
+     its centre is screen-left of every other building's (`x − y` the smallest); T3 holds.
+   - **Indicative** (offset (−740, +200) from the shipped layout):
+     | What | Where |
+     |---|---|
+     | Chapel footprint | (220, 1300), 620 × 440 (x 220–840, y 1300–1740) |
+     | Door gap (east wall) | x 820–840, y 1480–1560 |
+     | Ground in front of the door | x 840–920, y 1480–1560 |
+     | Pews, north of the aisle | (570, 1370), (640, 1370), (710, 1370), each 20 × 100 |
+     | Pews, south of the aisle | (570, 1570), (640, 1570), (710, 1570), each 20 × 100 |
+     | Altar | (380, 1480), 30 × 80 |
+     | Confessor | (465, 1520) |
+     | Penitent, Chandler | (615, 1455), (685, 1455) |
+     | Goodwife, Ploughman | (545, 1585), (615, 1585) |
+     | Dais (client) | centred (365, 1520): x 300–430, y 1420–1620 |
+     | Lectern, candelabra (client) | (450, 1450); (395, 1450) and (395, 1590) |
+     | Crucifix, murals (client) | (242, 1520); (242, 1410) and (242, 1630) |
+     | Nave lancets (client, W3–W4) | x 320, 400, 480, 560, 640, 720, mirrored about x 530 |
+     | East lancets (client, W5) | y 1400 and 1660, mirrored about y 1520 |
+     On screen the chapel's centre (530, 1520) lies at screen x −792, where the old graveyard's
+     centre lay (−768); the map's leftmost point is −1600 and the spawn 160.
+2. **Nothing else in town moves (charter default M6).** The spawn, the gates and their arrivals,
+   the dev test room's gate and arrival, the three other buildings with their furnishings and
+   people, the function NPCs and all four wandering residents' quarters keep their numbers. The
+   Woodcutter's and the Bellringer's quarters stay in the east field (1780–1960 × 1000–1160 and
+   1780–1960 × 1240–1400): no rule forces a move (T23 shows R39 holds for them), and moving them
+   back toward the square is not asked **(v1 pick: the charter moves a quarter only where a rule
+   forces it)**.
+3. **The dev test room's gate stays in sight (charter default M8).** No part of the chapel
+   (walls, roof, gable crosses) or of the tower is drawn over the dev gate's ground.
+   - **The gate's ground:** the gate's point (120, 900), where its label is drawn; every point
+     within the gate's range (`GateRange`, 80) of it; its arrival (260, 900); and the straight
+     walk between the two, a player wide (`PlayerRadius`, 20, either side). Tested on a grid no
+     coarser than 10 px, each point as a body (`NPC_BODY_HALF` either side), by R39's model:
+     `hiddenBehind` against the chapel's bulk and the tower's (T23).
+   - **Why the chapel stands at y 1300 and not 1020 (indicative arithmetic).** The chapel's roof
+     has 6 rows a side, so its ridge is lifted 141.1 + 6 × 27.4 = 305.7 screen px
+     (`BAKE.WALL_BACK`, `ROOF_RISE`, × `VPX` 39.19). With the chapel's ridge allowance (73) and
+     `ROOF_OVERDRAW` (10) its ridge row is drawn up to 388.7 px, and a screen column falls
+     0.8 px per world px, so the row hides ground up to 388.7 / 0.8 = **486 world px** up-screen
+     of its north edge (chapel y + 180). The gate ground's southmost point is (120, 980); its
+     column meets the ridge row at x = chapel y − 680, inside the roof's span. It is clear only
+     when chapel y + 180 − 980 > 486: **chapel y > 1286**. The script, with body halves on the
+     10 px grid: y 1290 leaves one point hidden, **y 1300 clears all**. (The north eave is the
+     weaker bound: (141.1 + 10) / 0.8 = 189, so chapel y > 1189.)
+   - **The tower never meets the gate's columns:** the tower's footprint spans screen columns
+     `x − y` −1510 to −1230, the gate's ground −893 to −610. They are 337 world px apart, so no
+     height of tower can cover it.
+   - **If a test finds the gate's ground covered,** in this order: move the chapel, with its
+     tower, graveyard, people, paths and crosses, **south only** until it is clear, inside T4's
+     limit; if it is still covered, move the tower to a corner of the chapel where it is clear
+     (T6); if it is still covered, stop and escalate. The gate itself never moves.
+   - A fixture proves the test can fail: the chapel's bulk 100 px further north reports the
+     gate's ground hidden.
+4. **The town grows south again (charter default M7).** `HubMapWidth` stays 2000; `HubMapHeight`
+   becomes the smallest multiple of 100 that holds the chapel, the tower, the strip and the
+   paths: **2000** under the indicative layout (the strip's south wall stands at y 1980), up from
+   1700, and **never more than 2000**. A layout that needs more is an escalation, not a bigger
+   constant. *(Amended 2026-11-25, A5: **2200** as built. The owner had the strip made twice as
+   deep, its south wall at y 2170, and approved growing the map for it: the smallest multiple of
+   100 that leaves the 20 px below the strip it had. 2200 is the limit now; more is still an
+   escalation.)*
+   - No existing coordinate moves for it. The movement clamp follows the constant (`HubBounds`).
+   - As R32 found, the code holds no fence and no beyond-edge dressing along the south edge, so
+     nothing moves with the edge; a later one follows it.
+   - The indicative layout uses the whole 300 px: the chapel cannot stand north of y 1300 (T3)
+     and the strip needs the 240 px below its south wall. If a test needs the chapel a little
+     further south, the strip tightens (its walkway and its slots' spacing, T20) before the map
+     grows; past 2000, escalate.
+5. **The old site is plain ground (charter default M4).** Nothing of this FS is left on the
+   chapel's old footprint (960–1580 × 1100–1540), in front of its old door (1580–1660 ×
+   1280–1360) or along its old paths: no wall, furnishing, person, dressing, graveyard piece or
+   path, **but for T22's chapel lane**. The lane continues south from the square's path along
+   the old site's west edge: it starts on the footprint's west line (x 960), is its own 70 px
+   wide (x 960–1030), and runs from north of the footprint to south of it, on its way to the
+   chapel's door and the graveyard. It is the only path that crosses the old footprint; no path
+   reaches the old door's front, and R31's four rects and the old door's spur are gone. The
+   ground plan lays the town's ground there by itself. Nothing new is placed. The existing
+   dressing around it (the crates and the signpost south of the spawn) keeps its places.
+   *(Amended 2026-11-25, A1; was: "Nothing of this FS is left on the chapel's old footprint
+   (960–1580 × 1100–1540), in front of its old door or along its old paths: no wall, furnishing,
+   person, dressing or path." T22's lane `[960, 820, 70, 1100]` contradicted it; T22 is what is
+   built, and `hubKeepOut.test.ts` holds the exception.)*
+
+#### §T-B. The bell tower as map data (game-service)
+
+6. **A solid tower against the chapel's west end (charter default K1, K2, K4).** One wall
+   entity, square, **about 140 × 140** (130–150 a side), standing **outside** the chapel's
+   footprint: its east face on the west wall's outer face (tower x + w = chapel x) and its
+   centre on the ridge's line (tower centre y = chapel y + h / 2). **Indicative:** (80, 1450),
+   140 × 140 (x 80–220, y 1450–1590). No door gap, no interior, no furnishing, nobody in it.
+   - **It is not a town building.** It is not in `hubBuildings`; R2's four buildings stay four,
+     and the building tests (door gaps, front-of-door ground, flood fills, the golden's
+     buildings) do not see it.
+   - **It carries a `house_id` of its own**, shared with no other wall **(v1 pick)**. With the
+     chapel's id the client's `housesFrom` would grow the chapel's footprint to take the tower
+     in; `uuid.Nil` reaches the client as a non-empty string, which it would read as a house
+     too. A fresh id is what a field obstacle already carries (`field_place.go`), and the client
+     tells the tower by its rect (T10).
+   - Players collide with it as with any wall. It never moves, opens or syncs.
+   - Under T3 only, it may stand at a chapel corner instead: still outside the footprint, its
+     east face on the west wall's outer face or its south face on the north wall's (so T14's
+     first rule holds), still solid.
+7. **The server's layout tests hold the tower:**
+   - its size, and that it abuts the west wall centred on the ridge's line (or, moved under T3,
+     which corner and why, in the test's name);
+   - it lies inside the map, with at least `2 × PlayerRadius + 20` (60) of ground between it and
+     the map's west edge, and a player-sized walker from the spawn reaches ground on its north,
+     west and south sides: nobody is sealed in, and nothing is sealed off;
+   - no lane (R5, the 240 px corridors) crosses it; the spawn, every arrival and the dev test
+     room's arrival lie outside it; every quarter lies outside it;
+   - every outdoor fixed resident stands more than `NPCInteractRange` from it (R20 reads "every
+     wall", the tower included).
+8. **The golden records the tower.** `hubTown.golden.json` gains the tower's rect (indicative
+   key `bellTower`: `x`, `y`, `w`, `h`), written by its Go test with `-update`, never by hand
+   (FS-MMA2H R12). The built-hub check proves the hub holds exactly one wall on that rect, with
+   a `house_id` no other wall carries.
+
+#### §T-C. Drawing the tower and the moved chapel (game-client)
+
+9. **The mirror follows the golden.** `HUB_SIZE`, `HUB_CHAPEL`, `HUB_FURNISHINGS`,
+   `HUB_FIXED_RESIDENTS`, the chapel's indoor dressing, its window bays (`CHAPEL_NAVE_LANCETS`,
+   `CHAPEL_EAST_LANCETS`), the chapel's door spur and a new mirror of the tower's rect
+   (indicative `HUB_BELL_TOWER`) are each held to `hubTown.golden.json` by a vitest, as R21
+   holds them today. The test fixture (`hubTown.fixture.ts`) walls the tower too, so the
+   keep-out rule K1 keeps dressing off it and out from under it.
+10. **The tower's wall is not a house.** The scene takes the wall standing on the tower's rect
+    out before it builds houses: it gets no roof plan, floor, door, building exterior, interior,
+    blackout hole or inside test, and it is not drawn as loose wall pieces either. It is drawn
+    as one baked prop, `chapel_tower` (T24), on its rect's centre.
+    - Without the sheet it draws a placeholder block on its rect, never nothing: it is solid,
+      like a furnishing (R24).
+    - A wall with a lone `house_id` on any other rect is a house as before: the tower is told by
+      its rect, not by standing alone.
+11. **Draw order.** The tower sorts so that:
+    - a player or NPC standing north or west of it is drawn behind it, one standing south of it
+      in front;
+    - every chapel piece (wall, post, roof, gable) **that shows over the tower** sorts in front
+      of it: every roof piece that meets it does, so the roof's west verge dies into the tower,
+      never the other way round. A wall or gable piece that the roof in front covers wholly
+      where it meets the tower may sort behind the tower: none of its pixels shows there.
+      `bellTowerOrder.test.ts` holds this pixel by pixel from the baked atlas.
+    **The key, as built:** the tower sorts 15 key behind its footprint's centre
+    (`HUB_BELL_TOWER_SORT`: key 1655 under the indicative layout, the centre's being 1670). That
+    is inside the only legal window. Above: a body pressed to the tower's north face at its east
+    end, or its west face at its south end, reaches key 1650.9 with its layers and must be drawn
+    behind the tower. Below: the west gable's piece against the ridge sorts at 1660 and must be
+    drawn over it.
+    *(Amended 2026-11-25, A2; was: "every chapel wall, post, roof and gable piece that overlaps
+    it on screen is drawn in front of it" and "The key is the developer's (its footprint's
+    centre passes both by the spec-time arithmetic); tests hold the two rules." The arithmetic
+    was wrong: the centre's key, 1670, draws the tower over the gable piece at 1660; and no key
+    puts every overlapping piece in front while keeping a body north of the tower behind it.)*
+12. **It never fades (v1 pick).** The tower is a piece of the chapel's exterior for FS-9PN7X
+    §E: it takes no occluder fade, and a player it covers shows as the silhouette, through the
+    same cover list the roofs use. Reason: the roof beside it never fades, and a church tower
+    gone 40% clear over a player would open the building. Other players and NPCs behind it are
+    covered, as behind any building.
+13. **The tower does not lift, and hides with the street (charter default K4; v1 pick for the
+    indoor rule).** It is no part of the roof plan: nothing lifts, tweens or cuts it away, and
+    from the street it always stands whole. While the player is inside **any** town building,
+    the chapel included, it is hidden with everything else outside that building, by the one
+    rule that ships (FS-9PN7X §C.1): it stands outside the chapel's footprint.
+    - Reason: indoors, FS-9PN7X §D fills everything outside the building's raised floor rect
+      with the canvas's darkest ink. A tower left drawn would show only as a 24 px sliver in the
+      blackout's headroom over the west wall. Showing it whole would mean cutting the blackout's
+      hole to the tower's outline, a change to the shared blackout the charter's bounds do not
+      cover. The owner judges at the browser check; that would be a further Change.
+14. **The tower never covers the chapel's interior view (charter default K4).** Two rules, each
+    a test:
+    - **It stands wholly behind the room.** The tower's footprint lies wholly west of the west
+      wall's outer face (tower x + w ≤ chapel x) or wholly north of the north wall's (tower
+      y + h ≤ chapel y). A thing covers a point only from further down its screen column, at a
+      greater x **and** a greater y; nothing in the tower has both greater than a point of the
+      room. So no height of tower can stand in front of the floor, a furnishing, a person, the
+      west wall's inner face or what hangs on it.
+    - **It is not drawn while the roof is lifted** (T13), so nothing of it shows over the west
+      wall or in the blackout's headroom.
+15. **No new light (charter default K9).** The tower's sheet declares no light; the bell stage
+    is unlit. The candelabra stay the chapel's only lights (R15).
+16. **The west gable end is plain where the tower stands (v1 pick).** The chapel's west gable
+    lays its plain frame at the apex (frame 0), not the apex frame: no cross and no rose window
+    at that end. The east gable keeps both.
+    - Reason, by arithmetic: the west gable's centreline is 10 px east of the tower's east face,
+      and its apex cross reaches 379 px, between the ridge (306) and the tower's masonry top
+      (353). It would be drawn dead centre over the tower's east belfry opening and its bell.
+      A church with a west tower carries its cross on the tower.
+    - A per-end choice the chapel's look names; every other building's gables are unchanged
+      (the town's timber gable has one frame). R39's chapel ridge allowance still derives from
+      the east apex.
+17. **The belfry prop is removed (charter default K5).** The bell hangs in the tower now.
+    - `HUB_BELFRY`, its drawing and its tests go; nothing stands where it stood.
+    - The `belfry` sheet leaves the bake catalogue and the manifest, and its model
+      (`models/chapel.js#belfry`, with the helpers only it uses) is deleted: no live line claims
+      it, so it is dead art, not kept "in case".
+    - *Belfry* now names the tower's open bell stage (`CONTEXT.md`). No sheet, constant or file
+      keeps the name for the old prop.
+    - The Bellringer's and the Confessor's lines stay as written (charter default K6): "the
+      tower" in them is the Spire, and there is a bell to climb to again.
+18. **The wayside cross follows the door (charter default M6).** It keeps its place relative to
+    the door, and so R41's as-built clearance of the doorway: **indicative** (895, 1680), r 20,
+    south of the door spur, between the east wall's eave and the path. R41's rules hold.
+
+#### §T-D. The graveyard strip and the paths (game-client dressing; the mourners' points on the server)
+
+19. **The graveyard lies only along the outside of the chapel's south wall (charter default
+    M2).** These replace R27's first rule and R28's size:
+    - the enclosure's x span lies within the south wall's (chapel x to chapel x + w); every
+      piece, wall tile included, stands south of the south wall. **Nothing of it stands west of
+      the chapel's west wall, north of its south wall, or east of its east wall;**
+    - **a small walkway** parts them: the low wall's north run stands 40–80 px south of the
+      south wall's outer face (K1 keeps its tiles off the eave besides);
+    - **everything is kept:** 24 headstones (10 intact in at least two shapes, 9 weathered,
+      5 broken, the broken ones in the old rows), 3 fresh mounds in the newest rows, flowers at
+      6 graves (4 fresh, 2 withered), 2 stone crosses, 3 dead trees, the low broken wall with a
+      collapsed stretch on its north side and on its west side, and **one gap** (T22). R28's
+      counts test stands;
+    - the enclosure may be as small as holds them: R28's "about twice the old area" and its
+      four rows of seven no longer apply. Stones still stand at their grave's west end and face
+      east, rows oldest in the west;
+    - R27's other rules stand: every piece clears K1–K8 (the tower's wall included, T9) and is
+      hidden behind nothing (T23); every piece but the wall lies inside the enclosure; no
+      piece's footprint comes within 12 px of a mourner; each mourner stands inside the
+      enclosure, 40–80 px east of their grave's stone or their mound's head.
+20. **The strip's layout (v1 pick for the plan).** **Indicative**, any plan that passes T19
+    does:
+    - enclosure x 220–840, y 1790–1980 (620 × 190), a 50 px walkway north of it;
+    - seven stone lines, oldest west: x 290 (A), 365 (B), 440 (C), 515 (D), 590 (E), 665 (F),
+      740 (G, the newest, by the gap); four slots a line at y 1825, 1865, 1905, 1945;
+      | Line | Slot 1 | Slot 2 | Slot 3 | Slot 4 |
+      |---|---|---|---|---|
+      | A | broken | weathered | intact | broken |
+      | B | intact | broken | weathered, withered flowers (the Veteran's) | weathered |
+      | C | broken | intact | weathered | broken |
+      | D | empty: a dead tree | intact | weathered, withered flowers | weathered |
+      | E | intact | weathered | intact, fresh flowers | weathered |
+      | F | mound | intact, fresh flowers | mound | intact |
+      | G | intact | mound, fresh flowers (the Keener's) | weathered | intact, fresh flowers (the Widower's) |
+    - stone crosses at (250, 1850) and (250, 1930); dead trees at (250, 1890), (515, 1825) and
+      (808, 1816);
+    - *(Amended 2026-11-25, A5; the figures above and the runs' table below stand as first
+      built.)* **As built, twice as deep:** enclosure x 220–840, y 1790–2170 (620 × 380), the
+      50 px walkway kept; the seven lines' x unchanged; the four slots at y 1850, 1940, 2025,
+      2115 (85–90 apart, was 40); the table of graves unchanged; stone crosses at (250, 1880)
+      and (250, 2080); dead trees at (250, 1980), (515, 1850) and (808, 1816); the runs: north
+      as below; west (220, 1790) y 170 and (220, 2000) y 170, collapsed between (y 1960–2000);
+      south (220, 2170) x 620; east (840, 1790) y 50 and (840, 1920) y 250. The gap (y
+      1840–1920) and the graveyard spur do not move.
+    - the low wall's runs:
+      | Run | From | Along | Length |
+      |---|---|---|---|
+      | north, west part | (220, 1790) | x | 240 |
+      | north, east part (collapsed between, x 460–520) | (520, 1790) | x | 320 |
+      | west, north part | (220, 1790) | y | 70 |
+      | west, south part (collapsed between, y 1860–1900) | (220, 1900) | y | 80 |
+      | south | (220, 1980) | x | 620 |
+      | east, north part | (840, 1790) | y | 50 |
+      | east, south part | (840, 1920) | y | 60 |
+      The east side stands open between them (y 1840–1920): **the gap, facing the path**.
+21. **The mourners follow the graveyard (charter default M6).** Server points, names, looks and
+    facings (west) unchanged; R20's rules hold (each more than `NPCInteractRange` from every
+    wall, the tower's included, `NPCInteractRange` + 40 from every function NPC, outside every
+    lane). **Indicative:** the Keener (805, 1865), the Widower (800, 1945), the Veteran
+    (411, 1905). Under the indicative layout each stands 125 px or more from the chapel's south
+    wall, 15 px or more from the nearest piece, and 46–65 px east of their grave's head.
+    *(Amended 2026-11-25, A5:* **as built** *the Keener (805, 1940), the Widower (800, 2115),
+    the Veteran (411, 2025), each at the same grave, moved south with its slot. The Keener and
+    the Widower now stand 175 px apart, so no point is in talk range of both.)*
+22. **The paths are redrawn (charter default M5).** R31's rules stand (the lane joins the
+    existing paths; the door spur runs from the sill to the lane; a spur runs from the lane to
+    the graveyard's gap; no path crosses a room's floor; every outdoor spot still clears K1–K8).
+    The four rects of R31's chapel way go, the east arm's extension among them: nothing leads to
+    the old site. **Indicative:**
+    | Rect [x, y, w, h] | What |
+    |---|---|
+    | [960, 820, 70, 1100] | the chapel lane, south from the foot of the square's own path (`[940, 500, 130, 320]`), past the spawn, to the graveyard spur |
+    | [840, 1480, 120, 80] | the chapel's door spur, from its sill east to the lane |
+    | [840, 1855, 120, 50] | the graveyard spur, from the lane west to the gap in the strip's east side |
+    The lane's x 960–1030 clears the crates and the signpost south of the spawn (the nearest,
+    the crate at (1050, 910), by 6 px).
+
+#### §T-E. Nothing outdoors is hidden (R39, extended to the tower)
+
+23. **R39 holds against the tower too (charter default K7).** Everything R39 covers (the Elder,
+    the mourners, every point of every quarter, every graveyard piece and wall tile), and now
+    the dev gate's ground (T3), is hidden behind neither the chapel's bulk nor the tower's.
+    - **The tower's bulk:** its footprint raised to the top of what is drawn there. v1 is a box
+      to the sheet's drawn top above its origin (a named constant, held to the manifest's frame
+      by a test, as the roofs' allowances are); a model that follows the spire is the
+      developer's call if a test ever needs the room, so long as a test holds the drawn pixels
+      under it. Indicative top: about 530 screen px.
+    - **Indicative arithmetic.** The chapel's bulk spans screen columns `x − y` −1550 to −430
+      and the tower's −1510 to −1230. The Elder stands on column 460; the quarters span
+      −200 to 180 (Cottar), 500 to 960 (Herbwife), 620 to 960 (Woodcutter) and 380 to 720
+      (Bellringer). None shares a column with either, so neither can cover them at any height.
+      The strip and the mourners stand south of the chapel's south eave (y ≥ 1782 against the
+      roof's edge at 1760) and of the tower's south face (1590): in front of both, never behind.
+    - **What the tower does hide:** a pocket of ground west and north-west of it, to the map's
+      edge (x 0–210, y 1230–1580 under the box model). Nothing stands there, and no dressing may
+      (the test covers the graveyard; a player there shows as the silhouette, T12).
+    - Tested client-side in the pure module, with a fixture that fails: a point just north-west
+      of the tower is reported hidden.
+
+#### §T-F. Art (game-client bake)
+
+24. **`chapel_tower`, baked from code (charter default K2, K3; ADR-0020, ADR-0021).** One prop
+    sheet, one frame, in the resident `chapel` group, framed round a 140 × 140 footprint with
+    its anchor on the footprint's centre; colours from `BARROW`, the whites mixed toward
+    `vellum`, never pure white; no light.
+    - **Material:** the chapel's aged whitewashed limestone, from the same material code as the
+      `chapel_` walls (grime streaks, moss at the foot, patches where the lime fell away), so
+      tower and nave read as one building.
+    - **Lower stage:** a solid wall from the ground to the belfry's floor, with **one**
+      slit lancet, on the south face **(v1 pick: one, and on the face that stands free; the east
+      face's lower stage is behind the chapel's roof, and the north and west faces are never
+      seen)**. A string course parts the stages.
+    - **Upper stage, the belfry:** open, a pointed opening on each face the camera sees (south
+      and east), and **two dark bronze bells, one hung behind each of the two openings**. The
+      camera looks down the footprint's diagonal, so what shows in the middle of an opening
+      stands as far to the side as it stands back: a single bell on the tower's axis shows
+      through neither opening, only behind the corner between them. Built; the owner judges at
+      the browser check. *(Amended 2026-11-25, A3; was: "a **dark bronze bell** seen hanging
+      inside through them".)*
+    - **Spire:** a slate pyramid, the chapel roof's slate, on a small eave, with a cross on its
+      apex.
+    - **Heights**, in tile edges (`BAKE.WALL_BACK` is 3.6; the chapel's ridge stands at 7.8 and
+      its east gable's cross tops out at 9.7), each a test on the model or the frame:
+      - the masonry's top, at the spire's eave, is **2.5 × `WALL_BACK` = 9.0**, give or take
+        half an edge **(v1 pick for what "about 2.5× the wall height" measures: the stonework.
+        The whole tower cannot be 9.0 and stand above a 9.7 cross)**;
+      - each belfry opening's upper half, and the bell's, stand above the chapel's ridge (7.8):
+        indicative sill 7.0, apex 8.7, the bell from 7.6 to 8.5;
+      - the spire's cross tops out at least 2.5 edges above the east gable's cross: indicative
+        apex 12.4, cross top 13.2 (about 517 screen px over the ground).
+      - **As built** *(Amended 2026-11-25, A3; the indicative figures above stand as the
+        spec-time estimate)*: the masonry's top 9.3 edges (inside 9.0 ± 0.5); the belfry's sill
+        7.0; each bell from 7.46 to 8.22; the spire's apex 12.5; the cross's top about 13.4. The
+        sheet's drawn top is 533 screen px above its origin, which is `BELL_TOWER_TOP` (T23),
+        tied to the manifest's frame by a test. The owner judges the height at the browser
+        check.
+      - **Raised** *(Amended 2026-11-25, A4; was: the as-built figures above, and the first
+        two rules)*: the owner found the roof cutting the belfry. The whole belfry stage now
+        stands above the ridge (7.8): the string course from 8.14 to 8.32, the belfry's sill
+        8.7, the openings' apex about 10.4, each bell from 9.16 to 9.92, the masonry's top
+        **11.0** (about 3 × `WALL_BACK`, give or take half an edge; no longer 2.5 ×), the
+        spire's apex 14.2, the cross's top about 15.1. The 1.7 edges are the lower shaft's; the
+        slit lancet stands 0.85 higher (sill 3.85). The frame is 234 × 661 with its anchor at
+        (0.5, 0.9077): its drawn top is **600** screen px above its origin, which is
+        `BELL_TOWER_TOP`. The tests now ask that each opening's sill, the string course under
+        it and each bell's lip stand at least 0.3 above the ridge.
+    - **No baked ground shadow (v1 pick):** a tower this tall would paint its shadow across the
+      chapel's roof and the ground north of it from inside one sprite.
+    - Dark fantasy, weathered: the spire's slates slipped in places, the cross a little off
+      true, as the old belfry's was.
+25. **The atlas.** `chapel_tower` joins the `chapel` group and `belfry` leaves it (T17); the
+    `chapel` atlas reflows. Every other atlas keeps its bytes. `npm run bake -- --check` is
+    clean after the commit. No contact-sheet gate (R38): the owner looks in the browser.
+
+#### §T-G. The minimap, and the bounds
+
+26. **The minimap and the client's size follow (charter default K8, M7).**
+    - `HUB_SIZE` is 2000 × `HubMapHeight`, held to the golden's `mapSize` (R22). The ground, the
+      camera's reach, the blackout's reach and K7 follow it by themselves.
+    - The town minimap's scale follows R22's formula, 0.0833 × 3000 / (2000 + height):
+      **0.0625** at 2000 (it was 0.0676), so the map shrinks a little more. *(Amended
+      2026-11-25, A5: **0.0595** at 2200, 0.0833 × 3000 / 4200.)*
+    - The minimap shows the chapel at its new place, its door notched on its east side, and the
+      **tower's block** solid in the walls' ink against its west side, with no notch. A test
+      proves both.
+    - **Bounds (charter).** game-client (bake, drawing, minimap) and game-service (hub map
+      collision, the chapel's and people's places, the map height). The hub's state gains one
+      wall, in the shape every wall already has: no proto, WS message, `WallState` or `NPCState`
+      field, DB, gateway or other service changes. If one looks needed, stop and escalate.
+
+### User Stories
+
+1. As a player in the square, I want to see a church with a bell tower far to my left, so that
+   the town has a landmark I can steer by.
+2. As a player, I want a trodden path from the square to the chapel's door, so that I find it
+   in its new place without hunting.
+3. As a player, I want the chapel's room exactly as I knew it, so that only its place changed.
+4. As a player, I want the tower to rise clearly over the chapel's roof, with a bell in its open
+   top, so that it reads as a bell tower and not a chimney.
+5. As a player, I want to walk round the tower and bump into it, so that it is a real thing in
+   the town.
+6. As a player inside the chapel, I want the same clear view of the nave as before, so that the
+   tower costs me nothing indoors.
+7. As a player, I want the graveyard beside the chapel's long wall, with a path to its gap, so
+   that the dead lie by their church.
+8. As a player, I want every grave, flower and mourner still there, so that nothing I knew of
+   the graveyard was lost in the move.
+9. As a player, I want never to find a mourner, the Elder or a wandering townsperson drawn
+   hidden behind the chapel or its tower, so that I can see who is there.
+10. As a player, I want the minimap to show the chapel and its tower where they stand, so that
+    the map matches the town.
+11. As a player, I want the ground where the chapel stood to be plain, so that nothing there
+    looks half-removed.
+12. As a developer in a dev build, I want the test room's gate and its label in plain sight, so
+    that I can still find it and walk in.
+13. As the owner, I want the bells in the tower and no bell frame by the door, so that the
+    chapel's bells hang in one place. *(Amended 2026-11-25, A3; was: "I want the bell in the
+    tower and no second bell frame by the door, so that the chapel has one bell." Two bells
+    hang in the belfry, one behind each seen opening, T24; the owner judges at the browser
+    check.)*
+14. As a developer, I want the gate's and the people's visibility held by tests with fixtures
+    that fail, so that a later move of the chapel cannot bury them unnoticed.
+15. As a developer, I want the tower's rect in the golden, so that a server move the client
+    missed fails at review.
+
+### Acceptance Criteria
+
+- [ ] `HubMapHeight` is the smallest multiple of 100 that holds the layout and at most 2000
+      (2000 under the indicative one) *(Amended 2026-11-25, A5: at most 2200, and 2200 as
+      built)*; `HubMapWidth` 2000; the client's `HUB_SIZE` equals the
+      golden's `mapSize`.
+- [ ] Go test: the chapel is 620 × 440 with its east door; its west wall is at most 240 px from
+      the map's west edge; its centre's `x − y` is the smallest of the four buildings'; every
+      furnishing and every indoor resident keeps its offset from the chapel's north-west corner
+      (the shipped layout's); R5, R12, R13, R19 pass unchanged.
+- [ ] Go test: no hub coordinate changed but the chapel's, its five indoor people's, the three
+      mourners' and the map's height: the spawn, gates, arrivals, three other buildings, function
+      NPCs and four quarters are as before.
+- [ ] Go test (T6, T7): the tower is one wall, 130–150 a side, outside the chapel's footprint,
+      its east face on the west wall's outer face, centred on the ridge's line; it is in no
+      building's wall group and the hub still has four buildings; at least 60 px of ground lies
+      between it and the map's west edge; a player-sized walker from the spawn reaches its
+      north, west and south sides; no lane crosses it; the spawn, arrivals and quarters lie
+      outside it.
+- [ ] Go test (T21): exactly the three mourners stand outdoors, each passing R20 against every
+      wall, the tower's included.
+- [ ] `hubTown.golden.json` carries the tower's rect, the moved chapel, its furnishings, the
+      thirteen fixed residents and the new `mapSize`, rewritten by `-update`; the built hub
+      holds one wall on the tower's rect with a `house_id` no other wall carries.
+- [ ] Vitest (T9): the client's mirrors (the chapel, furnishings, fixed residents with facings,
+      indoor dressing, window bays, door spur, the tower's rect) match the golden; W2–W6 and
+      W12 pass at the new place.
+- [ ] Vitest (T3): no point of the dev gate's ground (its range, its arrival, the walk between;
+      10 px grid, as bodies) is hidden behind the chapel's bulk or the tower's; with the chapel's
+      bulk 100 px further north the same test reports it hidden.
+- [ ] Vitest (T23): no outdoor fixed resident, outdoor function NPC, point of any quarter, or
+      graveyard piece or wall tile is hidden behind the chapel or the tower; a point just
+      north-west of the tower is reported hidden; the tower's drawn pixels lie under its bulk,
+      and the bulk's top equals the manifest frame's.
+- [ ] Vitest (T10): the wall on the tower's rect makes no house (no roof, floor, door, interior,
+      inside test) and no loose wall pieces; it draws `chapel_tower` at its rect's centre, or a
+      placeholder block without the sheet; a lone-id wall on another rect is still a house.
+- [ ] Vitest (T11–T14): a body north or west of the tower sorts behind it and one south of it in
+      front; it sorts by `HUB_BELL_TOWER_SORT`; every roof piece that meets it on screen sorts
+      in front of it, and so does every chapel wall, post and gable piece that shows over it (a
+      piece sorting behind it shows no pixel on it, by the baked atlas) *(Amended 2026-11-25,
+      A2; was: "every chapel wall, roof and gable piece overlapping it on screen sorts in front
+      of it")*; it is in the silhouette's cover and not in the occluders; it is hidden while the
+      player stands in any building and shown on the street; its footprint lies wholly west of
+      the chapel's west wall's outer face (or wholly north of its north wall's).
+- [ ] Vitest (T16): the chapel's west gable lays frame 0 at its apex and its east gable the apex
+      frame; the Inn's, the store's and the smithy's gable plans are unchanged.
+- [ ] Vitest (T17, T18): no `belfry` spot, sheet name or draw call remains; the wayside cross
+      passes R41 by the new door.
+- [ ] Vitest (T19–T21): every graveyard piece and wall tile lies within the south wall's x span
+      and south of the south wall; the low wall's north run stands 40–80 px south of it; R28's
+      counts hold (24 stones: 10 / 9 / 5; 3 mounds; flowers 4 fresh, 2 withered; 2 crosses;
+      3 dead trees); every piece clears K1–K8 against the four buildings and the tower; every
+      piece but the wall lies in the enclosure; none within 12 px of a mourner; each mourner
+      40–80 px east of their grave's head; the wall has one gap.
+- [ ] Vitest (T22, T5): the lane joins the square's path; the door spur runs from the sill to
+      the lane; the graveyard spur from the lane to the gap; no path crosses a room's floor;
+      every outdoor spot clears K1–K8; R31's four rects and the old door's spur are gone; no
+      path crosses the old door's front; the only path crossing the old footprint is the chapel
+      lane, which starts on its west line and runs from north of it to south of it; no dressing
+      spot, graveyard piece, wall tile or cross of this FS lies on the old footprint, the old
+      door's front or the old paths. *(Amended 2026-11-25, A1; was: "no path rect, dressing
+      spot or graveyard piece of this FS lies on the old site or its old paths".)*
+- [ ] Vitest (T26): the town minimap is drawn at 0.0625 for a 2000 × 2000 town *(Amended
+      2026-11-25, A5: 0.0595 for the 2000 × 2200 town)*; it shows the
+      chapel with its east notch and the tower's block against its west side, without a notch.
+- [ ] The manifest carries `chapel_tower` (one frame, the `chapel` group, no light, no baked
+      shadow, framed round 140 × 140 with its anchor on the centre) and no `belfry`; the model's
+      heights pass T24 (masonry top 9.0 ± 0.5 edges; the openings' and the bell's upper halves
+      above 7.8, a bell behind each of the two openings *(Amended 2026-11-25, A3)*; the cross's top at least 2.5 edges over the east gable's) *(Amended 2026-11-25, A4: masonry top 11.0 ± 0.5; the openings, the string course under them and the bells wholly above 7.8)*; every non-chapel
+      atlas is byte-identical; `npm run bake -- --check` is clean.
+- [ ] No proto, WS message, `WallState` or `NPCState` field, DB or gateway change; no file
+      outside `game-server/game-service` and `game-client` changes but these records.
+- [ ] `go test ./...` and `make lint` (game-service); `npm test`, `npm run lint`,
+      `npm run lint:fence`, `npx tsc --noEmit` (game-client) pass.
+- [ ] Nick's browser look passes, or each finding is written back as an amendment or an issue.
+
+### Edge States
+
+- **A player behind the tower** (west or north-west of it, in its pocket). The tower covers
+  them and their silhouette shows through, as behind any building (T12). The pocket is open at
+  both ends: 80 px between the tower and the map's edge under the indicative layout.
+- **A player inside the chapel.** The roof is lifted and the tower is hidden with the street
+  (T13); the west wall, the crucifix and the murals show exactly as today.
+- **A player in the chapel's door gap.** Inside, as today (edges inclusive): the roof and the
+  tower are hidden from the first step.
+- **A player on the walkway** between the south wall and the strip. In front of the chapel,
+  never covered; the low wall's north run and a dead tree may stand in front of them, the tree
+  fading as tall dressing does.
+- **Tall graveyard pieces in front of the south wall.** The strip's crosses and dead trees
+  stand in front of the south wall's lancets and may cover part of one. No rule forbids it; the
+  indicative plan keeps them at the strip's ends and one mid-row. The owner judges.
+- **The chapel's hashed details change.** The open plain-or-pillar choices and every piece's
+  variant frame are hashed by position (`tileHash`), so the moved chapel's walls differ in small
+  ways from the shipped one's. The fixed bays (W1–W6) do not.
+- **The east wall's north lancet is clear now.** The belfry stood in front of it (the windows
+  Change's edge state); only the wayside cross stands by the door.
+- **The lane on the old site's west edge** *(Amended 2026-11-25, A1; new edge state)*. A player
+  walking south from the spawn follows trodden ground down the west 70 px of where the chapel
+  stood (T5, T22). The rest of the old site is plain ground with no path to it. The owner judges
+  at the browser check whether the lane reads as passing by or as leading there.
+- **The old south-west yard** (the stall at (630, 950), the fence at y 950, the hay cart, the
+  woodpile). All stand clear of the chapel's bulk: the y 1300 the gate needs clears them too.
+- **A client older than the server's map.** It draws the tower's wall as a small timber house
+  with a roof, the chapel in timber at its new place (its footprint check misses) and the
+  graveyard where it used to be, and its ground stops at y 1700. The vitest mirror catches the
+  drift before merge; a deployed client and server ship together.
+- **Client without the tower's art.** A placeholder block on the tower's rect (T10); the
+  minimap still shows its block.
+- **A manifest that still has `belfry`** (older art, newer code). Nothing draws it.
+- **Production builds.** The dev gate does not exist there; T3 still holds the ground clear,
+  and costs nothing.
+- **Two players either side of the tower.** Player collision is off in the hub (FS-X2F2H); the
+  tower blocks both alike.
+- **Hub tick cost.** One more wall for the movement system to test; no new NPC.
+
+### Out of Scope
+
+- An enterable tower, stairs, a door in it, or anything inside it (charter).
+- A bell that rings, swings or sounds; any sound (charter).
+- Raising or restyling any other building (charter).
+- A tower that stays in view while the player is indoors (T13): it needs the blackout's hole
+  cut to the tower's outline, a change to FS-9PN7X §D's shared geometry.
+- A lit belfry, a lantern, or any new light (T15).
+- Moving the Woodcutter's or the Bellringer's quarter back toward the square, or toward the
+  tower (T2); any new line for anyone (K6).
+- New dressing on the old site, new south-edge fences or beyond-edge dressing (T4, T5).
+- Collision for any graveyard piece or the low wall (R27 stands: dressing).
+- Moving, restyling or re-labelling the dev test room's gate (FS-BDRTJ is untouched).
+- A general "solid prop" system: the tower is one wall the client knows by its rect.
+- Any proto, WS message, wire field, DB or gateway change, and any other service.

@@ -103,7 +103,10 @@ func TestHub_EveryWallInABuilding_CarriesItsHouseID(t *testing.T) {
 		require.NotEqual(t, uuid.Nil, wall.HouseID, "a hub wall at (%.0f, %.0f) belongs to no building", at.X, at.Y)
 		houses[wall.HouseID] = append(houses[wall.HouseID], rect{X: at.X, Y: at.Y, W: wall.Width, H: wall.Height})
 	}
-	require.Len(t, houses, 4, "the town's buildings")
+	// the bell tower is one wall under a house id of its own, outside every
+	// building (FS-R4MYX §Change: The chapel moves to the far left and gains a
+	// bell tower, T6)
+	require.Len(t, houses, 5, "the town's four buildings and the bell tower")
 
 	footprint := func(walls []rect) rect {
 		minX, minY, maxX, maxY := walls[0].X, walls[0].Y, walls[0].X+walls[0].W, walls[0].Y+walls[0].H

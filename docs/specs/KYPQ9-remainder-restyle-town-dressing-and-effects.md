@@ -695,3 +695,5 @@ P10. **One writer.** The canvas's default cursor is set in one place, the game's
   `canvas.style.cursor =` writes outside `pointerLook.ts`.
 
 ## Change: The chapel and the graveyard → FS-R4MYX
+
+## Change: The chapel moves to the far left and gains a bell tower → FS-R4MYX

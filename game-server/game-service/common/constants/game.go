@@ -332,10 +332,17 @@ const RunPlayerDamage = false
 // the town grew south for the chapel and its graveyard, every older coordinate
 // kept: the smallest multiple of 100 that holds the chapel at the owner's bigger
 // size and the graveyard moved out from behind its roof (owner feedback F1, F3,
-// F5). FS-R4MYX §Requirements 1. The town golden carries both (mapSize), and the
-// client's HUB_SIZE is held to it. FS-R4MYX §Requirements 22.
+// F5). FS-R4MYX §Requirements 1. 2000 deep since the chapel moved to the far
+// left with its bell tower and the graveyard to a strip along its south wall:
+// the smallest multiple of 100 that holds them, and the most the hub may be
+// (a layout needing more is an escalation). 2200 deep since the owner had the
+// graveyard strip made twice as deep (y 1790-2170): the smallest multiple of
+// 100 that leaves the 20 below the strip it had, every older coordinate kept.
+// FS-R4MYX §Change: The chapel moves to the far left and gains a bell tower,
+// T4 (amended, A5). The town golden carries both
+// (mapSize), and the client's HUB_SIZE is held to it. FS-R4MYX §Requirements 22.
 const HubMapWidth float64 = 2000
-const HubMapHeight float64 = 1700
+const HubMapHeight float64 = 2200
 
 // The fixed point every player enters and returns to. FS-29KSH §Requirements 22.
 const HubSpawnX float64 = 1000

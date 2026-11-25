@@ -23,7 +23,6 @@ const {
   chapelAltar,
   lectern,
   dais,
-  belfry,
   headstone,
   graveFlowers,
   graveMound,
@@ -57,7 +56,6 @@ const FRAMES = {
   chapel_altar: [chapelAltar],
   lectern: [lectern],
   dais: [dais],
-  belfry: [belfry],
   headstone: Object.entries(HEADSTONES).flatMap(([state, list]) => list.map((_, i) => () => headstone(state, i))),
   grave_flowers: [() => graveFlowers("fresh"), () => graveFlowers("withered")],
   grave_mound: [graveMound],
@@ -75,8 +73,6 @@ const FOOTPRINT = {
   chapel_altar: { size: [30, 80], tallest: u(80) },
   lectern: { size: [20, 20], tallest: u(90) },
   dais: { size: [130, 200], tallest: u(4) },
-  // r 20 (R30): its silhouette within a tile about its spot
-  belfry: { size: [40, 40], tallest: u(240) },
   headstone: { size: [26, 30], tallest: u(48) },
   grave_flowers: { size: [16, 16], tallest: u(8) },
   grave_mound: { size: [50, 28], tallest: u(14) },
@@ -135,13 +131,10 @@ describe("the chapel's and the graveyard's props stand on their footprints (FS-R
     expect(b.z1 - b.z0).toBeGreaterThanOrEqual(u(200) * 0.95);
   });
 
-  it("stands the belfry and the stone cross tall over every headstone, the belfry tallest (R30, R36)", () => {
+  it("stands the stone cross tall over every headstone (R36)", () => {
     const top = (build) => boxOf(build()).y1;
     const stones = FRAMES.headstone.map(top);
     expect(top(stoneCross)).toBeGreaterThan(Math.max(...stones) * 1.5);
-    expect(top(belfry)).toBeGreaterThan(top(stoneCross));
-    // over a body's height and more: an occluder, as the town's tall dressing is
-    expect(top(belfry)).toBeGreaterThan(4);
   });
 
   it("stands the wayside cross taller than the graveyard's stone cross, its arms along y so it faces east (R41)", () => {

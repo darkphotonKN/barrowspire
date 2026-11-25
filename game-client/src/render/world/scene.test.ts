@@ -560,6 +560,14 @@ describe("a roof set by its prefix (FS-R4MYX R23, R42: the chapel's slate roof)"
     expect(parts.filter((p) => indexOf(p) === GABLE_APEX)).toHaveLength(4);
   });
 
+  it("should show the plain frame at the apex of an end named plain, and the apex frame at the other (FS-R4MYX T16)", () => {
+    const { scene } = stubScene();
+    const parts = addGables(scene, withApex(CHAPEL_ROOF), house, 20, "chapel_", ["w"]);
+    const plan = planGables(house, 20, "chapel_", ["w"]);
+    expect(parts.map(indexOf)).toEqual(plan.map((p) => p.index));
+    expect(parts.filter((p) => indexOf(p) === GABLE_APEX)).toHaveLength(2);
+  });
+
   it("should fall back to the placeholder roof and no gables without the chapel's set, never to the town's", () => {
     const { scene, made } = stubScene();
     const art = withApex(TOWN_ROOF);

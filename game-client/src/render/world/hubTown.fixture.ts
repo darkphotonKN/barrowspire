@@ -9,7 +9,8 @@
  * and whatever the client keeps by hand (HUB_DOOR_SPURS, the indoor dressing) is checked against
  * the moved gap.
  */
-import type { DoorFace, TownBuilding } from "./hubTownGolden";
+import type { WallState } from "@/types/gameState";
+import { HUB_TOWN_GOLDEN, type DoorFace, type TownBuilding } from "./hubTownGolden";
 
 /** hub_map.go `hubWallThickness`. */
 export const TOWN_WALL_THICK = 20;
@@ -62,4 +63,27 @@ export function townOutline(b: TownBuilding): [number, number, number, number][]
   return b.doorFace === "east"
     ? [north, west, [b.x, south, b.w, t], [east, b.y, t, from - b.y], [east, to, t, b.y + b.h - to]]
     : [north, west, [east, b.y, t, b.h], [b.x, south, from - b.x, t], [to, south, b.x + b.w - to, t]];
+}
+
+/**
+ * The town's outer walls as the golden lays them out, as the walls a hub state carries: each
+ * building's five under its own `house_id`, then the bell tower's one wall under a `house_id` no
+ * other wall carries (hub_map.go addHubSolid; FS-R4MYX T6, T9), so the keep-out rule K1 keeps
+ * dressing off the tower and out from under it. Furnishings and partitions are left out: they
+ * stand indoors.
+ */
+export function townWalls(): WallState[] {
+  const { x, y, w, h } = HUB_TOWN_GOLDEN.bellTower;
+  return [
+    ...HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+      townOutline(b).map(([wx, wy, width, height], k) => ({
+        entity_id: `b${i}w${k}`,
+        house_id: `b${i}`,
+        position: { x: wx, y: wy },
+        width,
+        height,
+      })),
+    ),
+    { entity_id: "bell-tower", house_id: "bell-tower", position: { x, y }, width: w, height: h },
+  ];
 }
