@@ -42,7 +42,7 @@ func standsOnGround(s *Session, x, y float64) bool {
 
 // A level-17 mage in the start room recalls two teammates standing in two
 // other rooms: after 3 s both stand within 2 cells of the mage, on ground and
-// off every body; 50 mana is paid and recall is sent spent until the party
+// off every body; 75 mana is paid and recall is sent spent until the party
 // climbs, then ready. AC 1; R8, R25, R32.
 func TestCastSkill_RecallPullsTwoTeammatesFromOtherRooms(t *testing.T) {
 	s := newRun(t, &countingItemsClient{})
@@ -82,7 +82,7 @@ func TestCastSkill_RecallPullsTwoTeammatesFromOtherRooms(t *testing.T) {
 		assert.Equal(t, s.dungeon.roomRegion(start), s.dungeon.regionAt(at.X, at.Y), "teammate %d in the mage's room", i)
 	}
 	assert.GreaterOrEqual(t, math.Hypot(transformOf(t, mates[0]).X-transformOf(t, mates[1]).X, transformOf(t, mates[0]).Y-transformOf(t, mates[1]).Y), 2*constants.PlayerRadius-1e-6, "not on each other")
-	assert.Equal(t, manaBefore-50, currentResource(mageBody), "50 mana")
+	assert.Equal(t, manaBefore-75, currentResource(mageBody), "75 mana")
 	assert.Equal(t, true, pageOnWire(t, s, mage, components.PageRecall)["spent"], "spent on the wire")
 
 	require.NoError(t, s.regenerateFloor())

@@ -62,7 +62,7 @@ func assertNothingSpent(t *testing.T, s *Session, body *ecs.Entity, manaBefore i
 }
 
 // A level-2 mage casts Witchlight at a walkable point 5 cells off: casting
-// shows in their book for 1 s, then 20 mana is paid, the 45 s cooldown starts
+// shows in their book for 1 s, then 30 mana is paid, the 45 s cooldown starts
 // and a witchlight stands in every recipient's state at the point for 20 s.
 // AC 1; R16–R17, R21, R32, R34.
 func TestCastSkill_WitchlightCastsForASecondThenLightsThePointFor20Seconds(t *testing.T) {
@@ -85,7 +85,7 @@ func TestCastSkill_WitchlightCastsForASecondThenLightsThePointFor20Seconds(t *te
 
 	assert.Nil(t, bookOf(t, body).Casting)
 	assert.NotContains(t, frameOf(t, s, types.WorldTypeRun, mage)["current_player"].(map[string]any)["book"], "casting")
-	assert.Equal(t, manaBefore-20, currentResource(body), "20 mana")
+	assert.Equal(t, manaBefore-30, currentResource(body), "30 mana")
 	assert.Equal(t, components.BookCooldown{Remaining: 45, Total: 45}, bookOf(t, body).Cooldowns[components.PageWitchlight])
 	require.Len(t, witchlights(s), 1)
 	for _, recipient := range []uuid.UUID{mage, other} {
@@ -179,7 +179,7 @@ func TestCastSkill_WitchlightRefusedWithNothingSpent(t *testing.T) {
 		// to the first cast's completing tick
 		ticks(s, castTicks(1)-10)
 		assert.Len(t, witchlights(s), 1, "one light, the first cast's")
-		assert.Equal(t, manaBefore-20, currentResource(body), "paid once")
+		assert.Equal(t, manaBefore-30, currentResource(body), "paid once")
 	})
 }
 

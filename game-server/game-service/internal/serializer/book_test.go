@@ -38,15 +38,15 @@ func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 	me := ownFrame(t, em, types.WorldTypeRun, warrior)
 	require.Contains(t, me, "book")
 	assert.Equal(t, map[string]any{"pages": []any{map[string]any{
-		"id": "heave", "unlock_level": float64(3), "cost": float64(25),
+		"id": "heave", "unlock_level": float64(3), "cost": float64(40),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
 		"cooldown_length": float64(20), "cast_time": float64(2),
 	}, map[string]any{
-		"id": "hardened", "unlock_level": float64(9), "cost": float64(30),
+		"id": "hardened", "unlock_level": float64(9), "cost": float64(45),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
 		"cooldown_length": float64(90), "cast_time": float64(0),
 	}, map[string]any{
-		"id": "long_night", "unlock_level": float64(15), "cost": float64(40),
+		"id": "long_night", "unlock_level": float64(15), "cost": float64(60),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
 		"cooldown_length": float64(120), "cast_time": float64(0),
 	}}}, me["book"], "ready, {0, 0}, in book order; the unwritten page never sent")

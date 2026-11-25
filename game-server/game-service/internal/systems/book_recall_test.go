@@ -64,7 +64,7 @@ func clearOf(t *testing.T, a, b *ecs.Entity) bool {
 
 // A completed Recall stands two teammates from the far corners of the floor
 // within 2 cells of the mage, on the nearest free spots, clear of the mage and
-// of each other; 50 mana is paid and the page is spent, with no cooldown.
+// of each other; 75 mana is paid and the page is spent, with no cooldown.
 // AC 1; R25, R8.
 func TestBookSystemCast_RecallPullsEveryTeammateToTheMage(t *testing.T) {
 	em := ecs.NewEntityManager()
@@ -81,7 +81,7 @@ func TestBookSystemCast_RecallPullsEveryTeammateToTheMage(t *testing.T) {
 	}
 	assert.True(t, clearOf(t, near, far), "not on each other")
 	pool, _ := bookPool(mage)
-	assert.Equal(t, 50, pool.Current, "50 mana")
+	assert.Equal(t, 25, pool.Current, "75 mana")
 	book := bookOfT(t, mage)
 	assert.True(t, book.Spent[components.PageRecall], "spent")
 	assert.Empty(t, book.Cooldowns, "no cooldown")

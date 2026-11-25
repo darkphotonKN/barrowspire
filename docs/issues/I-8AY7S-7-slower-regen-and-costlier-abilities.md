@@ -1,12 +1,12 @@
 ---
 id: I-8AY7S-7
-status: open
+status: done
 implements: FS-8AY7S
 blocked_by: []
 labels: [ready-for-agent]
-title: FS-8AY7S tuning: slower class-resource regen, ability and page costs ×1.5
+title: FS-8AY7S tuning and the pool cap: slower regen, costs ×1.5, no cost over its pool
 ---
-Tunes FS-8AY7S · Tunes FS-JTNPR · Tunes FS-04EEA · Tunes FS-X2CMM · Tunes FS-MAMHR
+Implements FS-8AY7S §Change: A cost never exceeds the class's base pool · Tunes FS-8AY7S · Tunes FS-JTNPR · Tunes FS-04EEA · Tunes FS-X2CMM · Tunes FS-MAMHR
 
 Charter item C, E1–E3 (2026-11-25 dungeon-crawler pace charter). Values only: every number below
 is a tunable its owning FS names (FS-8AY7S R3 pools and R9 costs, FS-JTNPR's cost row, FS-04EEA
@@ -45,12 +45,13 @@ Change these values in game-service, and the tests that pin them, nothing else:
 **E3, mercenary:** unchanged. Its costs are parry-charge counts (the riposte spends 3 of 3, Settle
 the Debt needs at least 1 and spends all) and its pages cost nothing; ×1.5 would put the riposte
 above the pool. Its gain rules are unchanged. (Both E2's cap and E3 were escalated to the
-coordinator, who confirms or overrides them.)
+coordinator and approved 2026-11-25: the cap is FS-8AY7S §Change P1, the no-op its P3.)
 
 ## Acceptance Criteria
 - [ ] Seated warrior and archer regen 7/s, mage 2/s, pools unchanged (tests updated).
 - [ ] Every cost in the table above reads its After value through `AttackCost` / the page table.
-- [ ] The diff touches values and the tests that pin them only.
+- [ ] Beyond values, only the §Change's pool-cap test (P1) is new.
+- [ ] A test fails if any class's cost exceeds its base pool (P1).
 - [ ] `make test` and `make check` green in game-service.
 
 ## Blocked By

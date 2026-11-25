@@ -46,7 +46,7 @@ func hardenedLeft(t *testing.T, delver *ecs.Entity) (float64, bool) {
 	return left, on
 }
 
-// A level-9 warrior in a run casts Hardened: 30 stamina paid, the 90 s book
+// A level-9 warrior in a run casts Hardened: 45 stamina paid, the 90 s book
 // cooldown started, hardened set for 10 s and gone after. FS-X2CMM §A R5, §E R30.
 func TestCastSkill_HardenedForALevel9WarriorInARun(t *testing.T) {
 	s := unstartedRun(t)
@@ -54,7 +54,7 @@ func TestCastSkill_HardenedForALevel9WarriorInARun(t *testing.T) {
 
 	require.NoError(t, castPageSkill(s, warrior, "hardened"))
 
-	assert.Equal(t, 70, currentResource(entity))
+	assert.Equal(t, 55, currentResource(entity))
 	cooldown := bookOf(t, entity).Cooldowns[components.PageHardened]
 	assert.Equal(t, components.BookCooldown{Remaining: 90, Total: 90}, cooldown)
 	left, on := hardenedLeft(t, entity)

@@ -279,8 +279,8 @@ func TestKicker_HuntersBreath(t *testing.T) {
 	}
 
 	t.Run("R3: a kill refunds Shadow Shot's cost", func(t *testing.T) {
-		require.Equal(t, 90, AttackCost(components.AttackShadowShot))
-		assert.Equal(t, 95, killWith(3, 5))
+		require.Equal(t, 100, AttackCost(components.AttackShadowShot))
+		assert.Equal(t, 100, killWith(3, 0), "the whole pool from empty")
 	})
 	t.Run("R3: a refund at a full pool leaves it at max", func(t *testing.T) {
 		assert.Equal(t, 100, killWith(3, 50))

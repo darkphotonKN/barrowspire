@@ -81,7 +81,7 @@ func TestBookSystemCast_EachGateRefusesForItsReason(t *testing.T) {
 		}, ErrPageNotReady},
 		{"short of cost", func(e *ecs.Entity) BookCast {
 			rc, _ := e.GetComponent(ecs.ComponentTypeResource)
-			rc.(*components.ResourceComponent).Current = 29
+			rc.(*components.ResourceComponent).Current = 44
 			return hardenedCast(e)
 		}, ErrShortOfCost},
 	}

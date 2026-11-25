@@ -17,7 +17,7 @@ import (
 	in its line once and stops only at a wall, a closed door or its max
 	flight, and each monster it hits refunds 8 stamina to the archer, capped
 	at max, while the archer is in play. Every Shadow Shot here is fired by a
-	rankedBody standing at (100, 100) toward +x, its 90 stamina already spent.
+	rankedBody standing at (100, 100) toward +x, its 100 stamina already spent.
 */
 
 var shadowRangerRanks = passivetree.Ranks{"archer.t6b": 1}
@@ -113,11 +113,11 @@ func TestShadowRanger_EachMonsterHitRefunds8Stamina(t *testing.T) {
 		w := newKickerWorld("archer", shadowRangerRanks, neverCrit)
 		ghoulsInLine(w.em, 5)
 		w.shadowShot(t)
-		require.Equal(t, 10, pool(w.body), "the cast's 90 spent")
+		require.Equal(t, 0, pool(w.body), "the cast's 100 spent")
 
 		w.flyWith(PlayerDamageOff, 300)
 
-		assert.Equal(t, 50, pool(w.body))
+		assert.Equal(t, 40, pool(w.body))
 	})
 	t.Run("capped at max", func(t *testing.T) {
 		w := newKickerWorld("archer", shadowRangerRanks, neverCrit)
@@ -136,7 +136,7 @@ func TestShadowRanger_EachMonsterHitRefunds8Stamina(t *testing.T) {
 
 		w.tick(Impact{Attack: shot, TargetEntityID: g.ID})
 
-		assert.Equal(t, 18, pool(w.body))
+		assert.Equal(t, 8, pool(w.body))
 	})
 }
 
@@ -154,7 +154,7 @@ func TestShadowRanger_OnlyAMonsterRefunds(t *testing.T) {
 
 		assert.Equal(t, []int{150, 150}, healths([]*ecs.Entity{first, second}))
 		assert.Less(t, health(g), 1000, "it flies on to the monster")
-		assert.Equal(t, 18, pool(w.body), "the monster's 8 alone")
+		assert.Equal(t, 8, pool(w.body), "the monster's 8 alone")
 	})
 	t.Run("delvers, player damage on: hit and pierced, no refund", func(t *testing.T) {
 		w := newKickerWorld("archer", shadowRangerRanks, neverCrit)
@@ -167,7 +167,7 @@ func TestShadowRanger_OnlyAMonsterRefunds(t *testing.T) {
 		assert.Less(t, health(first), 150)
 		assert.Less(t, health(second), 150)
 		assert.Less(t, health(g), 1000)
-		assert.Equal(t, 18, pool(w.body))
+		assert.Equal(t, 8, pool(w.body))
 	})
 	t.Run("a dummy: hit, no refund", func(t *testing.T) {
 		w := newKickerWorld("archer", shadowRangerRanks, neverCrit)
@@ -177,7 +177,7 @@ func TestShadowRanger_OnlyAMonsterRefunds(t *testing.T) {
 		w.flyWith(PlayerDamageOff, 300)
 
 		assert.Less(t, health(d), 1000)
-		assert.Equal(t, 10, pool(w.body))
+		assert.Equal(t, 0, pool(w.body))
 	})
 }
 
@@ -192,7 +192,7 @@ func TestShadowRanger_AnArcherOutOfPlayGetsNoRefund(t *testing.T) {
 	w.tick(Impact{Attack: shot, TargetEntityID: g.ID})
 
 	assert.Less(t, health(g), 1000, "the shot still lands")
-	assert.Equal(t, 10, pool(w.body))
+	assert.Equal(t, 0, pool(w.body))
 }
 
 // R31: only the Shadow Ranger's Shadow Shot is changed. A Hunter's and an

@@ -321,44 +321,45 @@ var attackTable = map[components.AttackKind]attackSpec{
 		projectile: projectileSpec{kind: "fireball", speed: 350, maxDistance: 500, radius: 12, spread: []float64{0}},
 		pins:       true,
 	},
-	// the archer's ability: one slow, heavy bolt, paid in stamina. 90 of the
-	// archer's 100 nearly drains it, so the next waits on regen. FS-JTNPR
-	// §Requirements 1, 5 (amended 2026-10-30).
+	// the archer's ability: one slow, heavy bolt, paid in stamina. It takes the
+	// archer's whole 100, so the next waits on regen. FS-JTNPR §Requirements 1,
+	// 5 (amended 2026-10-30; ×1.5 capped at the pool by the 2026-11-25 pace
+	// charter, I-8AY7S-7).
 	components.AttackShadowShot: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
-		coefficient: 3.2, cost: 90, cooldown: 1.2,
+		coefficient: 3.2, cost: 100, cooldown: 1.2,
 		projectile: projectileSpec{kind: "shadow_shot", speed: 260, maxDistance: 650, radius: 10, spread: []float64{0}},
 		pins:       true,
 	},
 	components.AttackTripleFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
-		coefficient: 0.9, cost: 15, cooldown: 0.4,
+		coefficient: 0.9, cost: 25, cooldown: 0.4,
 		projectile: projectileSpec{kind: "fireball", speed: 360, maxDistance: 500, radius: 12, spread: []float64{-0.26, 0, 0.26}},
 		pins:       true,
 	},
 	// the charge is movement, not an attack: it never pins (FS-JS7C8 §Change:
 	// Attacking pins the attacker R55), though a pin refuses it like any row
 	components.AttackDash: {
-		delivery: deliverMovement, cost: 25, cooldown: 0.4,
+		delivery: deliverMovement, cost: 40, cooldown: 0.4,
 	},
 	// the warrior's tree ability: a slam all round on Strength, as the slash.
 	// FS-04EEA §B R8–R9 (integrator correction 2026-11-21), §A R5.
 	components.AttackEarthbreaker: {
 		delivery: deliverAround, damageType: components.DamagePhysical, scaling: scaleStrength,
-		coefficient: 1.5, cost: 40, cooldown: 10, reach: earthbreakerRange,
+		coefficient: 1.5, cost: 60, cooldown: 10, reach: earthbreakerRange,
 		pins: true, stuns: true,
 	},
 	// the mage's tree ability: an instant move toward the cursor, paid in
 	// mana. FS-04EEA §D R18, §A R5.
 	components.AttackBlink: {
-		delivery: deliverBlink, cost: 30, cooldown: 8, reach: blinkDistance,
+		delivery: deliverBlink, cost: 45, cooldown: 8, reach: blinkDistance,
 		pins: true,
 	},
 	// the archer's tree ability: a circle the arrows fall on, 5 volleys each
 	// on Agility. FS-04EEA §E R23–R25, §A R5.
 	components.AttackArrowRain: {
 		delivery: deliverRain, damageType: components.DamagePhysical, scaling: scaleAgility,
-		coefficient: 0.5, cost: 35, cooldown: 12, reach: arrowRainReach,
+		coefficient: 0.5, cost: 55, cooldown: 12, reach: arrowRainReach,
 		pins: true,
 	},
 	// the mercenary's tree ability: one hit all round per target at 1.0 per

@@ -39,7 +39,7 @@ func seatArcher(t *testing.T, s *Session, withNode bool) (uuid.UUID, *ecs.Entity
 }
 
 // Arrow Rain cast through the handler marks a rain for an archer holding the
-// node, spending 35 stamina, and its volleys land on a target in the circle;
+// node, spending 55 stamina, and its volleys land on a target in the circle;
 // one without the node gets nothing at all. FS-04EEA §A R3, §E R23–R24.
 func TestCastSkill_ArrowRainOnlyForAnArcherHoldingTheNode(t *testing.T) {
 	for _, tt := range []struct {
@@ -58,7 +58,7 @@ func TestCastSkill_ArrowRainOnlyForAnArcherHoldingTheNode(t *testing.T) {
 			tickFor(s, 1.6)
 
 			if tt.withNode {
-				assert.Equal(t, 35, spent)
+				assert.Equal(t, 55, spent)
 				assert.Less(t, currentHealth(target), 1000)
 				assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeArrowRain), "gone after its fifth volley")
 				return

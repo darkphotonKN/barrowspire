@@ -59,7 +59,7 @@ func caught(t *testing.T, r *ecs.Entity) int {
 	return len(c.(*components.RuneComponent).Caught)
 }
 
-// A completed Binding Glyph pays 40 mana, starts its 60 s cooldown and lays a
+// A completed Binding Glyph pays 60 mana, starts its 60 s cooldown and lays a
 // rune at the point for 30 s, after its 2.5 s cast time. R24; §B.
 func TestBookSystemCast_BindingGlyphLaysARuneAfterItsCastTime(t *testing.T) {
 	em := ecs.NewEntityManager()
@@ -75,7 +75,7 @@ func TestBookSystemCast_BindingGlyphLaysARuneAfterItsCastTime(t *testing.T) {
 	r := runeOf(em)
 	require.NotNil(t, r, "the rune is laid at 2.5 s")
 	pool, _ := bookPool(mage)
-	assert.Equal(t, 60, pool.Current, "40 mana")
+	assert.Equal(t, 40, pool.Current, "60 mana")
 	assert.Equal(t, components.BookCooldown{Remaining: 60, Total: 60}, bookOfT(t, mage).Cooldowns[components.PageBindingGlyph])
 	at, _ := bodyCentre(r)
 	assert.Equal(t, components.TransformComponent{X: runePoint, Y: 0}, *at)

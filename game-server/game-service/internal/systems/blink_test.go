@@ -52,7 +52,7 @@ func TestCombatSystem_Blink_StopsAgainstAThinWall(t *testing.T) {
 }
 
 // In open ground the mage moves min(180, distance to the target) px along the
-// line on the resolving tick, spends 30 mana and starts an 8 s cooldown.
+// line on the resolving tick, spends 45 mana and starts an 8 s cooldown.
 // FS-04EEA §D R18, §A R4–R5.
 func TestCombatSystem_Blink_OpenGround_MovesUpTo180TowardTheTarget(t *testing.T) {
 	tests := []struct {
@@ -75,7 +75,7 @@ func TestCombatSystem_Blink_OpenGround_MovesUpTo180TowardTheTarget(t *testing.T)
 			x, y := standsAt(mage)
 			assert.InDelta(t, tt.wantX, x, 1e-9)
 			assert.InDelta(t, tt.wantY, y, 1e-9)
-			assert.Equal(t, 70, pool(mage))
+			assert.Equal(t, 55, pool(mage))
 			remaining, total := cooldownState(mage, components.AttackBlink)
 			assert.InDelta(t, 8, remaining, 1e-9)
 			assert.InDelta(t, 8, total, 1e-9)
@@ -98,9 +98,9 @@ func TestCombatSystem_Blink_WornAttackSpeedShortensItsCooldown(t *testing.T) {
 	assert.InDelta(t, 8/1.5, total, 1e-9)
 }
 
-// The wire's tree-ability cost reads Blink's 30. FS-04EEA §A R5; FS-Q18Q3 §A R5.
+// The wire's tree-ability cost reads Blink's 45. FS-04EEA §A R5; FS-Q18Q3 §A R5.
 func TestTreeAbilityCost_Blink(t *testing.T) {
-	assert.Equal(t, 30, TreeAbilityCost(components.AttackBlink))
+	assert.Equal(t, 45, TreeAbilityCost(components.AttackBlink))
 }
 
 // overlapsRect reports whether a body at (x, y) overlaps the rect, touching

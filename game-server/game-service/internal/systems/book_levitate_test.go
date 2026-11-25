@@ -113,7 +113,7 @@ func TestBookSystemCast_LevitateLiftsItsTargetFor8Seconds(t *testing.T) {
 	assert.Equal(t, 8.0, bookOfT(t, ally).States[components.BookStateAfloat], "afloat 8 s")
 	assert.Empty(t, bookOfT(t, mage).States, "the mage stays grounded")
 	pool, _ := bookPool(mage)
-	assert.Equal(t, 65, pool.Current, "35 mana")
+	assert.Equal(t, 45, pool.Current, "55 mana")
 
 	castTicks(books, em, 8*30-1)
 	assert.Contains(t, bookOfT(t, ally).States, components.BookStateAfloat, "afloat until 8 s")
@@ -161,7 +161,7 @@ func TestBookSystemAdvanceCasts_LevitateOnAnAllyWhoWalkedOff(t *testing.T) {
 			pool, _ := bookPool(mage)
 			if tt.lifts {
 				assert.Contains(t, bookOfT(t, ally).States, components.BookStateAfloat)
-				assert.Equal(t, 65, pool.Current)
+				assert.Equal(t, 45, pool.Current)
 				return
 			}
 			assert.Empty(t, bookOfT(t, ally).States, "no afloat")

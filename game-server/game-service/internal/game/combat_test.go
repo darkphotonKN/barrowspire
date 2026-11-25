@@ -80,7 +80,7 @@ func TestCastSkill_HandlerSpendsNothing(t *testing.T) {
 	assert.Equal(t, before, currentResource(entity))
 
 	tick(s)
-	assert.Equal(t, before-90, currentResource(entity))
+	assert.Equal(t, before-100, currentResource(entity))
 }
 
 func TestCastSkill_UnknownSkillIsRefused(t *testing.T) {
@@ -201,7 +201,7 @@ func TestCastSkill_EarthbreakerOnlyForAWarriorHoldingTheNode(t *testing.T) {
 
 			if tt.hit {
 				assert.Less(t, currentHealth(behind), 1000, "all round, behind included")
-				assert.Equal(t, 60, currentResource(entity))
+				assert.Equal(t, 40, currentResource(entity))
 				return
 			}
 			assert.Equal(t, 1000, currentHealth(behind))

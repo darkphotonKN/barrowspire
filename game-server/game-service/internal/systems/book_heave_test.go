@@ -55,7 +55,7 @@ func TestPageOffered_Heave(t *testing.T) {
 }
 
 // A completed Heave shoves the block one cell away from the warrior, as a
-// push lands: the warrior its pusher. It costs 25 stamina and starts its
+// push lands: the warrior its pusher. It costs 40 stamina and starts its
 // 20 s cooldown only when it completes, after its 2 s.
 func TestHeave_ShovesTheBlockOneCellAwayOnCompletion(t *testing.T) {
 	w, warrior := heaveWorld(t, 4, 5)
@@ -72,7 +72,7 @@ func TestHeave_ShovesTheBlockOneCellAwayOnCompletion(t *testing.T) {
 	assert.Equal(t, warrior.ID, blockT(t, w.block).PushedBy, "the warrior's push, for the plates")
 	assert.True(t, blockT(t, w.block).Sliding, "it slides there as a push does")
 	assert.False(t, w.grid.Walkable(6, 5), "the grid follows it")
-	assert.Equal(t, 75, staminaOf(t, warrior), "25 stamina")
+	assert.Equal(t, 60, staminaOf(t, warrior), "40 stamina")
 	assert.Equal(t, 20.0, bookOfT(t, warrior).Cooldowns[components.PageHeave].Total, "its 20 s cooldown")
 }
 

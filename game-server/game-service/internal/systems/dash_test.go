@@ -117,7 +117,7 @@ func TestDash_CastSpendsStaminaAndCooldownAndSetsTheChargeGoing(t *testing.T) {
 	dashToward(d, 100, 400)
 	w.combat.Update(tickSeconds, w.em.GetAllEntities(), nil)
 
-	assert.Equal(t, 75, pool(d))
+	assert.Equal(t, 60, pool(d))
 	assert.Positive(t, cooldownOf(d, components.AttackDash))
 	require.True(t, dashing(d))
 	dc, _ := d.GetComponent(ecs.ComponentTypeDash)

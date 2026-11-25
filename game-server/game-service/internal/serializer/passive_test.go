@@ -115,9 +115,9 @@ func TestFormatStateToClientState_AbilityCostIsTheLoweredCost(t *testing.T) {
 		ranks   passivetree.Ranks
 		want    float64
 	}{
-		{"Bull Rush at 2", "warrior", stamina(100, 100), components.AttackDash, passivetree.Ranks{"warrior.t5b": 2}, 19},
-		{"Wide Volley at 3", "mage", mana(150, 150), components.AttackTripleFireball, passivetree.Ranks{"mage.t5a": 3}, 9},
-		{"none held", "mage", mana(150, 150), components.AttackTripleFireball, nil, 15},
+		{"Bull Rush at 2", "warrior", stamina(100, 100), components.AttackDash, passivetree.Ranks{"warrior.t5b": 2}, 34},
+		{"Wide Volley at 3", "mage", mana(150, 150), components.AttackTripleFireball, passivetree.Ranks{"mage.t5a": 3}, 19},
+		{"none held", "mage", mana(150, 150), components.AttackTripleFireball, nil, 25},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
