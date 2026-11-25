@@ -28,8 +28,12 @@ func trapHit(source uuid.UUID, level int, factor float64) components.AttackSnaps
 }
 
 // hitByTrap queues a trap's hit from source on target, at the floor's monster
-// level, for this tick's combat.
+// level, for this tick's combat. A hardened warrior takes none: no damage, and
+// so no break of a timed interact (FS-X2CMM §J R53).
 func (s *Session) hitByTrap(source uuid.UUID, target *ecs.Entity, factor float64) {
+	if systems.Hardened(target) {
+		return
+	}
 	s.trapHits = append(s.trapHits, systems.Impact{
 		Attack:         trapHit(source, s.floorMonsterLevel(), factor),
 		TargetEntityID: target.ID,

@@ -351,8 +351,8 @@ func inPageRange(cast BookCast, x, y float64) bool {
 // hardenedSeconds is how long the Scar of the Pit's hardened lasts (R30).
 const hardenedSeconds = 10.0
 
-// resolveHardened sets hardened on the warrior. Its trap and poison immunity
-// is wave 2 (R53).
+// resolveHardened sets hardened on the warrior: while it runs, traps deal
+// them nothing and no poisoning takes hold (R53, Hardened).
 func resolveHardened(_ *ecs.EntityManager, cast BookCast) {
 	setBookState(cast.Caster, components.BookStateHardened, hardenedSeconds)
 }

@@ -1,6 +1,6 @@
 ---
 id: I-X2CMM-18
-status: open
+status: done
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-1", "I-X2CMM-7", "FS-5FZ4J (trap damage and poison)"]
 labels: [ready-for-agent]

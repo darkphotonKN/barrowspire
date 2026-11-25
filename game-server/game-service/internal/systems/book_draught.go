@@ -11,9 +11,10 @@ import (
 * The draught (FS-X2CMM §E R27): the book effect a completed Brew sets at the
 * archer's feet. It has no time of its own: it stands until a delver of the
 * run drinks it, by interacting with it within the interact reach, or until
-* the floor ends. Drinking takes it from the world and heals the drinker 30 %
-* of their max health over 6 s, an even part each tick, never above max; a
-* second draught drunk during a heal restarts it at the new full amount.
+* the floor ends. Drinking takes it from the world, cures the drinker's poison
+* (§J R54, through CurePoison) and heals the drinker 30 % of their max health
+* over 6 s, an even part each tick, never above max; a second draught drunk
+* during a heal restarts it at the new full amount.
 *
 * The heal is the drinker's: the book's draught state times it, and their
 * DraughtHealComponent counts what it has given. The BookSystem's Update gives
@@ -52,9 +53,10 @@ func IsDraught(entity *ecs.Entity) bool {
 	return ok && kind == components.BookEffectDraught
 }
 
-// DrinkDraught has the drinker drink the draught: taken from the world, and
-// its heal started on the drinker, or restarted at the full amount over one
-// already running. A refused drink leaves both as they were.
+// DrinkDraught has the drinker drink the draught: taken from the world, the
+// drinker's poison cured, and its heal started on the drinker, or restarted at
+// the full amount over one already running. A refused drink leaves both as
+// they were.
 func (s *BookSystem) DrinkDraught(drinker, draught *ecs.Entity) error {
 	if !IsDraught(draught) {
 		return ErrNotADraught
@@ -78,6 +80,7 @@ func (s *BookSystem) DrinkDraught(drinker, draught *ecs.Entity) error {
 	hc, _ := drinker.GetComponent(ecs.ComponentTypeHealth)
 	drinker.AddComponent(&components.DraughtHealComponent{Amount: whole(float64(hc.(*components.HealthComponent).MaxHealth) * draughtShare)})
 	book.States[components.BookStateDraught] = draughtSeconds
+	CurePoison(drinker)
 	s.em.RemoveEntity(draught.ID)
 	return nil
 }

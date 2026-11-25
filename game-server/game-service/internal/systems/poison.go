@@ -64,8 +64,12 @@ func poisonable(e *ecs.Entity) bool {
 }
 
 // Poison poisons entity for seconds: a poisoning already running is
-// refreshed to seconds, never stacked (FS-5FZ4J §D R29).
+// refreshed to seconds, never stacked (FS-5FZ4J §D R29). A hardened warrior
+// takes no poisoning, nor a refresh of one running (FS-X2CMM §J R53).
 func Poison(entity *ecs.Entity, seconds float64) {
+	if Hardened(entity) {
+		return
+	}
 	if pc, ok := entity.GetComponent(ecs.ComponentTypePoison); ok {
 		pc.(*components.PoisonComponent).Remaining = seconds
 		return
