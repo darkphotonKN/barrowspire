@@ -972,6 +972,93 @@ describe("CharacterAnimator: the Berserker's alternate hands (FS-1J1CB §D)", ()
   });
 });
 
+// FS-7P736 R15: a rolling body plays its class's baked roll when the sheet has it, else strides its walk
+// under the in-code tumble; nothing breaks with no roll clip baked
+describe("a rolling body (FS-7P736 R15)", () => {
+  /** The test manifest with the knight's sheet carrying an 8-frame roll at 20 fps (400 ms). */
+  const rollArt = () => {
+    const m = manifest();
+    m.sheets.char_knight_base.animations.roll = clip(20, false, 8);
+    return new ArtLibrary(m, quiet);
+  };
+  const art = () => new ArtLibrary(manifest(), quiet);
+  const west = { x: -1, y: 0 };
+  const at = { x: 0, y: 0 };
+
+  it("should know whether its sheet carries the roll clip", () => {
+    expect(new CharacterAnimator(rollArt(), "warrior").rolls).toBe(true);
+    expect(new CharacterAnimator(rollArt(), "mercenary").rolls).toBe(false);
+    expect(new CharacterAnimator(ArtLibrary.empty(quiet), "warrior").rolls).toBe(false);
+  });
+
+  it("should play the baked roll from its first frame, turned to the roll, and not replay it while it rolls", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(rollArt(), "warrior");
+    anim.show(sprite, anim.step(at, 0, FRAME, false));
+    anim.roll(west, FRAME);
+    anim.show(sprite, anim.step(at, FRAME, FRAME, false));
+    expect(sprite.plays.at(-1)).toEqual({ key: "char_knight_base/roll/4", startFrame: 0 });
+    sprite.at(5);
+    anim.roll(west, 2 * FRAME);
+    anim.show(sprite, anim.step(at, 2 * FRAME, FRAME, false));
+    expect(sprite.plays).toHaveLength(2);
+    expect(sprite.anims.timeScale).toBe(1);
+  });
+
+  it("should roll afresh on the next roll, even the same way", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(rollArt(), "warrior");
+    anim.roll(west, 0);
+    anim.show(sprite, anim.step(at, 0, FRAME, false));
+    anim.roll(undefined, 400);
+    anim.show(sprite, anim.step(at, 400, FRAME, false));
+    anim.roll(west, 3400);
+    anim.show(sprite, anim.step(at, 3400, FRAME, false));
+    expect(sprite.plays.filter((p) => p.key.includes("/roll/"))).toEqual([
+      { key: "char_knight_base/roll/4", startFrame: 0 },
+      { key: "char_knight_base/roll/4", startFrame: 0 },
+    ]);
+  });
+
+  it("should stride its walk turned to the roll on a sheet with no roll clip: nothing breaks", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "warrior");
+    anim.roll({ x: 0, y: 1 }, 0);
+    anim.show(sprite, anim.step(at, 0, FRAME, false));
+    expect(sprite.plays.at(-1)).toEqual({ key: "char_knight_base/walk/2", startFrame: 0 });
+    expect(sprite.anims.timeScale).toBe(1);
+  });
+
+  it("should cut a swing short for the roll, and go back to what the body does once it ends", () => {
+    const motion = new CharacterMotion("se", 500, { roll: true });
+    motion.attack(0, { x: 0, y: -40 });
+    expect(motion.step(at, 0, FRAME, false).animation).toBe("attack");
+    motion.roll(west, 100);
+    expect(motion.step(at, 100, FRAME, false)).toMatchObject({ animation: "roll", facing: "w" });
+    motion.roll(undefined, 300);
+    // the swing's window was cut short by the roll: it does not come back
+    expect(motion.step(at, 300, FRAME, false)).toMatchObject({ animation: "idle", facing: "w" });
+  });
+
+  it("should carry a roll under way onto a re-dressed sheet without restarting it", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(rollArt(), "warrior");
+    anim.roll(west, 0);
+    anim.show(sprite, anim.step(at, 0, FRAME, false));
+    sprite.at(3);
+    const next = anim.wearing({ sheet: "char_knight_base" });
+    next.roll(west, FRAME);
+    next.show(sprite, next.step(at, FRAME, FRAME, false));
+    expect(sprite.plays).toHaveLength(1);
+  });
+
+  it("should never roll a dead body", () => {
+    const anim = new CharacterAnimator(rollArt(), "warrior");
+    anim.roll(west, 0);
+    expect(anim.step(at, 0, FRAME, true).animation).toBe("death");
+  });
+});
+
 // FS-4EC7Z §G R29, R32: one name for a clip under a palette variant, for every reader of a sheet's clips
 describe("variantClip", () => {
   it("should name a variant's clip `<clip>_<variant>`, and the plain clip with none", () => {

@@ -3,7 +3,62 @@
 // the bake page's canvases and theme.
 
 import * as THREE from "three";
-import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, RUN_ANIMATIONS, pose, withOffhand } from "./clips.js";
+import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, ROLL_ANIMATIONS, ROLL_TURN, RUN_ANIMATIONS, pose, withOffhand } from "./clips.js";
+
+/**
+ * Each class's roll (FS-7P736 R15, the owner's four looks), read by clips.js `rollClip`: one whole
+ * forward turn in the server's 0.4 s, each in its own weight. Only the arms are keyed; every look's
+ * own wrist keeps its own weapon's grip.
+ *
+ * The warrior's heavy shoulder roll: he starts slow and goes over onto his shoulder, balled loosely in
+ * his mail, the shield kept up before his chest and the sword arm drawn in.
+ */
+export const KNIGHT_ROLL = {
+  turn: [0.2, 0.95, 1.9, 2.9, 3.9, 4.85, 5.7, 2 * Math.PI],
+  tuck: 0.8,
+  tilt: 0.5,
+  low: 0.15,
+  arms: { upperArmL: [-0.38, -0.85, 0.12], foreArmL: [-1.25, 0, 0], upperArmR: [-0.6, 0, -0.3], foreArmR: [-1.0, 0, 0] },
+};
+/** The mage's robe-tumbling roll: a softer ball, nearly square over, the robe flung round her; the sceptre hugged to her chest. */
+export const WIZARD_ROLL = {
+  turn: ROLL_TURN,
+  tuck: 0.85,
+  tilt: 0.15,
+  low: 0,
+  arms: { upperArmR: [-0.7, 0, -0.2], foreArmR: [-1.5, 0, 0], upperArmL: [-0.9, 0, 0.2], foreArmL: [-1.3, 0, 0] },
+};
+/**
+ * The mage's looks carry a staff too long to roll upright with: the Spellwarden's warding staff and the
+ * Pyromancer's brazier rod would turn down through the ground. Each rolls the mage's roll square over
+ * (no tilt), the staff turned across her in the fist, so the turn about her hips keeps it level, over
+ * the ground and clear of her legs (mageLooks.test.mjs). The hands found by a search over the wrist on
+ * those guards, the arm the one that held them best.
+ */
+export const SPELLWARDEN_ROLL = {
+  ...WIZARD_ROLL,
+  tilt: 0,
+  arms: { upperArmR: [-1.2, 0, -0.15], foreArmR: [-0.9, 0, 0], handR: [0.4, -1.6, -1.6], upperArmL: [-0.9, 0, 0.2], foreArmL: [-1.3, 0, 0] },
+};
+export const PYROMANCER_ROLL = { ...WIZARD_ROLL, tilt: 0, arms: { ...WIZARD_ROLL.arms, handR: [0.8, 1.6, 1.6] } };
+/** The archer's light tuck: quick off the mark and balled tight, square over, both arms round her shins, the bow in her fist. */
+export const ARCHER_ROLL = {
+  turn: [0.4, 1.35, 2.3, 3.2, 4.1, 5.0, 5.8, 2 * Math.PI],
+  tuck: 1.05,
+  tilt: 0,
+  low: 0,
+  arms: { upperArmL: [-1.0, 0, 0.25], foreArmL: [-1.2, 0, 0], upperArmR: [-1.0, 0, -0.25], foreArmR: [-1.2, 0, 0] },
+};
+/** The mercenary's low roll, the sword held: he stays low, a little over his shoulder, the sword arm out wide to keep the blade off him. */
+export const MERCENARY_ROLL = {
+  turn: ROLL_TURN,
+  tuck: 0.9,
+  tilt: 0.25,
+  low: 0.35,
+  arms: { upperArmR: [-0.3, 0, -1.1], foreArmR: [-0.3, 0, 0], upperArmL: [-0.9, 0, 0.2], foreArmL: [-1.2, 0, 0] },
+};
+/** The roll's clip, the same on every class sheet (FS-7P736 R15): last, after the clips each sheet had. */
+export const ROLL = ROLL_ANIMATIONS.roll;
 
 /**
  * How the playable classes carry their weapon (FS-JS7C8 R2, owner 2026-11-12: "拿武器的動作有點怪
@@ -201,12 +256,13 @@ export const KNIGHT_ATTACK_CLOTH = 0.5;
  * Guardian takes it through cast.js `specRow`, the Berserker through {@link BERSERKER_SHEET}.
  */
 export const KNIGHT_SHEET = {
-  animations: { ...ANIMATIONS, attack: { ...ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH }, run: SPRINT_RUN },
+  animations: { ...ANIMATIONS, attack: { ...ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH }, run: SPRINT_RUN, roll: ROLL },
   scale: 1.5,
 };
 
 export const KNIGHT_STYLE = {
   attack: "slash",
+  roll: KNIGHT_ROLL,
   speed: 1,
   hold: pose({
     upperArmL: [-0.38, -0.85, 0.12],
@@ -266,6 +322,7 @@ export const BERSERKER_SHEET = { animations: withOffhand(KNIGHT_SHEET.animations
 export const BERSERKER_RUN_LIFT = 0.32;
 export const BERSERKER_STYLE = {
   attack: "cleave",
+  roll: KNIGHT_ROLL,
   speed: 1,
   hold: pose({
     upperArmR: [0.04, 0, -0.14],
@@ -342,10 +399,11 @@ export const ARCHER_LOW_READY = pose(
  * speed ({@link SPRINT_RUN}). No attack on the move: attacking no longer moves her (the pin), and
  * the client plays her `attack` moving or not. The Hunter and the Shadow Ranger take it through cast.js `specRow`.
  */
-export const ARCHER_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
+export const ARCHER_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN, roll: ROLL }, scale: 1.5 };
 
 export const ARCHER_STYLE = {
   attack: "shot",
+  roll: ARCHER_ROLL,
   speed: 1.05,
   hold: pose({
     upperArmL: [0.02, 0, 0.04],
@@ -393,10 +451,11 @@ export const WIZARD_SPRINT_STRIDE = 0.88;
  * moves her (the pin), and the client plays her cast moving or not (R132). The Spellwarden and the Pyromancer take it
  * through cast.js `specRow`.
  */
-export const WIZARD_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
+export const WIZARD_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN, roll: ROLL }, scale: 1.5 };
 
 export const WIZARD_STYLE = {
   attack: "cast",
+  roll: WIZARD_ROLL,
   speed: 0.9,
   // the sceptre arm down at the side, the sceptre leaning up beside the leg
   hold: pose({
@@ -482,6 +541,7 @@ export const SPELLWARDEN_STYLE = {
   // her heavy cast, the long staff pushed forward (clips.js `wardCast`)
   attack: "wardCast",
   hold: WARD_HOLD,
+  roll: SPELLWARDEN_ROLL,
   // the idle plants the staff ({@link WARD_PLANT}); the left arm as WARD_HOLD carries it
   idle: { hold: pose({ foreArmL: [-0.15, 0, 0] }) },
   idleExtra: (i) => pose(WARD_PLANT_ARM[i], {}, { glow: 1 }),
@@ -519,6 +579,7 @@ export const PYROMANCER_STYLE = {
   ...WIZARD_STYLE,
   attack: "staffCast",
   hold: PYRE_HOLD,
+  roll: PYROMANCER_ROLL,
   walk: { ...WIZARD_STYLE.walk, arms: [0.8, 0.3] },
   run: { ...WIZARD_STYLE.run, arms: [1, 0.4], wrist: [0, 1], cross: [0, 0], hold: PYRE_RUN_HOLD },
   attackExtra: (i) => PYRE_CAST[i] && pose({ handR: PYRE_CAST[i] }),
@@ -597,10 +658,11 @@ export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1
  * not (R108). The Duelist
  * and the Sellsword take it through cast.js `specRow`.
  */
-export const MERCENARY_SHEET = { animations: { ...ANIMATIONS, parry: MERC_ANIMATIONS.parry, run: SPRINT_RUN }, scale: 1.5 };
+export const MERCENARY_SHEET = { animations: { ...ANIMATIONS, parry: MERC_ANIMATIONS.parry, run: SPRINT_RUN, roll: ROLL }, scale: 1.5 };
 
 export const MERCENARY_STYLE = {
   attack: "cut",
+  roll: MERCENARY_ROLL,
   speed: 1.08,
   // at rest the sword arm down at the side, the point toward the ground, the free hand loose at the belt
   hold: pose({

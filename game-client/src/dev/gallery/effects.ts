@@ -28,6 +28,7 @@ import { CHARGE_MS, playCharge } from "@/render/effects/charge";
 import { CutFx } from "@/render/effects/cut";
 import { playDemonClaw } from "@/render/effects/demonClaw";
 import { playDeathDust } from "@/render/effects/death";
+import { playRollDust } from "@/render/effects/rollDust";
 import { EntranceMarker } from "@/render/effects/entrance";
 import { playEscape } from "@/render/effects/escape";
 import { playFireballCast } from "@/render/effects/fireball";
@@ -483,6 +484,17 @@ export const EFFECT_CARDS: EffectCard[] = [
     module: "death",
     name: "Death dust",
     demo: (s) => playDeathDust(s.fx, s.owner, s.at),
+  },
+  {
+    module: "rollDust",
+    name: "Roll dust scuff",
+    // where a roll starts, thrown back from the push-off against the roll's way (FS-7P736 R15)
+    demo: (s) => {
+      const dx = s.aim.x - s.at.x;
+      const dy = s.aim.y - s.at.y;
+      const len = Math.hypot(dx, dy) || 1;
+      playRollDust(s.fx, s.owner, s.at, { x: dx / len, y: dy / len });
+    },
   },
   {
     module: "entrance",

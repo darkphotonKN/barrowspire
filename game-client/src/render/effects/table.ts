@@ -697,6 +697,24 @@ export const EFFECTS = {
       accel: { x: 0, y: 30 },
     },
   },
+  /**
+   * The dust scuff where a roll starts (FS-7P736 R15): a low kick of pale dust thrown back from the
+   * push-off, against the roll's way, that settles quickly. Lighter than the charge's burst.
+   */
+  rollDust: {
+    timing: { kind: "oneShot", durationMs: 380 },
+    ease: "Sine.easeIn",
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["vellumDark", "vellumFaint"],
+      count: 6,
+      scale: { from: 1.1, to: 1.5 },
+      alpha: { from: 0.8, to: 0 },
+      speed: { from: 8, to: 28 },
+      angle: { from: -45, to: 45 },
+      accel: { x: 0, y: 26 },
+    },
+  },
   /** A quiet column of pale light with slow rising motes: gone, not triumph. */
   escape: {
     timing: { kind: "oneShot", durationMs: 1000 },

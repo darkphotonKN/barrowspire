@@ -18,7 +18,7 @@ export function characterPoses(sheet) {
     const frames = clips[anim];
     if (frames.length !== spec.frames) throw new Error(`bake: ${sheet.name} ${anim} has ${frames.length} frames, not ${spec.frames}`);
     // the walk carries its cloth as a walk, a run names how fast it carries it (characters/clips.js
-    // RUN_ANIMATIONS), in walks, and the attack and the parry calm the swing's fling; an off-hand
+    // RUN_ANIMATIONS), in walks, and the attack, the parry and the roll (FS-7P736 R15) calm the swing's fling; an off-hand
     // attack (FS-1J1CB R28) carries its cloth as its right-hand clip does
     const clip = handless(anim);
     const carried = spec.speed ?? (clip === "walk" ? 1 : 0);
@@ -27,7 +27,7 @@ export function characterPoses(sheet) {
       clip,
       speed: carried * (style.speed ?? 1),
       settle: clip === "death",
-      calm: clip === "attack" || clip === "parry" ? 0.25 : 1,
+      calm: clip === "attack" || clip === "parry" || clip === "roll" ? 0.25 : 1,
     });
   }
   // A palette variant (a hub resident's) re-dresses the same rig and poses: its clips follow the
