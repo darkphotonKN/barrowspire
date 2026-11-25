@@ -69,6 +69,10 @@ const (
 	// merchant; payload { "merchant_id", "ware" }, answered on this action with
 	// { success, ware } or { success: false, reason }. FS-9JV5K §B R5.
 	ActionBuy Action = "buy"
+	// ActionRoll is a delver in a run rolling; payload { "dir_x", "dir_y" },
+	// the heading, normalised on the server. Never answered: a refused roll
+	// is silent. FS-7P736 §A R1–R2, R6.
+	ActionRoll Action = "roll"
 	// ActionChat is a chat line, inbound as { "channel", "text" } and outbound
 	// as the pod-stamped line. Handled on the message hub, never by a world.
 	// FS-WJGFJ §Requirements A2–A4, B11.
@@ -332,6 +336,16 @@ const PaceScale float64 = 0.525
 // DefaultSpeed is a delver's walk in every world, px/s: 200 at full pace.
 const DefaultSpeed float64 = 200 * PaceScale
 const DefaultInteractableRange float64 = 60
+
+// The roll: RollDistance px (2.5 cells at 80 px) over RollDuration seconds, a
+// straight line at one constant speed, then RollCooldown seconds before the
+// next. None is paced, and nothing worn or cast stretches or shortens them.
+// FS-7P736 §A R3, R7.
+const (
+	RollDistance float64 = 200
+	RollDuration float64 = 0.4
+	RollCooldown float64 = 3
+)
 const DefautMaxSessionPlayers = 2
 
 // RunPlayerDamage is whether delvers can damage each other in a run. Off: runs

@@ -208,6 +208,13 @@ var actingCases = []actingCase{
 			return wornRing1(frame.CurrentPlayer) == uuid.Nil && carries(frame.CurrentPlayer, ringID)
 		}
 	}},
+	// FS-7P736 §A R1: a member in the run rolls, their roll cooldown running
+	{constants.ActionRoll, func(t *testing.T, world *game.Session, member, _ actor) (map[string]interface{}, func(*types.ClientGameState) bool) {
+		return map[string]interface{}{"dir_x": -1.0, "dir_y": 0.0}, func(frame *types.ClientGameState) bool {
+			own := frame.CurrentPlayer
+			return own != nil && own.RollCooldown != nil
+		}
+	}},
 	// FS-9JV5K §D R17: a poisoned member drinks the antidote in their bag
 	{constants.ActionUseItem, func(t *testing.T, world *game.Session, member, _ actor) (map[string]interface{}, func(*types.ClientGameState) bool) {
 		antidoteID := actGiveAntidote(t, world, member)
