@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { palette } from "@/utils/canvasPalette";
 import { COUNTDOWN_BAR_H } from "./countdownBar";
-import { OPEN_BAR, drawOpenBar, openBarFraction, openBarRect } from "./openBar";
+import { OPEN_BAR, drawOpenBar, openBarFraction, openBarLabel, openBarOver, openBarRect } from "./openBar";
 
 // FS-MQYEX §Requirements 22, 24. I-MQYEX-4: the open bar's pure half and its drawer.
 
@@ -88,5 +88,32 @@ describe("drawOpenBar (FS-MQYEX R24: the countdown bar's look, filling from the 
     const g = brush();
     drawOpenBar(g as never, sprite, 0);
     expect(g.fillRect).toHaveBeenCalledTimes(1);
+  });
+});
+
+// FS-5FZ4J §J R54 (I-5FZ4J-10): the same bar for a search and a prayer, labelled by what it is for.
+describe("openBarLabel (FS-5FZ4J §I R49, §J R54)", () => {
+  it.each([
+    ["search", "Searching…"],
+    ["pray", "Praying…"],
+  ])("should label a %s's bar %s", (kind, label) => expect(openBarLabel(kind)).toBe(label));
+
+  it.each([["open"], [undefined], ["dig"]])("should leave a container's open bar, and a kind it does not know (%s), unlabelled as before", (kind) =>
+    expect(openBarLabel(kind)).toBeNull(),
+  );
+});
+
+describe("openBarOver (FS-5FZ4J §J R54)", () => {
+  it("should stand over one sprite as its own bounds", () => {
+    expect(openBarOver([{ x: 10, y: 20, width: 30, height: 40 }])).toEqual({ x: 10, y: 20, width: 30, height: 40 });
+  });
+
+  it("should stand over a secret door's cracks, one decal per wall piece, as their bounds together", () => {
+    expect(
+      openBarOver([
+        { x: 10, y: 20, width: 30, height: 40 },
+        { x: 30, y: 0, width: 30, height: 40 },
+      ]),
+    ).toEqual({ x: 10, y: 0, width: 50, height: 60 });
   });
 });

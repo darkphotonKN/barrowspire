@@ -49,6 +49,10 @@ type wallTests interface {
 	sweepX(x, y, dx float64) float64
 	sweepY(x, y, dy float64) float64
 	depenetrate(x, y float64) (float64, float64)
+	// passingPits is the same tests as an afloat body meets them: a chasm's
+	// shut pits are open ground, every other wall and door stands (FS-X2CMM
+	// §J R51)
+	passingPits() wallTests
 }
 
 // blocker is one wall or door rect, by its top-left corner.
@@ -56,6 +60,9 @@ type blocker struct {
 	x, y, w, h float64
 	// a door's entity, read for whether it stands open; nil for a wall
 	door *ecs.Entity
+	// pit is a door that is a chasm's pit (FS-5FZ4J §E R33): rock to every
+	// body but an afloat one
+	pit bool
 }
 
 func (b *blocker) open() bool {
@@ -64,6 +71,18 @@ func (b *blocker) open() bool {
 	}
 	oc, ok := b.door.GetComponent(ecs.ComponentTypeOpenable)
 	return ok && oc.(*components.OpenableComponent).IsOpen
+}
+
+// passes is whether a body goes through the rect: an open door, or a pit to
+// a body that passes pits.
+func (b *blocker) passes(pits bool) bool {
+	return b.open() || pits && b.pit
+}
+
+// isPit is whether a door entity is a chasm's pit barrier.
+func isPit(e *ecs.Entity) bool {
+	bc, ok := e.GetComponent(ecs.ComponentTypeBarrier)
+	return ok && bc.(*components.BarrierComponent).Kind == components.BarrierPit
 }
 
 // blockerOf reads an entity's rect as a wall or as a door; false when it lacks
@@ -80,7 +99,7 @@ func blockerOf(e *ecs.Entity, kind ecs.ComponentType) (blocker, bool) {
 	case *components.WallComponent:
 		b.w, b.h = rect.Width, rect.Height
 	case *components.DoorComponent:
-		b.w, b.h, b.door = rect.Width, rect.Height, e
+		b.w, b.h, b.door, b.pit = rect.Width, rect.Height, e, isPit(e)
 	default:
 		return blocker{}, false
 	}
@@ -193,7 +212,28 @@ func (w *wallIndex) query(x0, y0, x1, y1 float64) (c0, r0, c1, r1 int, ok bool) 
 	return w.span(x0-wallQueryPad, y0-wallQueryPad, x1+wallQueryPad, y1+wallQueryPad)
 }
 
-func (w *wallIndex) sweepX(x, y, dx float64) float64 {
+func (w *wallIndex) sweepX(x, y, dx float64) float64 { return w.sweepXPast(x, y, dx, false) }
+func (w *wallIndex) sweepY(x, y, dy float64) float64 { return w.sweepYPast(x, y, dy, false) }
+func (w *wallIndex) depenetrate(x, y float64) (float64, float64) {
+	return w.depenetratePast(x, y, false)
+}
+
+// passingPits is a view over this index, its buckets shared: nothing is built.
+func (w *wallIndex) passingPits() wallTests { return pitsPassed{w} }
+
+// pitsPassed is a wall index as an afloat body meets it: its pits passed.
+type pitsPassed struct{ w *wallIndex }
+
+func (p pitsPassed) sweepX(x, y, dx float64) float64 { return p.w.sweepXPast(x, y, dx, true) }
+func (p pitsPassed) sweepY(x, y, dy float64) float64 { return p.w.sweepYPast(x, y, dy, true) }
+func (p pitsPassed) depenetrate(x, y float64) (float64, float64) {
+	return p.w.depenetratePast(x, y, true)
+}
+func (p pitsPassed) passingPits() wallTests { return p }
+
+// sweepXPast is how far a body may sweep dx along X, its pits passed when
+// pits says so.
+func (w *wallIndex) sweepXPast(x, y, dx float64, pits bool) float64 {
 	if dx == 0 {
 		return 1
 	}
@@ -207,7 +247,7 @@ func (w *wallIndex) sweepX(x, y, dx float64) float64 {
 		for _, bucket := range w.buckets[row*w.cols+c0 : row*w.cols+c1+1] {
 			for _, i := range bucket {
 				b := &w.blockers[i]
-				if b.open() {
+				if b.passes(pits) {
 					continue
 				}
 				if t := SweptX(x, y, b.x, b.y, b.w, b.h, dx); t < minT {
@@ -219,7 +259,8 @@ func (w *wallIndex) sweepX(x, y, dx float64) float64 {
 	return minT
 }
 
-func (w *wallIndex) sweepY(x, y, dy float64) float64 {
+// sweepYPast is sweepXPast along Y.
+func (w *wallIndex) sweepYPast(x, y, dy float64, pits bool) float64 {
 	if dy == 0 {
 		return 1
 	}
@@ -233,7 +274,7 @@ func (w *wallIndex) sweepY(x, y, dy float64) float64 {
 		for _, bucket := range w.buckets[row*w.cols+c0 : row*w.cols+c1+1] {
 			for _, i := range bucket {
 				b := &w.blockers[i]
-				if b.open() {
+				if b.passes(pits) {
 					continue
 				}
 				if t := SweptY(x, y, b.x, b.y, b.w, b.h, dy); t < minT {
@@ -245,9 +286,11 @@ func (w *wallIndex) sweepY(x, y, dy float64) float64 {
 	return minT
 }
 
-// depenetrate pushes a body out of the rects it overlaps, one at a time in the
-// index's order, as the full scan did.
-func (w *wallIndex) depenetrate(x, y float64) (float64, float64) {
+// depenetratePast pushes a body out of the rects it overlaps, one at a time in
+// the index's order, as the full scan did; out of no pit when pits says so,
+// so an afloat body over one stays over it and is still pushed out of the
+// walls and shut doors round it.
+func (w *wallIndex) depenetratePast(x, y float64, pits bool) (float64, float64) {
 	r := constants.PlayerRadius
 	last := int32(-1)
 	for {
@@ -267,7 +310,7 @@ func (w *wallIndex) depenetrate(x, y float64) (float64, float64) {
 						break
 					}
 					b := &w.blockers[i]
-					if b.open() {
+					if b.passes(pits) {
 						continue
 					}
 					if px, py := depenetrate(x, y, b.x, b.y, b.w, b.h); px != x || py != y {

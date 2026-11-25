@@ -48,3 +48,27 @@ export function drawOpenBar(
 ): void {
   drawCountdownBar(g, openBarRect(sprite), fraction);
 }
+
+/**
+ * The words over the bar for what the timed interact is for (FS-5FZ4J §I R49, §J R54): a search
+ * of a secret door and a prayer at the hallowed altar say so; a container's open carries none, as
+ * it never did, and neither does a kind this client does not know.
+ */
+export function openBarLabel(targetKind: string | undefined): string | null {
+  if (targetKind === "search") return "Searching…";
+  if (targetKind === "pray") return "Praying…";
+  return null;
+}
+
+/**
+ * What the bar stands over: the bounds of every sprite drawn for its target, as one rect. A
+ * container is one sprite; a secret door's cracks are one decal per wall piece of its face
+ * (FS-5FZ4J §J R54).
+ */
+export function openBarOver(sprites: readonly Rect[]): Rect {
+  const x0 = Math.min(...sprites.map((r) => r.x));
+  const y0 = Math.min(...sprites.map((r) => r.y));
+  const x1 = Math.max(...sprites.map((r) => r.x + r.width));
+  const y1 = Math.max(...sprites.map((r) => r.y + r.height));
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}

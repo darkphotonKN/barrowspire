@@ -64,13 +64,14 @@ const system = (text: string): ChatEntry => ({
 });
 
 describe("chatWindowFrame (C18, C19: where the window sits and its shape)", () => {
-  it("should put the panel's bottom edge where the caller says and keep it 340 wide", () => {
+  it("should put the panel's bottom edge where the caller says and keep it 396 wide", () => {
     const frame = chatWindowFrame(10, 500);
 
     expect(frame.panel.x).toBe(10);
     expect(frame.panel.width).toBe(CHAT_WINDOW_W);
-    // narrowed from 420 to mirror the corner row, asked 2026-11-24
-    expect(frame.panel.width).toBe(340);
+    // narrowed from 420 to mirror the corner row, asked 2026-11-24; the row's seventh icon, the class
+    // book's (FS-X2CMM R36), widens it with the row
+    expect(frame.panel.width).toBe(396);
     expect(frame.panel.y + frame.panel.height).toBe(500);
   });
 

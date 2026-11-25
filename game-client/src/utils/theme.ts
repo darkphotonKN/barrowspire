@@ -92,6 +92,29 @@ export const BARROW = {
   amethyst: "#a088cc", //   crit
   silver: "#c2c8d0", //     the duel
 
+  // The class book's pigments (FS-X2CMM R45, ADR-0094): a page's picture is painted in one main
+  // pigment by what the page does, with bone for its highlights. Muted mineral tones, none past
+  // verdigris's chroma; ochre kept off amber (interactable), madder off oxblood (damage). Read only
+  // through `palette.bookPigment` (the page roundels) and `palette.bookEffect` (the book's world effects, R47).
+  pigmentVerdigris: "#5b9a80", // growth, beasts and cures
+  pigmentOchre: "#a88b52", //     light and finding
+  pigmentMadder: "#8f5048", //    binding and blood
+  pigmentLapis: "#52699a", //     movement and air
+  pigmentBone: "#ddd3bb", //      every page's highlights, never a main pigment
+  // A locked page's ground (FS-X2CMM §Change: Illuminated pages C1, ADR-0095): flat warm near-ink,
+  // never coloured. Read only through `palette.bookPigment.lockedGround`.
+  pigmentLockedGround: "#2a2320",
+  // The open tome (FS-X2CMM §Change: Illuminated pages and the open tome, C3–C5): the class book's
+  // two-page vellum spread in its leather, its gutter at the spine, and its three inks. Read only
+  // through `palette.bookTome` (the book's panel, `classBookStyle.ts`).
+  tomeLeather: "#3b2a1d", //      the binding round the spread
+  tomeVellumEdge: "#c9b98f", //   a page at its outer edge
+  tomeVellumMiddle: "#d8caa3", // a page near the spine
+  tomeGutter: "#a89772", //       the fold's shadow at the spine
+  tomeInk: "#2c2118", //          a page's name
+  tomeInkMuted: "#5e4c34", //     costs, terms and hints
+  tomeInkMadder: "#74392a", //    the title and the shown page's name: madder-brown
+
   // Menu chrome: Bone & Soot, the canvas menus' own values (ADR-0087; see the header). The
   // comments name the web token each held until 2026-11-21, which is also the swap-back table.
   // Read only by the canvas menus, through `palette.menu` in canvasPalette.ts.
@@ -156,6 +179,19 @@ export const BARROW_HEX = {
   verdigris: 0x5fa88a,
   amethyst: 0xa088cc,
   silver: 0xc2c8d0,
+  pigmentVerdigris: 0x5b9a80,
+  pigmentOchre: 0xa88b52,
+  pigmentMadder: 0x8f5048,
+  pigmentLapis: 0x52699a,
+  pigmentBone: 0xddd3bb,
+  pigmentLockedGround: 0x2a2320,
+  tomeLeather: 0x3b2a1d,
+  tomeVellumEdge: 0xc9b98f,
+  tomeVellumMiddle: 0xd8caa3,
+  tomeGutter: 0xa89772,
+  tomeInk: 0x2c2118,
+  tomeInkMuted: 0x5e4c34,
+  tomeInkMadder: 0x74392a,
   menuBone: 0xe9dfc9,
   menuBoneBright: 0xf6efdf,
   menuAsh: 0x8c8c84,

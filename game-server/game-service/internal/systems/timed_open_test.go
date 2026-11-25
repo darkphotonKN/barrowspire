@@ -51,12 +51,12 @@ func TestTimedOpenSystem_Start_PutsItOnTheBodyFromZero(t *testing.T) {
 	first, second := containerBeside(em, 120, 340), containerBeside(em, 120, 340)
 	sys := NewTimedOpenSystem(em)
 
-	sys.Start(body, first, timedOpenDuration)
-	assert.Equal(t, components.TimedOpenComponent{ContainerID: first, Duration: timedOpenDuration, FromX: 120, FromY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
+	sys.Start(body, first, components.TimedTargetOpen, timedOpenDuration)
+	assert.Equal(t, components.TimedOpenComponent{TargetID: first, TargetKind: components.TimedTargetOpen, Duration: timedOpenDuration, FromX: 120, FromY: 340, ReachX: 120, ReachY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
 
 	sys.Update(timedOpenTick, em.GetAllEntities(), nil)
-	sys.Start(body, second, timedOpenDuration)
-	assert.Equal(t, components.TimedOpenComponent{ContainerID: second, Duration: timedOpenDuration, FromX: 120, FromY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
+	sys.Start(body, second, components.TimedTargetOpen, timedOpenDuration)
+	assert.Equal(t, components.TimedOpenComponent{TargetID: second, TargetKind: components.TimedTargetOpen, Duration: timedOpenDuration, FromX: 120, FromY: 340, ReachX: 120, ReachY: 340, HealthBeforeCombat: 100}, *timedOpenOn(t, body))
 }
 
 // Each tick counts its simulation time on the timed open, the reach's own
@@ -67,14 +67,14 @@ func TestTimedOpenSystem_Update_CompletesOnTheTickAfterTheTimeIsCounted(t *testi
 	body := bodyAt(em, 500, 500)
 	container := containerBeside(em, 500, 500)
 	sys := NewTimedOpenSystem(em)
-	sys.Start(body, container, timedOpenDuration)
+	sys.Start(body, container, components.TimedTargetOpen, timedOpenDuration)
 
 	for n := 1; n <= 45; n++ {
 		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil), "tick %d completes nothing", n)
 		require.InDelta(t, float64(n)*timedOpenTick, timedOpenOn(t, body).Elapsed, 1e-9, "tick %d", n)
 	}
 
-	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: body.ID, ContainerID: container}}, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
+	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: body.ID, TargetID: container, TargetKind: components.TimedTargetOpen}}, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 	assert.False(t, body.HasComponent(ecs.ComponentTypeTimedOpen), "a completed timed open leaves the body")
 	assert.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil), "it is reported once")
 }
@@ -87,16 +87,16 @@ func TestTimedOpenSystem_Update_CountsEachBodysOwn(t *testing.T) {
 	chest, sack := containerBeside(em, 100, 100), containerBeside(em, 200, 100)
 	sys := NewTimedOpenSystem(em)
 
-	sys.Start(early, chest, timedOpenDuration)
+	sys.Start(early, chest, components.TimedTargetOpen, timedOpenDuration)
 	for range 10 {
 		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 	}
-	sys.Start(late, sack, timedOpenDuration)
+	sys.Start(late, sack, components.TimedTargetOpen, timedOpenDuration)
 	for range 35 {
 		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 	}
 
-	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: early.ID, ContainerID: chest}}, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
+	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: early.ID, TargetID: chest, TargetKind: components.TimedTargetOpen}}, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 	assert.InDelta(t, 36*timedOpenTick, timedOpenOn(t, late).Elapsed, 1e-9, "the other keeps counting")
 	assert.False(t, idle.HasComponent(ecs.ComponentTypeTimedOpen))
 }
@@ -111,7 +111,7 @@ func TestTimedOpenSystem_Update_ABodyThatMovedIsCancelled(t *testing.T) {
 		em := ecs.NewEntityManager()
 		body := bodyAt(em, 500, 500)
 		sys := NewTimedOpenSystem(em)
-		sys.Start(body, containerBeside(em, 500, 500), timedOpenDuration)
+		sys.Start(body, containerBeside(em, 500, 500), components.TimedTargetOpen, timedOpenDuration)
 		for range counted {
 			require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 		}
@@ -155,7 +155,7 @@ func TestTimedOpenSystem_Update_AHitThatCostHealthCancels(t *testing.T) {
 			health := healthOn(t, body)
 			health.CurrentHealth = 60
 			sys := NewTimedOpenSystem(em)
-			sys.Start(body, containerBeside(em, 500, 500), timedOpenDuration)
+			sys.Start(body, containerBeside(em, 500, 500), components.TimedTargetOpen, timedOpenDuration)
 			sys.MarkHealth(em.GetAllEntities())
 			require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 
@@ -193,7 +193,7 @@ func TestTimedOpenSystem_Update_OutOfReachOfTheContainerIsCancelled(t *testing.T
 			body := bodyAt(em, 500, 500)
 			container, _ := em.GetEntity(containerBeside(em, 500, 500))
 			sys := NewTimedOpenSystem(em)
-			sys.Start(body, container.ID, timedOpenDuration)
+			sys.Start(body, container.ID, components.TimedTargetOpen, timedOpenDuration)
 			require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 			require.True(t, body.HasComponent(ecs.ComponentTypeTimedOpen))
 
@@ -213,13 +213,13 @@ func TestTimedOpenSystem_Start_OnTheSameContainerChangesNothing(t *testing.T) {
 	body := bodyAt(em, 500, 500)
 	container := containerBeside(em, 500, 500)
 	sys := NewTimedOpenSystem(em)
-	sys.Start(body, container, timedOpenDuration)
+	sys.Start(body, container, components.TimedTargetOpen, timedOpenDuration)
 	for range 20 {
 		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 	}
 	before := *timedOpenOn(t, body)
 
-	sys.Start(body, container, timedOpenDuration)
+	sys.Start(body, container, components.TimedTargetOpen, timedOpenDuration)
 
 	assert.Equal(t, before, *timedOpenOn(t, body))
 	for range 25 {
@@ -247,7 +247,7 @@ func TestTimedOpenSystem_Update_ABodyOutOfPlayIsCancelled(t *testing.T) {
 			em := ecs.NewEntityManager()
 			body := bodyAt(em, 500, 500)
 			sys := NewTimedOpenSystem(em)
-			sys.Start(body, containerBeside(em, 500, 500), timedOpenDuration)
+			sys.Start(body, containerBeside(em, 500, 500), components.TimedTargetOpen, timedOpenDuration)
 			// the health going into the combat is the health coming out: no hit
 			resolve(t, body)
 			sys.MarkHealth(em.GetAllEntities())
@@ -275,17 +275,17 @@ func TestTimedOpenSystem_Update_TheFirstToCompleteEndsTheOthersOnItsContainer(t 
 			}
 			sys := NewTimedOpenSystem(em)
 
-			sys.Start(first, chest, timedOpenDuration)
+			sys.Start(first, chest, components.TimedTargetOpen, timedOpenDuration)
 			for range 10 {
 				require.Empty(t, sys.Update(timedOpenTick, entities, nil))
 			}
-			sys.Start(second, chest, timedOpenDuration)
-			sys.Start(elsewhere, sack, timedOpenDuration)
+			sys.Start(second, chest, components.TimedTargetOpen, timedOpenDuration)
+			sys.Start(elsewhere, sack, components.TimedTargetOpen, timedOpenDuration)
 			for range 35 {
 				require.Empty(t, sys.Update(timedOpenTick, entities, nil))
 			}
 
-			assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: first.ID, ContainerID: chest}}, sys.Update(timedOpenTick, entities, nil))
+			assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: first.ID, TargetID: chest, TargetKind: components.TimedTargetOpen}}, sys.Update(timedOpenTick, entities, nil))
 			assert.False(t, second.HasComponent(ecs.ComponentTypeTimedOpen), "the other one on the container ends on that tick")
 			assert.InDelta(t, 36*timedOpenTick, timedOpenOn(t, elsewhere).Elapsed, 1e-9, "one on another container keeps counting")
 			assert.Empty(t, sys.Update(timedOpenTick, entities, nil), "and the one that ended completes nothing later")
@@ -302,13 +302,13 @@ func TestTimedOpenSystem_Update_TwoCompletingOnOneTickAreOneCompletion(t *testin
 	chest := containerBeside(em, 500, 500)
 	entities := []*ecs.Entity{one, two}
 	sys := NewTimedOpenSystem(em)
-	sys.Start(one, chest, timedOpenDuration)
-	sys.Start(two, chest, timedOpenDuration)
+	sys.Start(one, chest, components.TimedTargetOpen, timedOpenDuration)
+	sys.Start(two, chest, components.TimedTargetOpen, timedOpenDuration)
 	for range 45 {
 		require.Empty(t, sys.Update(timedOpenTick, entities, nil))
 	}
 
-	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: one.ID, ContainerID: chest}}, sys.Update(timedOpenTick, entities, nil))
+	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: one.ID, TargetID: chest, TargetKind: components.TimedTargetOpen}}, sys.Update(timedOpenTick, entities, nil))
 	assert.False(t, one.HasComponent(ecs.ComponentTypeTimedOpen))
 	assert.False(t, two.HasComponent(ecs.ComponentTypeTimedOpen))
 }
@@ -320,8 +320,8 @@ func TestTimedOpenSystem_Update_ACancelLeavesTheOthersOnTheContainer(t *testing.
 	leaver, stayer := bodyAt(em, 500, 500), bodyAt(em, 500, 500)
 	chest := containerBeside(em, 500, 500)
 	sys := NewTimedOpenSystem(em)
-	sys.Start(leaver, chest, timedOpenDuration)
-	sys.Start(stayer, chest, timedOpenDuration)
+	sys.Start(leaver, chest, components.TimedTargetOpen, timedOpenDuration)
+	sys.Start(stayer, chest, components.TimedTargetOpen, timedOpenDuration)
 	for range 20 {
 		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 	}
@@ -335,7 +335,7 @@ func TestTimedOpenSystem_Update_ACancelLeavesTheOthersOnTheContainer(t *testing.
 	for range 24 {
 		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 	}
-	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: stayer.ID, ContainerID: chest}}, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
+	assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: stayer.ID, TargetID: chest, TargetKind: components.TimedTargetOpen}}, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 }
 
 // FS-MQYEX §Change: An attack cancels the timed open, R28–R32. I-MQYEX-7.
@@ -351,8 +351,8 @@ func TestTimedOpenSystem_Update_AnAttackThatWentOffCancels(t *testing.T) {
 		attacker, other := bodyAt(em, 500, 500), bodyAt(em, 500, 500)
 		chest := containerBeside(em, 500, 500)
 		sys := NewTimedOpenSystem(em)
-		sys.Start(attacker, chest, timedOpenDuration)
-		sys.Start(other, chest, timedOpenDuration)
+		sys.Start(attacker, chest, components.TimedTargetOpen, timedOpenDuration)
+		sys.Start(other, chest, components.TimedTargetOpen, timedOpenDuration)
 		for range counted {
 			require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 		}
@@ -365,7 +365,7 @@ func TestTimedOpenSystem_Update_AnAttackThatWentOffCancels(t *testing.T) {
 			assert.True(t, other.HasComponent(ecs.ComponentTypeTimedOpen), "%d ticks in: the other's is untouched", counted)
 			continue
 		}
-		assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: other.ID, ContainerID: chest}}, completed, "the last tick: the attacker's opens nothing, the other's completes")
+		assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: other.ID, TargetID: chest, TargetKind: components.TimedTargetOpen}}, completed, "the last tick: the attacker's opens nothing, the other's completes")
 	}
 }
 
@@ -380,10 +380,41 @@ func TestTimedOpenSystem_Update_AnAttackOnAnotherTickCancelsNothing(t *testing.T
 	sys := NewTimedOpenSystem(em)
 
 	require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), []uuid.UUID{body.ID, uuid.New()}))
-	sys.Start(body, chest, timedOpenDuration)
+	sys.Start(body, chest, components.TimedTargetOpen, timedOpenDuration)
 
 	for range 45 {
 		require.Empty(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil))
 	}
 	assert.Len(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil), 1, "it completes on its own time")
+}
+
+// A timed open worked from afar (Far Hand, FS-X2CMM §J R50) is reached from
+// the point given, beside the container, not from the body: a body 5 cells
+// off counts it through to completion standing still, and is cancelled as any
+// timed open is when it moves. I-X2CMM-15.
+func TestTimedOpenSystem_StartAfar_ReachedFromBesideTheContainer(t *testing.T) {
+	for name, moves := range map[string]bool{"standing still": false, "moving": true} {
+		t.Run(name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			body := bodyAt(em, 100, 500)
+			container := containerBeside(em, 500, 500)
+			sys := NewTimedOpenSystem(em)
+			sys.StartAfar(body, container, components.TimedTargetOpen, timedOpenDuration, 505, 500)
+			if moves {
+				at, _ := body.GetComponent(ecs.ComponentTypeTransform)
+				at.(*components.TransformComponent).X++
+			}
+
+			var completed []CompletedTimedOpen
+			for range 46 {
+				completed = append(completed, sys.Update(timedOpenTick, em.GetAllEntities(), nil)...)
+			}
+
+			if moves {
+				assert.Empty(t, completed, "moving cancels it")
+				return
+			}
+			assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: body.ID, TargetID: container, TargetKind: components.TimedTargetOpen}}, completed)
+		})
+	}
 }

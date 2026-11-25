@@ -28,7 +28,7 @@ func resourceOf(e *ecs.Entity) *components.ResourceComponent {
 
 // regenTicks runs the regen system n times at the given tick length.
 func regenTicks(em *ecs.EntityManager, n int, tick float64) {
-	sys := NewResourceSystem()
+	sys := NewResourceSystem(0)
 	for range n {
 		sys.Update(tick, em.GetAllEntities())
 	}
@@ -46,14 +46,14 @@ func TestResourceSystem_RegenAccruesExactlyAndStopsAtMax(t *testing.T) {
 		tick  float64
 		want  int
 	}{
-		{"warrior stamina after 1 s at 30 Hz", components.ResourceStamina, 100, 20, 30, worldTick, 20},
-		{"warrior stamina after 5 s at 30 Hz", components.ResourceStamina, 100, 20, 150, worldTick, 100},
-		{"warrior stamina never passes max", components.ResourceStamina, 100, 20, 600, worldTick, 100},
-		{"one tick short of a second reads one short", components.ResourceStamina, 100, 20, 29, worldTick, 19},
-		{"mage mana after 1 s at 30 Hz", components.ResourceMana, 150, 4, 30, worldTick, 4},
-		{"mage mana after 10 s at 30 Hz", components.ResourceMana, 150, 4, 300, worldTick, 40},
-		{"mage mana one tick short of a second", components.ResourceMana, 150, 4, 29, worldTick, 3},
-		{"stamina after 1 s at 60 Hz", components.ResourceStamina, 100, 20, 60, 1.0 / 60, 20},
+		{"warrior stamina after 1 s at 30 Hz", components.ResourceStamina, 100, 7, 30, worldTick, 7},
+		{"warrior stamina after 5 s at 30 Hz", components.ResourceStamina, 100, 7, 150, worldTick, 35},
+		{"warrior stamina never passes max", components.ResourceStamina, 100, 7, 600, worldTick, 100},
+		{"one tick short of a second reads one short", components.ResourceStamina, 100, 7, 29, worldTick, 6},
+		{"mage mana after 1 s at 30 Hz", components.ResourceMana, 150, 2, 30, worldTick, 2},
+		{"mage mana after 10 s at 30 Hz", components.ResourceMana, 150, 2, 300, worldTick, 20},
+		{"mage mana one tick short of a second", components.ResourceMana, 150, 2, 29, worldTick, 1},
+		{"stamina after 1 s at 60 Hz", components.ResourceStamina, 100, 7, 60, 1.0 / 60, 7},
 	}
 
 	for _, tt := range tests {

@@ -6,7 +6,7 @@
 import * as Phaser from "phaser";
 import { ActionType, type SettlementPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
-import { drawPlayerLegs, drawMercenary } from "@/utils/characterTextures";
+import { drawPlayerLegs, drawMercenary, placeholderTexture } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
 import { useGameStore } from "@/stores/gameStore";
 import { usePartyStore } from "@/stores/partyStore";
@@ -24,6 +24,8 @@ import {
   type FloorMap,
   DoorState,
   ProjectileState,
+  type BookTimedState,
+  type RollState,
 } from "@/types/gameState";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { lootMessage } from "@/ui/ContainerView";
@@ -38,6 +40,13 @@ import {
 import { placeCard } from "@/ui/placeCard";
 import { tremble, type LoreLine } from "@/ui/loreLine";
 import { burnHeard, loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
+import { SealReplies, SealWatch } from "@/ui/sealLines";
+import { EncounterWatch, encounterLineText, encounterReplyNotice } from "@/ui/encounterLines";
+import { ContractWatch, contractLine } from "@/ui/contractLines";
+import { StatusWatch } from "@/ui/statusLines";
+import { statusMarks } from "@/ui/statusMarks";
+import { rollPipView } from "@/ui/rollPipView";
+import { SealWindowClock } from "@/ui/sealWindow";
 import {
   nextWatched,
   resolved,
@@ -49,13 +58,18 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { healthPotionCount } from "@/ui/potions";
+import { DrinkInFlight, bagDrink, healthPotionCount, drinkRefusal, type UseItemReply } from "@/ui/potions";
+import { WaresTrade, type BuyReply, type ShownWares } from "@/ui/wares";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { GameplaySounds } from "@/audio/gameplaySounds";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { bindTreeAbilityKey } from "./treeAbilityKey";
+import { bindRollKey, rollAllowed, rollDirection } from "./rollKey";
+import { RollPrediction, rollReach, type RollBlocker } from "@/render/world/rollPrediction";
+import { RollBodies, RollTumble, tumbleMiddle } from "@/render/world/rollDraw";
+import { playRollDust } from "@/render/effects/rollDust";
 import { placeOnJump } from "@/render/jump";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
@@ -124,6 +138,7 @@ import {
   addWorldPlane,
   facingFrom,
   nearestScreenFacing,
+  PLAYER_RADIUS,
   projectedBounds,
   screenToWorld,
   standAt,
@@ -135,19 +150,24 @@ import {
   type Rect,
   type WorldPlane,
 } from "@/render/iso";
-import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
-import { SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
+import { artSprite, onDemandArt, preloadArt, registerArt, type OnDemandArt } from "@/render/art/phaser";
+import { ENCOUNTER_ART, SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
 import { SpecLooks, withOwnLook, type LookBodies } from "@/render/art/specLooks";
 import { FloorPoolArt } from "@/render/art/floorArt";
 import { drawTorchBar } from "@/ui/torchBar";
-import { drawOpenBar, openBarFraction } from "@/ui/openBar";
+import { drawOpenBar, openBarFraction, openBarLabel, openBarOver, openBarRect } from "@/ui/openBar";
+import { CastBar } from "@/ui/castBar";
+import { PAGE_ROUNDEL_SIZE, PageRoundel } from "@/ui/pageRoundel";
+import { PAGE_ICONS, type PageId } from "@/ui/pageIcons";
+import type { AimBody, AimScene } from "./pageAim";
+import { AimCandidates } from "./aimInteractables";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { FOG_FLOOR_AMBIENT, HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
 import { ensurePointerLook, findPointerLook, type PointerLook } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
-import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
+import { ANTIDOTE_LOOK, HEAL_LOOK, restoreLook, ShimmerFx } from "@/render/effects/shimmer";
 import { Auras } from "@/render/effects/aura";
 import { prefersReducedMotion } from "@/render/effects/mist";
 import { playSlash } from "@/render/effects/slash";
@@ -162,9 +182,11 @@ import { playArrowRelease } from "@/render/effects/arrow";
 import { playArcherShotRelease } from "@/render/effects/heavyShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
 import { StunTells } from "@/render/effects/stun";
-import { MARKER_BAR, MARKER_DEPTH, NameplateTitle, markerBase } from "@/render/markers";
+import { MARKER_DEPTH, NameplateTitle, TEAMMATE_BAR, markerBase, paintTeammateBar, teammateBarTop } from "@/render/markers";
 import {
+  HoundSet,
   MonsterRoster,
+  phaserHoundStage,
   phaserMonsterStage,
   type MonsterEffects,
   type MonsterTargeting,
@@ -236,11 +258,22 @@ import {
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SummoningSet, type SummoningLook, type SummoningTarget } from "@/render/world/altar";
+import { RespiteSet } from "@/render/world/respites";
+import { MerchantSet, merchantLantern, type MerchantLook } from "@/render/world/merchant";
+import { EncounterSet } from "@/render/world/encounters";
+import { EncounterBodies } from "@/render/world/encounterBodies";
+import { OverheadLines } from "@/render/world/overheadLines";
+import { CageSet } from "@/render/world/cage";
+import { SEAL_GROUND_DEPTH, SealSet, type SealBand, type SealStage, type WallFace } from "@/render/world/seal";
+import type { SealLook } from "@/render/world/sealLooks";
+import { TrapSet } from "@/render/world/traps";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
-import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
+import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, sameRegions, wallPlan, type DungeonMap } from "@/render/world/dungeon";
 import { buildingWallShadows, dungeonShadows } from "@/render/world/wallShadows";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
-import { nearLights } from "@/render/world/floorLights";
+import { BookEffectSet, litPoints, type BookEffectLight } from "@/render/world/bookEffects";
+import { BookStateMarks } from "@/render/world/bookStates";
+import { FloorLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
 import { dressingStandsBy, planRoomDressing, type DressingPiece } from "@/render/world/runDressing";
 import { GROUND_MARGIN } from "@/render/world/scene";
@@ -255,6 +288,7 @@ import {
   relayoutOn,
   viewRect,
   viewport,
+  zoomWorldView,
 } from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
@@ -291,8 +325,11 @@ const CAMERA_MARGIN = 160;
 const STAIRS_POOL_INTENSITY = 0.85;
 /** The own body's key among the run's player bodies' spec looks: never a player id (FS-1J1CB R21). */
 const OWN_BODY = "self";
-/** A player's footprint, in world px: the server's `PlayerRadius`. */
-const PLAYER_FOOTPRINT_RADIUS = 20;
+/**
+ * A dungeon floor's cell, world px, before its map is in or where no dungeon grid stands: the floor map's
+ * `cell_size` and the server's own fallback for a page's range (`bookCellSize`, FS-X2CMM §B R12, R24).
+ */
+const DEFAULT_CELL = 80;
 /**
  * The resolved player's card (FS-QPDKN req 1–6): over the HUD (1000), under the passing notices
  * (2000), which still have the last word while it is up.
@@ -337,18 +374,28 @@ export { TOP_RIGHT_EDGE };
  * player has no bar over their own head (FS-8AY7S req 26), so their name sits there too.
  */
 const NAME_GAP = 5;
+
+/** What goes with the merchant's body (FS-9JV5K §F R21): the animator it plays, its nameplate, its lantern. */
+interface MerchantParts {
+  name: Phaser.GameObjects.Text;
+  anim?: CharacterAnimator;
+  lantern?: LightSource;
+  /** Where he stands: his lantern hangs over it. */
+  at?: Point;
+}
 /**
- * A teammate's overhead health bar (FS-8AY7S req 27): the monsters' bar, health only, sat
- * `gap` px over the marker base. Their name lifts clear of it. Drawn only while the scene's
- * `showTeammateBars` switch is on, which it is not for now (FS-CH21F R14).
+ * A teammate's overhead health bar (FS-8AY7S req 27, `paintTeammateBar`): their name lifts clear of
+ * it by this many px. Drawn only while the scene's `showTeammateBars` switch is on, which it is not
+ * for now (FS-CH21F R14).
  */
-const TEAMMATE_BAR = { width: 38, height: 4, gap: 2 } as const;
 const NAME_OVER_BAR_GAP = 2;
 
 /** A teammate's overhead health bar, and how full it is (null: none drawn). */
 interface TeammateBar {
   graphics: Phaser.GameObjects.Graphics;
   fill: number | null;
+  /** While the teammate is poisoned: the fill takes the poison tint (FS-5FZ4J §J R55). */
+  poisoned: boolean;
 }
 
 /**
@@ -418,10 +465,8 @@ interface DungeonFloor {
   floor: number;
   grid: RegionGrid;
   chunks: ChunkVisibility;
-  /** Each with the region it lights (FS-SRA9J §C.12), 0 for none. */
-  lights: (FixedLight<{ source: LightSource } & LightRoom> & { chunk: number; region: number })[];
-  /** The lights on the light-map now. */
-  lit: Set<LightSource>;
+  /** Its fixed lights, each by its chunk and the region it lights (FS-SRA9J §C.12), and those on the light-map now. */
+  lights: FloorLights<LightSource>;
   /** The party's exploration of this floor, from nothing (FS-SRA9J §B.6). */
   seen: Exploration;
   /** The fog over it, once its walls stand. */
@@ -434,6 +479,12 @@ interface DungeonFloor {
   mapName?: MinimapName;
   /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
   dressed: DressedPiece[];
+  /** Its quiet rooms by region id, from its floor map, dressed for ambience (FS-KE075 §Change: Room variety R85). */
+  quiet: ReadonlySet<number>;
+  /** Its wall pieces as planned, once its walls stand: what a secret door's cracks are laid over (FS-5FZ4J §J R51). */
+  faces?: readonly WallFace[];
+  /** The flames its wall pieces carry, once its walls stand: what a rebuild of its walls takes away (FS-5FZ4J §J R56). */
+  wallLights?: ReadonlySet<LightSource>;
 }
 
 /** A dressing piece on a dungeon floor: its sprites and flame, and whether it has given way. */
@@ -508,6 +559,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
   /** Eased world positions of other players; their sprites sit at the projection. */
   private otherPlayersPos: Map<string, Point> = new Map();
+  /** The bodies an armed page may snap to, as the last state left them (`seeAimAllies`). */
+  private aimAllies: readonly AimBody[] = [];
+  /** The interactables an armed interactable page may snap to, named once per state (`aimScene`). */
+  private readonly aimCandidates = new AimCandidates();
   private otherPlayersTargets: Map<string, { x: number; y: number }> =
     new Map();
 
@@ -709,6 +764,17 @@ export class BarrowspireScene extends Phaser.Scene {
   private gameStateUnsubscribe?: () => void;
   private connectionStatusUnsubscribe?: () => void;
   private targetPosition: { x: number; y: number } | null = null;
+  /**
+   * The roll this client predicts on its own body (FS-7P736 R14): while it stands, the body is drawn where it
+   * says instead of easing toward `targetPosition`; once it lets go the ease takes the body back to the server.
+   */
+  private readonly rolled = new RollPrediction();
+  /**
+   * Who is drawn rolling (FS-7P736 R15): the own body under {@link OWN_BODY} from its press, every other
+   * delver by player id from `other_players[].roll`; and the in-code tumble over a sheet with no baked roll.
+   */
+  private readonly rollDraws = new RollBodies();
+  private readonly tumble = new RollTumble();
 
   // 地圖大小: the floor's own, from its floor map (FS-KE075 §H.42); none until a map sizes it
   private mapWidth = 0;
@@ -790,6 +856,109 @@ export class BarrowspireScene extends Phaser.Scene {
   });
 
   /**
+   * A sealed floor's seal pieces, gate and pits, from state (FS-5FZ4J §J R51): baked props on the
+   * resident `sealed` group, each in the frame its state names; a stone block slides each frame.
+   */
+  private readonly sealStage: SealStage<Phaser.GameObjects.Sprite> = {
+    add: (look, at, band, layer) => this.addSealPiece(look, at, band, layer),
+    show: (sprite, look) => showState(sprite, this.art, look.sheet, look.frame),
+    stand: (sprite, at, layer) => this.standSealPiece(sprite, at, layer),
+    glow: (sprite, at, on, kind) => this.glowSealPiece(sprite, at, on, kind),
+    decal: (look, at, depthAt) => this.addSealDecal(look, at, depthAt),
+  };
+  private seal = new SealSet<Phaser.GameObjects.Sprite>(this.sealStage);
+  /**
+   * A floor's healing fountain and the hallowed altar, from state (FS-5FZ4J §J R51, R52): baked props
+   * on the resident `sealed` group, drawn, stood and lit through the seal's own stage; the altar's
+   * candles burn while it is dormant.
+   */
+  private respites = new RespiteSet<Phaser.GameObjects.Sprite>(this.sealStage);
+  /**
+   * The floor's wandering merchant, from state (FS-9JV5K §F R21): his own sheet on the on-demand
+   * `merchant` group, his stand-in until it lands, with his nameplate and lantern light, which go
+   * with his body ({@link merchantParts}).
+   */
+  private merchant = new MerchantSet<Phaser.GameObjects.Sprite>(
+    {
+      add: (look, at) => this.addMerchant(look, at),
+      wear: (body, look) => this.dressMerchant(body, look),
+      stand: (body, at) => this.standMerchant(body, at),
+    },
+    () => (this.art ? { has: (sheet) => this.art.has(sheet), fetch: (group, landed) => this.onDemand?.fetch(group, landed) } : undefined),
+  );
+  /** The merchant's nameplate and lantern, by his body: what goes with it. */
+  private readonly merchantParts = new Map<Phaser.GameObjects.Sprite, MerchantParts>();
+  /** The wares panel's run side (FS-9JV5K §F R22, R23): whose panel is open and the purchase in flight. */
+  private readonly trade = new WaresTrade();
+  /** The gear's Drink in flight (FS-9JV5K §F R24): a second press on it sends nothing until it is answered. */
+  private readonly drinking = new DrinkInFlight();
+  /** The wares last handed to the UI scene, as a key: a state that changes nothing hands nothing. */
+  private shownWaresKey = "";
+  /** The scene's on-demand art (ADR-0071), what the merchant's group is fetched through. */
+  private onDemand?: OnDemandArt;
+  /**
+   * The encounter NPCs' bodies, plates and over-head lines on this scene (FS-4EC7Z §G R29, R30): the
+   * stage the encounter set and the lines draw through.
+   */
+  private readonly encounterBodies = new EncounterBodies(this, () => this.art);
+  /**
+   * A floor's encounter NPCs, from state (FS-4EC7Z §G R29): their looks on the on-demand `encounter`
+   * group, its stand-in until it lands, each with its plate (an ally's the ally plate); E talks.
+   */
+  private encounters = new EncounterSet<Phaser.GameObjects.Sprite>(this.encounterBodies, () =>
+    this.art
+      ? {
+          has: (sheet) => this.art.has(sheet),
+          carries: (sheet, clip) => this.art.animationKey(sheet, clip) !== undefined,
+          fetch: () => this.fetchEncounterArt(),
+        }
+      : undefined,
+  );
+  /** What the encounter NPCs say, over their heads for 4 s, once per `line_at` (FS-4EC7Z §G R30). */
+  private npcLines = new OverheadLines<Phaser.GameObjects.Text>(this.encounterBodies, encounterLineText);
+  /** The Captives' cage and its key, from state (FS-4EC7Z §G R31): baked props on the resident `sealed` group. */
+  private cages = new CageSet<Phaser.GameObjects.Sprite>({
+    add: (look, at, depthAt) => {
+      const { sprite } = addProp(this, this.art, look.sheet, at, { animation: look.frame });
+      sprite.setDepth(worldDepth(depthAt.x, depthAt.y, 1));
+      return sprite;
+    },
+    show: (sprite, look) => showState(sprite, this.art, look.sheet, look.frame),
+  });
+  /** The encounters' events against the previous broadcast, a first one the baseline (FS-4EC7Z §G R31, R33). */
+  private encounterWatch = new EncounterWatch();
+  /** The player's contract's end against the previous broadcast, a first one the baseline (FS-4EC7Z §G R34). */
+  private contractWatch = new ContractWatch();
+  /** The contract's heading line last handed to the UI scene: a state that changes nothing hands nothing. */
+  private shownContractLine: string | null = null;
+  /**
+   * A floor's detected traps, from state (FS-5FZ4J §J R51): baked props on the resident `sealed`
+   * group, faint while they wait, sprung at full strength when they fire.
+   */
+  private traps = new TrapSet<Phaser.GameObjects.Sprite>({
+    add: (look, at, alpha) => addProp(this, this.art, look.sheet, at, { animation: look.frame }).sprite.setAlpha(alpha),
+    show: (sprite, look, alpha) => {
+      showState(sprite, this.art, look.sheet, look.frame);
+      sprite.setAlpha(alpha);
+    },
+    spring: (sprite, look, settle) => this.springTrap(sprite, look, settle),
+    // a trap a page revealed is washed in the finding's ochre (FS-X2CMM §J R49)
+    reveal: (sprite, revealed) => void (revealed ? sprite.setTint(palette.bookEffect.revealedTrap) : sprite.clearTint()),
+  });
+  /** The player's own statuses against the previous broadcast, a first one the baseline (FS-5FZ4J §J R53). */
+  private statusWatch = new StatusWatch();
+  /** The seal pieces laid on the ground, which keep the ground band as they stand. */
+  private sealGround = new WeakSet<Phaser.GameObjects.Sprite>();
+  /** The flame each seal brazier's sheet declares, by its sprite: lit only while the brazier is (I-5FZ4J-8). */
+  private sealLights = new Map<Phaser.GameObjects.Sprite, LightSource>();
+  /** The seal's events against the previous broadcast, a first one the baseline (FS-5FZ4J §I R48, §J R53). */
+  private sealWatch = new SealWatch();
+  /** The Braziers window's countdown, and whether the HUD needs telling (R53). */
+  private sealWindow = new SealWindowClock();
+  /** The seal's reply lines, the shrine's turning with each read this run (R53). */
+  private sealReplies = new SealReplies();
+
+  /**
    * Burning trails, from state (FS-4R9M9 req 56, 61): a ground bed and an additive glow each,
    * named for the trail they burn for.
    */
@@ -804,6 +973,35 @@ export class BarrowspireScene extends Phaser.Scene {
     // the glow sorts above the roofs: like a sconce's halo, it is only in sight while no roof the
     // player is outside of stands over either end of the trail
     glowShown: (trail) => !this.underRoof(trail.from) && !this.underRoof(trail.to),
+  });
+
+  /**
+   * The class book's world effects, from state (FS-X2CMM §I R47): a witchlight's globe and its halo over the
+   * light-map, with its pool; a rune's ring on the floor and its flash; a draught's flask in an amber pool.
+   */
+  private bookEffects = new BookEffectSet<Phaser.GameObjects.Graphics>({
+    layer: (id, kind, at) => {
+      const g = this.add.graphics().setName(`book:${id}:${kind}`);
+      if (kind === "ground") return g.setDepth(TRAIL_BED_DEPTH);
+      if (kind === "body") return g.setDepth(worldDepth(at.x, at.y, 1));
+      return g.setDepth(HALO_DEPTH).setBlendMode(Phaser.BlendModes.ADD);
+    },
+    light: (spec): BookEffectLight =>
+      this.lightMap?.addTransient(spec) ?? { ...spec, remove: () => undefined },
+    cell: () => this.dungeon?.grid.cell ?? DEFAULT_CELL,
+    reducedMotion: prefersReducedMotion(),
+  });
+
+  /**
+   * The class book's states on every body, from state (FS-X2CMM §I R47): afloat's shadow and lift, hardened's
+   * sheen, the long night's ring, tracker's eye's ring, the draught's heal, each on its body's drawn feet.
+   */
+  private bookStates = new BookStateMarks<Phaser.GameObjects.Graphics>({
+    layer: (body, state, kind) => {
+      const g = this.add.graphics().setName(`book:${body}:${state}:${kind}`);
+      return kind === "ground" ? g.setDepth(TRAIL_BED_DEPTH) : g;
+    },
+    reducedMotion: prefersReducedMotion(),
   });
 
   // 牆壁 (從後端同步) — baked wall pieces and posts (FS-2325V §C.2), or the
@@ -859,7 +1057,19 @@ export class BarrowspireScene extends Phaser.Scene {
    * open bar drawn for it over the container (FS-MQYEX R22). Unset while no state carries one:
    * the bar only shows what the server counts, and never opens anything.
    */
-  private timedOpen?: { open: TimedOpenState; seenAt: number; bar: Phaser.GameObjects.Graphics };
+  private timedOpen?: { open: TimedOpenState; seenAt: number; bar: Phaser.GameObjects.Graphics; label?: Phaser.GameObjects.Text };
+  /**
+   * The cast bar under the player's feet while their own `book.casting` is present (FS-X2CMM R43), with the
+   * page's roundel on its left: screen-fixed, set each frame once the camera is (`stopCastBar`), so the
+   * roundel and the bar stand together on the feet. It follows the player, so it is the world's (ADR-0086 2.1).
+   */
+  private readonly castBar = new CastBar({
+    graphics: () => this.add.graphics().setScrollFactor(0).setDepth(MARKER_DEPTH.bar).setName("cast-bar"),
+    roundel: (page) =>
+      new PageRoundel({ scene: this, depth: MARKER_DEPTH.bar + 1, icon: PAGE_ICONS[page], size: PAGE_ROUNDEL_SIZE.castBar, name: page }),
+  });
+  /** Stops the cast bar hearing the main camera's frames. */
+  private stopCastBar?: () => void;
 
   /** The player's strike and casts, shared with the field scene (FS-X2F2H §Requirements 56). */
   private readonly combat = new PlayerCombat(
@@ -894,6 +1104,9 @@ export class BarrowspireScene extends Phaser.Scene {
       // key 3's Arrow Rain aim circle, a world effect the run draws (FS-04EEA R38; ADR-0086 2.2)
       rainAim: (centre) => this.kit.rainAim(centre),
       endRainAim: () => this.kit.endRainAim(),
+      // the armed class book page's reticle, a world effect the run draws (FS-X2CMM R41; ADR-0086 2.2)
+      reticle: (reticle) => this.kit.reticle(reticle),
+      endReticle: () => this.kit.endReticle(),
       // the tree abilities' looks, world effects the run draws, the caster's own (FS-04EEA §H R42–R46)
       earthbreaker: (from) => this.kit.earthbreaker(from),
       blink: (from) => this.kit.blink(from, this.time.now),
@@ -971,6 +1184,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private readonly deathDust = new DeathDust();
   /** The run's monsters and corpses, from state (FS-77AB6 req 34–39). */
   private monsters?: MonsterRoster;
+  /** The archers' hounds, from the state's book effects, for every viewer (FS-X2CMM §I R47). */
+  private hounds?: HoundSet;
   /** The variant art a floor's pool names, fetched and evicted with the floor (FS-C8VM7 §G, ADR-0081). */
   private poolArt?: FloorPoolArt;
   /**
@@ -984,7 +1199,8 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.ui.pressClaimed(this.input?.activePointer)) return;
       if (this.strike(monster.entity_id, monster.position)) this.lastHit.aimed(monster, this.time.now);
     },
-    hover: (monster) => this.pointerLook?.base(monster ? "strike" : "hand"),
+    // an armed page's click never strikes (FS-X2CMM R41): no strike-mark over a monster while one is armed
+    hover: (monster) => this.pointerLook?.base(monster && !this.combat.armed ? "strike" : "hand"),
   };
   /**
    * What a monster's actions play on the world (FS-VHGE7 §D R32–33): a demon's fire claw; and a
@@ -1103,10 +1319,13 @@ export class BarrowspireScene extends Phaser.Scene {
     this.connectionStatusUnsubscribe = undefined;
     socketManager.off("exit_door_unlocked");
     socketManager.off("interact");
+    socketManager.off("cast_skill");
     socketManager.off("equip");
     socketManager.off("end_game");
     socketManager.off("settlement");
     socketManager.off("leave_run");
+    socketManager.off("buy");
+    socketManager.off("use_item");
     socketManager.offError("leave_run");
     socketManager.offError("forfeit_run");
 
@@ -1121,9 +1340,12 @@ export class BarrowspireScene extends Phaser.Scene {
     this.walkPhase = 0;
     this.ownHealth = undefined;
     this.targetPosition = null;
+    this.rolled.clear();
+    this.rollDraws.clear();
 
     this.otherPlayers.clear();
     this.otherPlayersPos.clear();
+    this.aimAllies = [];
     this.otherPlayersTargets.clear();
     this.teammateHealthBars.clear();
     this.otherPlayersLegs.clear();
@@ -1151,7 +1373,25 @@ export class BarrowspireScene extends Phaser.Scene {
     this.switches.clear();
     this.stairs.forget();
     this.summoning.forget();
+    this.seal.forget();
+    this.respites.forget();
+    this.merchant.forget();
+    this.merchantParts.clear();
+    this.encounters.forget();
+    this.encounterBodies.forget();
+    this.npcLines.forget();
+    this.cages.forget();
+    this.shownContractLine = null;
+    this.trade.reset();
+    this.drinking.reset();
+    this.shownWaresKey = "";
+    this.onDemand = undefined;
+    this.sealLights.clear();
+    this.traps.forget();
     this.trails.forget();
+    this.bookEffects.forget();
+    this.hounds?.forget();
+    this.bookStates.forget();
     this.walls.clear();
     this.serverDoors.clear();
     this.serverBuildingsCreated = false;
@@ -1218,6 +1458,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
     this.kit.forget();
+    // the cast bar goes with the run, its roundel's view watch with it (FS-X2CMM R43)
+    this.stopCastBar?.();
+    this.stopCastBar = undefined;
+    this.castBar.clear();
     // a hold dies with its run: nothing is sent, nothing queued for later (FS-JTNPR req 15); the
     // combat's reset below drops the hold and the lockout
     this.game?.events.off(Phaser.Core.Events.BLUR, this.cancelAim, this);
@@ -1250,6 +1494,11 @@ export class BarrowspireScene extends Phaser.Scene {
     this.previousSwitchActivated = undefined;
     this.previousAltar = undefined;
     this.escapedPlayers = undefined;
+    this.sealWatch.reset();
+    this.statusWatch.reset();
+    this.sealWindow.forget();
+    this.encounterWatch.reset();
+    this.contractWatch.reset();
   }
 
   /**
@@ -1307,9 +1556,12 @@ export class BarrowspireScene extends Phaser.Scene {
     // the run's end carries the last word; the menu never covers it (FS-9K8EZ req 6): the UI
     // scene's yields as it hears the end
     this.takeDownResolvedView();
+    this.closeWares();
     this.ui.changed();
-    // the run is over: a Shadow Shot hold ends with nothing sent (FS-JTNPR req 15)
+    // the run is over: a Shadow Shot hold ends with nothing sent (FS-JTNPR req 15), an armed page disarms
+    // (FS-X2CMM R41)
     this.cancelAim();
+    this.combat.disarm();
     // a half-typed line went as the UI scene's chat heard the change above, and both keyboards were
     // handed back before this one is switched off here, so nothing turns it on again (FS-WJGFJ R27;
     // FS-TQZ5J § Change: Batch 6, R128)
@@ -2597,38 +2849,79 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The open bar follows the state (FS-MQYEX R22, R23, R25): up while the player's own
-   * `timed_open` names a shut container drawn here, gone with no notice on a state that carries
-   * none, whether the container opened or the timed open was cancelled. Only `current_player` is
-   * read, never another player's entry, and nothing is drawn while spectating.
+   * `timed_open` names a target drawn here, gone with no notice on a state that carries none,
+   * whether the target gave or the timed interact was cancelled. A container's open stands over a
+   * shut container; a search over a detected shut secret door's cracks, labelled "Searching…", and
+   * a prayer likewise "Praying…" (FS-5FZ4J §I R49, §J R54). Only `current_player` is read, never
+   * another player's entry, and nothing is drawn while spectating.
    */
   private showTimedOpen(state: ClientGameState): void {
     const open = this.watchedPlayerId === undefined ? state.current_player?.timed_open : undefined;
-    const shut =
-      open &&
-      this.chests.has(open.entity_id) &&
-      state.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open);
-    if (!open || !shut) {
+    if (!open || this.timedTarget(open, state).length === 0) {
       this.timedOpen?.bar.destroy();
+      this.timedOpen?.label?.destroy();
       this.timedOpen = undefined;
       return;
     }
     const bar = this.timedOpen?.bar ?? this.add.graphics().setDepth(MARKER_DEPTH.bar).setName("open-bar");
-    this.timedOpen = { open, seenAt: this.time.now, bar };
+    const words = openBarLabel(open.target_kind);
+    let label = this.timedOpen?.label;
+    if (!words) {
+      label?.destroy();
+      label = undefined;
+    } else if (!label)
+      label = this.add
+        .text(0, 0, words, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "11px",
+          color: toCss(palette.hudText),
+          stroke: toCss(palette.markerStroke),
+          strokeThickness: 3,
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(MARKER_DEPTH.bar)
+        .setName("open-bar-label");
+    else label.setText(words);
+    this.timedOpen = { open, seenAt: this.time.now, bar, label };
     this.drawTimedOpen();
   }
 
   /**
+   * What the player's own timed interact works, as drawn here, by its `target_kind` (FS-5FZ4J §I
+   * R49): a search's, what the seal drew for its target (a detected shut secret door's cracks); a
+   * prayer's, the hallowed altar; an open's, a shut container's sprite; none while it is not drawn.
+   */
+  private timedTarget(open: TimedOpenState, state: ClientGameState | undefined): Phaser.GameObjects.Sprite[] {
+    switch (open.target_kind) {
+      case "search":
+        return this.seal.drawnFor(open.entity_id);
+      case "pray":
+        return this.respites.drawnFor(open.entity_id);
+      default: {
+        // a container's open, from a server before FS-5FZ4J with no kind, or a kind this client does not know
+        const chest = this.chests.get(open.entity_id)?.sprite;
+        return chest && state?.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open) ? [chest] : [];
+      }
+    }
+  }
+
+  /**
    * Draws the open bar as it stands this frame: the state's fill, run on by the real time since
-   * that state so it reads smooth, never past full (R22). Hidden with its container's sprite.
+   * that state so it reads smooth, never past full (R22). Over its target's sprites, and hidden with
+   * them; its label just over it.
    */
   private drawTimedOpen(): void {
     if (!this.timedOpen) return;
-    const { open, seenAt, bar } = this.timedOpen;
-    const sprite = this.chests.get(open.entity_id)?.sprite;
-    bar.setVisible(!!sprite?.visible);
-    if (!sprite?.visible) return;
+    const { open, seenAt, bar, label } = this.timedOpen;
+    const shown = this.timedTarget(open, this.lastGameState).filter((sprite) => sprite.visible);
+    bar.setVisible(shown.length > 0);
+    label?.setVisible(shown.length > 0);
+    if (shown.length === 0) return;
     bar.clear();
-    drawOpenBar(bar, sprite.getBounds(), openBarFraction(open, this.time.now - seenAt));
+    const over = openBarOver(shown.map((sprite) => sprite.getBounds()));
+    drawOpenBar(bar, over, openBarFraction(open, this.time.now - seenAt));
+    const rect = openBarRect(over);
+    label?.setPosition(rect.x + rect.width / 2, rect.y - 2);
   }
 
   private updateEscapeDoors(escapeDoors: EscapeDoorState[]): void {
@@ -3115,18 +3408,45 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
-  private getNearbyChest(): { entityId: string } | null {
+  /**
+   * What E does for the nearest in reach of a seal piece or the shut gate, the hallowed altar, the
+   * wandering merchant (his wares panel, FS-9JV5K §F R21), an encounter NPC, the cage key and the shut
+   * cage (FS-4EC7Z §G R29, R31) and a chest (FS-5FZ4J §J R52), as
+   * containers are reached; nothing with none in reach. A tie goes to the seal, then the altar.
+   */
+  private nearestReach(): (() => void) | null {
+    const me = this.playerPos;
+    if (!this.player || !me) return null;
+    const sealed = this.seal.reach(me);
+    const respite = this.respites.reach(me);
+    const merchant = this.merchant.reach(me);
+    const npc = this.encounters.reach(me);
+    const cage = this.cages.reach(me);
+    const chest = this.getNearbyChest();
+    const reaches: { distance: number; act: () => void }[] = [];
+    if (sealed) reaches.push({ distance: sealed.distance, act: () => socketManager.sendMessage(ActionType.Interact, { entity_id: sealed.target.entityId }) });
+    if (respite) reaches.push({ distance: respite.distance, act: () => socketManager.sendMessage(ActionType.Interact, { entity_id: respite.target.entityId }) });
+    if (merchant) reaches.push({ distance: merchant.distance, act: () => this.openWares() });
+    // an encounter NPC to talk to, the cage key to take, the shut cage to open (FS-4EC7Z §G R29, R31)
+    for (const r of [npc, cage])
+      if (r) reaches.push({ distance: r.distance, act: () => socketManager.sendMessage(ActionType.Interact, { entity_id: r.target.entityId }) });
+    if (chest) reaches.push({ distance: chest.distance, act: () => this.toggleChest(chest.entityId) });
+    let best: (typeof reaches)[number] | undefined;
+    for (const r of reaches) if (!best || r.distance < best.distance) best = r;
+    return best?.act ?? null;
+  }
+
+  /** The nearest chest or sack within the interact distance of the player, and how far it stands. */
+  private getNearbyChest(): { entityId: string; distance: number } | null {
     const me = this.playerPos;
     if (!this.player || !me) return null;
     const interactDistance = 60;
-
+    let best: { entityId: string; distance: number } | null = null;
     for (const [entityId, chest] of this.chests) {
       const distance = Phaser.Math.Distance.Between(me.x, me.y, chest.pos.x, chest.pos.y);
-      if (distance < interactDistance) {
-        return { entityId };
-      }
+      if (distance < interactDistance && (!best || distance < best.distance)) best = { entityId, distance };
     }
-    return null;
+    return best;
   }
 
   private getNearbySwitch(): { entityId: string } | null {
@@ -3259,12 +3579,19 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   create(): void {
+    // the world stands closer than the logical view, its HUD on a camera of its own at the logical
+    // view; first, so whatever is laid out for the world camera sees its zoom (FS-ZAJMH § Change:
+    // Closer world camera)
+    zoomWorldView(this);
     // an arrival is dark before anything of the floor is made: the world's fade-in opens on the
     // dark, and the card comes with the first broadcast's floor (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.dark();
     // the UI scene comes up over this world, and sleeps when it stops; the player's actions reach
     // its interface sounds from here on (FS-TQZ5J R3, R9, R12)
     this.ui = reportWorld(this, "run", this.worldSide());
+    // the cast bar stands on the feet the frame draws (FS-X2CMM R43)
+    this.stopCastBar?.();
+    this.stopCastBar = afterFrameSetUp(this.cameras.main, (scroll) => this.drawCastBar(scroll));
     // Connect via SocketManager
     this.connectToServer();
     this.mountGameplaySounds();
@@ -3282,13 +3609,16 @@ export class BarrowspireScene extends Phaser.Scene {
     this.setupCustomCursor();
     this.occluders = new Occluders();
     const onDemand = onDemandArt(this, this.art);
+    this.onDemand = onDemand;
     this.monsters = new MonsterRoster(
       phaserMonsterStage(this),
       this.art,
       this.monsterTargeting,
       this.monsterEffects,
-      onDemand,
+      // the encounters' group answers both its NPCs and its hostile humans, whichever asks first
+      { fetch: (group, landed) => (group === ENCOUNTER_ART.group ? this.fetchEncounterArt() : onDemand.fetch(group, landed)) },
     );
+    this.hounds = new HoundSet(phaserHoundStage(this, TRAIL_BED_DEPTH), this.art);
     this.poolArt = new FloorPoolArt(onDemand, (group) => this.monsters?.redress(group));
     this.looks = new SpecLooks(this.art, onDemand, this.lookBodies(), this.artGroups);
 
@@ -3371,6 +3701,11 @@ export class BarrowspireScene extends Phaser.Scene {
       // resume one (FS-JTNPR req 15; FS-TQZ5J § Change: Phase 3, R53)
       heardUi: (ui, was) => {
         if ((ui.menuOpen && !was.menuOpen) || gearOpened(ui, was)) this.cancelAim();
+        // an armed page lives while the book is open and nothing opens over it: the book closing (by
+        // its ×, Esc, K, or stepping aside for another window) or the menu opening disarms (FS-X2CMM R41)
+        if (!ui.book || (ui.menuOpen && !was.menuOpen) || gearOpened(ui, was)) this.combat.disarm();
+        // the menu opens over no window: the wares panel shuts, silently (FS-3EBCA R17)
+        if (ui.menuOpen && !was.menuOpen) this.closeWares();
       },
       answer: answering({
         // the gear overlay's wear and take off, sent as the run has always sent them (§ Change: Phase 3, R54)
@@ -3378,6 +3713,10 @@ export class BarrowspireScene extends Phaser.Scene {
         unequip: (item) => socketManager.sendMessage(ActionType.Unequip, { item_entity_id: item }),
         // Burn tome?'s Burn: the one interact for the altar (FS-3103M R25)
         burn: (altar) => socketManager.sendMessage(ActionType.Interact, { entity_id: altar }),
+        // the wares panel's Buy: one purchase at a time, Paying… until its reply (FS-9JV5K §F R23)
+        buy: (ware) => this.buyWare(ware),
+        // the gear overlay's Drink on a bagged antidote or Restoring Draught (FS-9JV5K §F R24; §Change D6)
+        drink: (item) => this.drink(item),
         // a dread lore line started on the UI scene: this camera trembles, as it did under the run's own
         // lines (FS-XWHZP R10; FS-TQZ5J § Change: Merge with main, 2026-11-14)
         tremor: (durationMs, intensity) => tremble(this.cameras.main, durationMs, intensity),
@@ -3393,11 +3732,15 @@ export class BarrowspireScene extends Phaser.Scene {
         // Leave the barrow is the card's own path (FS-QPDKN req 13): one send, one pending flag
         // the record's Close: its one sound played here, then the close (FS-QPDKN § Change: The party
         // death flow and the spectate switcher, R153)
-        close: { record: () => this.recordClosePressed() },
+        close: { record: () => this.recordClosePressed(), wares: () => this.closeWares() },
         leaveRun: () => this.leaveTheBarrow(),
         fall: () => this.fallWhereYouStand(),
         // the OPTIONS Music row, applied to the tower's music at once (§ Change: The tower's music, W6)
         musicLevel: (level) => this.music?.setLevel(level),
+        // the class book asks, the run casts (FS-X2CMM R40, R44a; ADR-0085 Decision 1): a ready page arms
+        // or casts at once; Esc's first step while one is armed disarms it, nothing else
+        page: (page) => this.pressPage(page),
+        disarm: () => void this.combat.disarm(),
       }),
     };
   }
@@ -3413,6 +3756,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ended: this.runEnded,
       leavePending: this.leavePending,
       fallPending: this.fallPending,
+      armed: this.combat.armed,
     };
   }
 
@@ -3522,11 +3866,15 @@ export class BarrowspireScene extends Phaser.Scene {
         this.reachSummoning(summoned);
         return;
       }
-      // 檢查寶箱
-      const nearbyChest = this.getNearbyChest();
-      if (nearbyChest) {
-        this.toggleChest(nearbyChest.entityId);
+      // a draught on the floor, drunk by interacting with it (FS-X2CMM R27, R47)
+      const draught = this.playerPos ? this.bookEffects.nearbyDraught(this.playerPos) : null;
+      if (draught) {
+        socketManager.sendMessage(ActionType.Interact, { entity_id: draught });
+        return;
       }
+      // the nearest in reach of a seal piece to work or the shut gate (refused or opened with the
+      // key), the hallowed altar to Pray at (never the fountain), and a chest (FS-5FZ4J §J R52)
+      this.nearestReach()?.();
     });
 
     // I, B, C, F and Q are the UI scene's, with the gear overlay and the satchel they open, take from
@@ -3547,6 +3895,9 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.menuOpen || event?.repeat) return;
       this.drinkPotion();
     });
+
+    // Space rolls (FS-7P736 R13): an event, never an added key, so nothing captures Space and chat types it
+    bindRollKey(this.input.keyboard, () => this.roll());
 
     // 3 casts the tree ability (FS-04EEA R35, R36), an event as 1 is; held back while the UI scene's menu
     // reads it as its third row, chat types or a gear panel is open. Letting go casts an archer's Arrow Rain
@@ -3586,10 +3937,17 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
-
-      const currentClass = this.ownClass();
+      // an armed page (FS-X2CMM R41): the left-click is its cast on a valid target, or nothing; the right
+      // disarms; neither attacks nor casts the class ability
       const leftButton = pointer.leftButtonDown() || pointer.button === 0;
       const rightButton = pointer.rightButtonDown() || pointer.button === 2;
+      if (this.combat.armed) {
+        if (leftButton) this.combat.castArmed(this.aimScene(screenToWorld(pointer.worldX, pointer.worldY)));
+        else if (rightButton) this.combat.disarm();
+        return;
+      }
+
+      const currentClass = this.ownClass();
 
       // The pointer is over the projection; the server wants the world point under
       // it. `target` and `me` are world positions (FS-2325V §0.2, §A.5).
@@ -3711,6 +4069,71 @@ export class BarrowspireScene extends Phaser.Scene {
     this.combat.cancelAim();
   }
 
+  /**
+   * A ready page pressed in the class book (FS-X2CMM R40, R44a): armed, or cast at once, while this player is
+   * in play, the run not over and the menu shut; otherwise nothing.
+   */
+  private pressPage(page: PageId): void {
+    if (this.menuOpen || this.runEnded || !this.player || !this.playerPos) return;
+    if (resolved(this.lastGameState?.current_player)) return;
+    this.combat.pressPage(page, this.playerPos);
+  }
+
+  /**
+   * The bodies an armed page may snap to, from this state (FS-X2CMM R41, §C R15): the player and every living,
+   * un-escaped teammate, by the id the server knows them by. Built once a state, not once a frame: each `at` is
+   * the drawn position the frames move in place, so the reticle follows the bodies between states.
+   */
+  private seeAimAllies(state: ClientGameState): void {
+    const me = state.current_player;
+    const allies: AimBody[] = me ? [{ id: me.id, at: this.playerPos ?? me.position, self: true }] : [];
+    for (const other of state.other_players ?? []) {
+      if (!resolved(other)) allies.push({ id: other.id, at: this.otherPlayersPos.get(other.id) ?? other.position });
+    }
+    this.aimAllies = allies;
+  }
+
+  /**
+   * The run as an armed page reads it (FS-X2CMM R41): the player's drawn feet, the world point `cursor`, the
+   * floor's cell, the living, un-escaped delvers where they are drawn (the player among them, by the id the
+   * server knows them by, §C R15), the last state's interactables, each named by what it is (the armed page
+   * picks the kinds it targets, §J R50, R52), and the walkable floor. The interactables are named only when
+   * an armed interactable page reads them, and once per state (`AimCandidates`).
+   */
+  private aimScene(cursor: Point): AimScene {
+    const from = this.playerPos ?? this.lastGameState?.current_player?.position ?? cursor;
+    const grid = this.dungeon?.grid;
+    const cell = grid?.cell ?? DEFAULT_CELL;
+    const candidates = this.aimCandidates;
+    const state = this.lastGameState;
+    return {
+      from,
+      cursor,
+      cell,
+      allies: this.aimAllies,
+      get interactables() {
+        return candidates.of(state, cell);
+      },
+      walkable: grid
+        ? (p) => {
+            const { cx, cy } = grid.cellOf(p);
+            return grid.walkable(cx, cy);
+          }
+        : undefined,
+    };
+  }
+
+  /**
+   * The cast bar this frame (FS-X2CMM R43), once the main camera is set up for it: under the player's drawn
+   * feet, in logical px (the camera is zoomed by the render scale from origin 0, so a world point stands at
+   * its projection less the scroll).
+   */
+  private drawCastBar(scroll: Point): void {
+    if (!this.playerPos) return;
+    const feet = worldToScreen(this.playerPos.x, this.playerPos.y);
+    this.castBar.frame({ x: feet.x - scroll.x, y: feet.y - scroll.y }, this.time.now);
+  }
+
   /** No line left behind, and the archer's facing let go to its idle (FS-JTNPR req 15). */
   private endAimDrawing(): void {
     this.kit.endAim();
@@ -3779,6 +4202,19 @@ export class BarrowspireScene extends Phaser.Scene {
       // the world's reply as a lore line, in the client's words where it has a reason (FS-XWHZP R16-R18)
       const line = loreForReply(payload);
       if (line) this.sayLore(line);
+      // a sealed floor's replies, as HUD notices in their tones (FS-5FZ4J §I R49, §J R53)
+      const notice = this.sealReplies.notice(payload, this.lastGameState?.seal) ?? encounterReplyNotice(payload);
+      if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    });
+
+    // A page refused by the world it works on (Pick the Lock's open cage, Strike a Deal's group that will
+    // not follow, is sworn to another or finds too many following, Take a Contract's: FS-X2CMM §J R55-R57,
+    // the reasons in `ENCOUNTER_REPLY_REASONS`) is answered on the cast's
+    // reply with its reason, in the client's words (FS-4EC7Z §F R27); a page the book itself refuses is
+    // answered with nothing (FS-X2CMM §A R4)
+    socketManager.on("cast_skill", (reply: InteractReply) => {
+      const notice = encounterReplyNotice(reply);
+      if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     });
 
     // A refused equip (FS-BDA7X req 32, 45): the server's words, as a refusal. The next state puts
@@ -3787,6 +4223,10 @@ export class BarrowspireScene extends Phaser.Scene {
       const refusal = equipRefusal(reply);
       if (refusal) this.showNotification(refusal, NOTICE_BACKING.refused);
     });
+
+    // a purchase answered (FS-9JV5K §F R23) and an antidote or draught drunk or refused (R24, D6)
+    socketManager.on("buy", (reply: BuyReply) => this.waresAnswered(reply));
+    socketManager.on("use_item", (reply: UseItemReply) => this.itemUsed(reply));
 
     // end_game: the run is over. No card (FS-GV8WN R24); interaction locks
     const endGame = () => this.endRun();
@@ -3835,6 +4275,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // a late frame from the floor the party has climbed from (FS-KE075 §H.41)
     if (held && state.floor !== undefined && state.floor < held.floor) return;
     this.lastGameState = state;
+    // a drunk antidote or draught gone from the bag: the drink is answered (FS-9JV5K §F R24, D6)
+    this.drinking.see(state.current_player?.inventory ?? []);
 
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
     // the new one, so nothing waits on the transition, which only plays over the result.
@@ -3880,6 +4322,8 @@ export class BarrowspireScene extends Phaser.Scene {
       // Blink just sent lands there (R44)
       if (this.playerPos && placeOnJump(this.playerPos, this.targetPosition, pos)) this.kit.landed(pos, this.time.now);
       this.targetPosition = { x: pos.x, y: pos.y };
+      // the server's answer to a predicted roll, and whether its own roll still runs (FS-7P736 R14)
+      this.rolled.hear(state.current_player);
 
       this.showProgress(state.current_player);
 
@@ -3940,6 +4384,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.settleReach(state);
     // the player's own timed open, over the containers just drawn (FS-MQYEX R22)
     this.showTimedOpen(state);
+    // the player's own book cast, counted by the server (FS-X2CMM R43); never while watching a teammate
+    this.castBar.hear(this.watchedPlayerId === undefined ? state.current_player?.book?.casting : undefined, this.time.now);
 
     // Update escape doors from server
     this.updateEscapeDoors(state.escape_doors || []);
@@ -3951,12 +4397,28 @@ export class BarrowspireScene extends Phaser.Scene {
     this.stairs.sync(state.stairs ?? []);
     // the tome while it lies here, the altar on its floor (FS-3103M §I R27)
     this.summoning.sync(state);
+    // a sealed floor's pieces, gate and pits, over its cell grid; its lines and the Braziers window
+    // (FS-5FZ4J §J R51, R53): an arrival's first floor says its seal, a return's says nothing
+    this.showSeal(state, arrived);
+    // its detected traps, and the player's own poison said (FS-5FZ4J §J R51, R53)
+    this.showHazards(state);
+    // its encounter NPCs, the cage and key, their lines, and the player's contract (FS-4EC7Z §G)
+    this.showEncounters(state);
     this.updateFloorIndicator(state);
 
     // Run dressing, once the floor's static entities are known (FS-8RBQY §C.4–§C.5); then every
     // fixed light built this broadcast goes through the floor's budget, once (§C.6)
     if (floorMap) this.buildDressing(state);
     this.stampLights(state.floor);
+    // the class book's witchlights, runes and draughts, and every body's book states, for every viewer
+    // (FS-X2CMM §I R47): the broadcast is the whole truth
+    this.bookEffects.sync(state.book_effects, this.time.now);
+    // and the archers' hounds, which run, bite and fall (FS-X2CMM §I R47)
+    this.hounds?.sync(state.book_effects);
+    this.syncBookStates(state);
+    // every delver the state shows rolling is drawn rolling, the own body too when no press predicted it (FS-7P736 R15)
+    this.syncRolls(state);
+    this.seeAimAllies(state);
     // what the party has explored of a dungeon floor, from this broadcast (FS-SRA9J §B)
     this.explore(state);
 
@@ -3973,7 +4435,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.yieldMenu(state);
     // out of the delve, a hold ends the moment the client sees it (FS-JTNPR req 15)
-    if (this.menuState(state).resolved) this.cancelAim();
+    if (this.menuState(state).resolved) {
+      this.cancelAim();
+      // and an armed page disarms (FS-X2CMM R41: death or leaving the run)
+      this.combat.disarm();
+    }
     this.syncResolvedView(state);
     this.showOwnHud();
     // the party frames are the UI scene's: this state's players, as plain data (FS-R82NV R34, R35;
@@ -4022,7 +4488,18 @@ export class BarrowspireScene extends Phaser.Scene {
     const state = this.lastGameState;
     if (!state) return;
     const map = this.heldFloorMap(state.session_id);
-    if (!map || map.floor !== state.floor || this.builtFloor === map.floor) return;
+    if (!map || map.floor !== state.floor) return;
+    if (this.builtFloor === map.floor) {
+      // the floor map re-sent for the floor built: its cells drawn again, what is explored kept (FS-5FZ4J §J R56)
+      if (this.redrawsFloor(map)) {
+        this.redrawDungeon(map as FloorMap & DungeonMap);
+        // the barriers and the secret doors' cracks laid again over the new cells and wall faces
+        const dungeon = this.dungeon;
+        if (dungeon) this.seal.sync(state, dungeon.grid, dungeon.faces);
+        this.explore(state);
+      }
+      return;
+    }
     this.standFloor(map);
     this.buildDressing(state);
     this.stampLights(state.floor);
@@ -4030,11 +4507,67 @@ export class BarrowspireScene extends Phaser.Scene {
     this.arrivalCard.built();
   }
 
-  /** The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43). */
+  /**
+   * The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43); a dungeon
+   * floor's map re-sent with other cells (a secret door opened) draws its cells again (FS-5FZ4J §J R56).
+   */
   private standFloor(map: FloorMap): void {
+    if (this.redrawsFloor(map)) {
+      this.redrawDungeon(map as FloorMap & DungeonMap);
+      return;
+    }
     this.fitFloor(map);
     this.buildPerimeter();
     this.buildWalls(map);
+  }
+
+  /**
+   * Whether `map` is the built dungeon floor's own map re-sent with other regions (FS-5FZ4J §I R50,
+   * §J R56): a secret door opened, its hidden room and the door's cells now in it. The same regions
+   * again (a reconnect's map asked for anew) draw nothing again.
+   */
+  private redrawsFloor(map: FloorMap): boolean {
+    const dungeon = this.dungeon;
+    if (!dungeon || this.builtFloor !== map.floor || dungeon.floor !== map.floor || !isDungeon(map)) return false;
+    return !sameRegions(dungeon.grid.regions, map.regions);
+  }
+
+  /**
+   * The built dungeon floor drawn again from its map re-sent (FS-5FZ4J §J R56): its region grid, the
+   * ground under its cells, its walls and their flames, the fog and the minimap, all from the new
+   * cells, with every region already explored kept and the opened room unexplored until seen. What
+   * stands on the floor (its fixtures, dressing and lights) stays where it is; the dressing is shown
+   * by the new chunks and gated by the new fog. Its chunks are made again with the ground, walls and
+   * fog they show, so none of the old cells' pieces is left in them.
+   */
+  private redrawDungeon(map: FloorMap & DungeonMap): void {
+    const dungeon = this.dungeon!;
+    // the old cells' walls, their flames, and what was laid over them
+    this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
+    this.walls.clear();
+    this.occluders.prune();
+    dungeon.lights.remove(dungeon.wallLights ?? []);
+    this.dropFog();
+    dungeon.minimap?.destroy();
+    dungeon.modeIcon?.destroy();
+    dungeon.mapName?.destroy();
+    dungeon.minimap = dungeon.modeIcon = dungeon.mapName = undefined;
+    // the new cells, the party's exploration carried onto them
+    const grid = new RegionGrid(map);
+    dungeon.grid = grid;
+    dungeon.seen = Exploration.carried(grid, dungeon.seen);
+    const view = dungeon.chunks.view;
+    dungeon.chunks = new ChunkVisibility(dungeon.chunks.grid);
+    // the ground under the new cells (its refit paints it), then the walls, fog and minimap on them
+    this.fitFloor(map);
+    this.floorWalls = map.walls;
+    this.buildDungeonWalls(map.walls);
+    for (const dressed of dungeon.dressed) this.standDressing(dungeon, dressed);
+    // every light keeps its chunk; the region it lights is the new grid's
+    dungeon.lights.reRegion((at) => regionAt(grid, at));
+    this.stampLights(map.floor);
+    if (view) dungeon.chunks.update(view);
+    this.lightNearChunks();
   }
 
   /** The floor's walls, from its map, once per floor (FS-KE075 §H.43). */
@@ -4062,10 +4595,14 @@ export class BarrowspireScene extends Phaser.Scene {
       floor: map.floor,
       grid,
       chunks: new ChunkVisibility(ground),
-      lights: [],
-      lit: new Set(),
+      lights: new FloorLights<LightSource>(
+        (screen) => ground.indexAt(screen),
+        (at) => regionAt(grid, at),
+        { add: (source) => this.lightMap?.add(source), remove: (source) => this.lightMap?.remove(source) },
+      ),
       seen: new Exploration(grid),
       dressed: [],
+      quiet: new Set(map.quiet_rooms ?? []),
     };
   }
 
@@ -4121,6 +4658,9 @@ export class BarrowspireScene extends Phaser.Scene {
     const plan = wallPlan(walls, dungeon.grid, thickness);
     const planned = dungeonWalls(plan, dungeon.grid, look.seed, look.walls);
     const baked = addWallPieces(this, this.art, planned, look.seed, look.walls);
+    // what a secret door's cracks are laid over, and the flames a rebuild takes away (FS-5FZ4J §J R51, R56)
+    dungeon.faces = planned.pieces;
+    dungeon.wallLights = new Set(baked?.lights.map(({ source }) => source));
     // placeholder walls never had a shadow (FS-V8FT3 Out of Scope)
     if (baked) this.groundLayer?.shade(dungeonShadows(planned, thickness, dungeon.grid));
     // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13), its
@@ -4313,21 +4853,25 @@ export class BarrowspireScene extends Phaser.Scene {
       ...[...this.switches.values()].map(({ pos }) => ({ kind: "switch" as const, at: pos })),
       ...[...this.escapeDoors.values()].map(({ pos }) => ({ kind: "escape-door" as const, at: pos })),
       ...[...this.stairs.placed()].map(({ pos }) => ({ kind: "stairs" as const, at: pos })),
+      // a secret door the Cutthroats' tip revealed, while it is shut, explored or not (FS-4EC7Z §G R35)
+      ...this.seal.revealedDoors().map(({ at }) => ({ kind: "secret-door" as const, at, told: true })),
     ];
-    minimap.show((id) => dungeon.seen.state(id), fixtures);
+    // a shut gate draws as a wall stroke (FS-5FZ4J §J R56)
+    minimap.show((id) => dungeon.seen.state(id), fixtures, this.seal.shutGates());
     minimap.party(this.partyDots(state.current_player, state.other_players));
   }
 
   /**
    * The party's exploration of a dungeon floor from this broadcast's living positions
-   * (FS-SRA9J §B), and, when a region's state changed, the fog and the floor's lights redrawn
+   * (FS-SRA9J §B) and its witchlights (FS-X2CMM R48), and, when a region's state changed, the fog and the floor's lights redrawn
    * for it (§C.12, §C.13); then the minimap from it (§E.23). Nothing before the floor's walls
    * stand, nor on a floor of buildings.
    */
   private explore(state: ClientGameState): void {
     const dungeon = this.dungeon;
     if (!dungeon?.fog) return;
-    if (dungeon.seen.see(partyPositions(state))) {
+    // a witchlight lifts the fog in its cells as a delver would, for every viewer (FS-X2CMM R48)
+    if (dungeon.seen.see(partyPositions(state), litPoints(state.book_effects))) {
       dungeon.fog.show((id) => dungeon.seen.state(id));
       this.lightNearChunks();
     }
@@ -4374,24 +4918,11 @@ export class BarrowspireScene extends Phaser.Scene {
     const dungeon = this.dungeon;
     if (!dungeon) return;
     // a light in a region that is not visible is off (FS-SRA9J §C.12); one in no region stays lit
-    const near = nearLights(
-      dungeon.lights,
+    dungeon.lights.light(
       (chunk) => dungeon.chunks.shown(chunk),
-      FIXED_LIGHT_CAP,
-      (l) => l.region === 0 || dungeon.seen.state(l.region) === "visible",
+      (region) => dungeon.seen.state(region) === "visible",
     );
-    const kept = new Set(near.map((l) => l.light.source));
-    for (const source of dungeon.lit)
-      if (!kept.has(source)) {
-        this.lightMap?.remove(source);
-        dungeon.lit.delete(source);
-      }
-    for (const source of kept)
-      if (!dungeon.lit.has(source)) {
-        this.lightMap?.add(source);
-        dungeon.lit.add(source);
-      }
-    this.stampedLights = dungeon.lit.size;
+    this.stampedLights = dungeon.lights.lit.size;
   }
 
   /**
@@ -4474,8 +5005,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * and escape door's memory goes too: the new floor's first broadcast is their baseline (FS-XWHZP R23).
    */
   private leaveFloor(): void {
-    // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
+    // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15), nor an armed page (FS-X2CMM R41)
     this.cancelAim();
+    this.combat.disarm();
     // a rain falls with its floor, and a Blink waiting to land lands nowhere (FS-04EEA R44, R45)
     this.kit.leaveFloor();
     // the old floor's lore lines go with it; the floor card speaks for the new one (FS-XWHZP R15)
@@ -4532,9 +5064,27 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     this.stairs.clear();
     this.summoning.clear();
+    // the seal's pieces and barriers, their flames first; the watch keeps the floor left, so the
+    // next floor's seal is said on arrival (FS-5FZ4J §J R53)
+    this.seal.clear();
+    this.respites.clear();
+    // the merchant goes with his floor, his panel with him; a purchase in flight still answers (FS-9JV5K §B R12)
+    this.merchant.clear();
+    this.closeWares();
+    // the encounters go with their floor, their lines with them; an ally never climbs (FS-4EC7Z §C R12)
+    this.encounters.clear();
+    this.cages.clear();
+    this.npcLines.clear();
+    this.sealLights.clear();
+    this.sealWindow.reset();
+    this.traps.clear();
     // the old floor's projectiles land nowhere: no impact, body, trail or light (FS-KYPQ9 §B.9)
     this.projectiles?.clear();
     this.trails.clear();
+    // the old floor's witchlights, runes and draughts go with it (FS-X2CMM §Edge "Floor change")
+    this.bookEffects.clear();
+    // a hound does not climb (FS-X2CMM §Edge "Floor change")
+    this.hounds?.clear();
     this.monsters?.sync([]);
     this.lastHit.clear();
     this.bosses.clear();
@@ -4554,6 +5104,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * across the map from where they stood on the old one.
    */
   private settlePlayers(): void {
+    // a roll ends with the floor (FS-7P736 R11): the body stands where the server put it, drawn upright
+    this.rolled.clear();
+    this.rollDraws.clear();
     if (this.playerPos && this.targetPosition) {
       this.playerPos.x = this.targetPosition.x;
       this.playerPos.y = this.targetPosition.y;
@@ -4668,8 +5221,9 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private ownMarkerBase(): number | null {
     if (!this.player) return null;
+    // over the body as it stands, never as a roll tumbles it (FS-7P736 R15)
     return markerBase(
-      this.player,
+      this.tumble.standing(this.player),
       this.playerAnim?.crown,
       isDead(this.lastGameState?.current_player),
       this.playerAnim?.artScale,
@@ -4756,7 +5310,7 @@ export class BarrowspireScene extends Phaser.Scene {
           hitArea: {},
           hitAreaCallback: footprintHitArea(
             () => this.otherPlayersPos.get(playerData.id) ?? pos,
-            PLAYER_FOOTPRINT_RADIUS,
+            PLAYER_RADIUS,
           ),
         });
 
@@ -4821,10 +5375,12 @@ export class BarrowspireScene extends Phaser.Scene {
         if (!bar) {
           const graphics = this.add.graphics();
           graphics.setDepth(MARKER_DEPTH.bar);
-          bar = { graphics, fill: null };
+          bar = { graphics, fill: null, poisoned: false };
           this.teammateHealthBars.set(playerData.id, bar);
         }
         bar.fill = teammateHealthFill(worldType, playerData);
+        // the poison tint while they are poisoned (FS-5FZ4J §J R55)
+        bar.poisoned = playerData.poisoned_for !== undefined;
       }
       this.markTeammate(playerData.id);
     });
@@ -4876,6 +5432,320 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The wandering merchant's body (FS-9JV5K §F R21): his sheet's idle at his position, sorted by his
+   * footprint as a body is, under his stand-in's wash until his own sheet lands; his nameplate,
+   * "Wandering Merchant" in the function-NPC ink over his head; and his soft lantern among the
+   * floor's fixed lights. Both go when his body does.
+   */
+  private addMerchant(look: MerchantLook, at: Point): Phaser.GameObjects.Sprite {
+    const body = this.add.sprite(0, 0, placeholderTexture("warrior", "down"));
+    const name = this.add
+      .text(0, 0, "Wandering Merchant", {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "12px",
+        color: toCss(palette.markerFunction),
+        stroke: toCss(palette.markerStroke),
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(MARKER_DEPTH.name);
+    const parts: MerchantParts = { name };
+    this.merchantParts.set(body, parts);
+    this.dressMerchant(body, look);
+    this.standMerchant(body, at);
+    body.once("destroy", () => {
+      name.destroy();
+      this.unlightMerchant(parts);
+      this.merchantParts.delete(body);
+    });
+    return body;
+  }
+
+  /** His body in `look`: its idle facing the viewer, under the stand-in's wash or none. */
+  private dressMerchant(body: Phaser.GameObjects.Sprite, look: MerchantLook): void {
+    const anim = new CharacterAnimator(this.art, { sheet: look.sheet }, "se");
+    const parts = this.merchantParts.get(body);
+    if (parts) parts.anim = anim;
+    if (anim.baked) {
+      anim.dress(body);
+      // he never walks: standing still, his idle is what the animator chooses
+      anim.show(body, anim.step({ x: 0, y: 0 }, 0, 0, false));
+    }
+    if (look.tint === undefined) body.clearTint();
+    else body.setTint(look.tint);
+    this.placeMerchantName(body);
+    this.lightMerchant(body);
+  }
+
+  /** His body stood at `at`, his nameplate over his head, his lantern over him. */
+  private standMerchant(body: Phaser.GameObjects.Sprite, at: Point): void {
+    const parts = this.merchantParts.get(body);
+    if (parts) parts.at = at;
+    standAt(body, at, 1);
+    this.placeMerchantName(body);
+    this.lightMerchant(body);
+  }
+
+  /**
+   * His lantern among the floor's fixed lights, hung at its lit glass by his sheet's crown (R21), hung
+   * again as his own sheet lands or he is stood elsewhere.
+   */
+  private lightMerchant(body: Phaser.GameObjects.Sprite): void {
+    const parts = this.merchantParts.get(body);
+    const dungeon = this.dungeon;
+    if (!parts?.at || !dungeon) return;
+    this.unlightMerchant(parts);
+    const { at } = parts;
+    // the crown is screen px at his drawn size (manifest `crown`), and he stands at size 1
+    parts.lantern = merchantLantern(worldToScreen(at.x, at.y), tileHash(Math.round(at.x), Math.round(at.y), 31), parts.anim?.crown);
+    dungeon.lights.add("merchant_lantern", parts.lantern, at);
+    this.lightNearChunks();
+  }
+
+  /** His lantern off the floor's lights, if it is lit. */
+  private unlightMerchant(parts: MerchantParts): void {
+    if (!parts.lantern) return;
+    this.dungeon?.lights.remove([parts.lantern]);
+    parts.lantern = undefined;
+    this.lightNearChunks();
+  }
+
+  /** His nameplate over his sheet's head (its `crown`), as a player's name stands. */
+  private placeMerchantName(body: Phaser.GameObjects.Sprite): void {
+    const parts = this.merchantParts.get(body);
+    if (!parts) return;
+    const base = markerBase(body, parts.anim?.crown, false, parts.anim?.artScale ?? 1) ?? body.y;
+    parts.name.setPosition(body.x, base - NAME_GAP);
+  }
+
+  /**
+   * E on the merchant (FS-9JV5K §F R21, R22): his wares panel, on the UI scene, with what he lists
+   * now. Never offered to a player out of the delve (Edge States: a spectating player).
+   */
+  private openWares(): void {
+    const merchant = this.merchant.current();
+    if (!merchant || this.runEnded || resolved(this.lastGameState?.current_player)) return;
+    this.showWares(this.trade.open(merchant));
+  }
+
+  /**
+   * Each broadcast while the panel is open: what is in reach and in play handed to the trade, whose
+   * {@link WaresTrade.follow} says whether the panel shows again or shuts (R22).
+   */
+  private keepWares(state: ClientGameState): void {
+    const me = this.playerPos;
+    const inReach = me !== undefined && this.merchant.reach(me) !== null;
+    const next = this.trade.follow(this.merchant.current(), inReach, !resolved(state.current_player));
+    if (next?.kind === "show") this.showWares(next.wares);
+    else if (next?.kind === "close") this.closeWares();
+  }
+
+  /** The panel's data to the UI scene, only when it changed. */
+  private showWares(wares: ShownWares): void {
+    const key = JSON.stringify(wares);
+    if (key === this.shownWaresKey) return;
+    this.shownWaresKey = key;
+    this.ui.wares({ kind: "show", wares });
+  }
+
+  /** The wares panel shut, by the player, the menu, his leaving or the run's end: the UI scene takes it down. */
+  private closeWares(): void {
+    if (!this.trade.openFor) return;
+    this.trade.close();
+    this.shownWaresKey = "";
+    this.ui.wares({ kind: "close" });
+  }
+
+  /** Buy on a ware (R23): the `buy` sent, the row Paying… until its reply; nothing while one is in flight. */
+  private buyWare(ware: string): void {
+    const payload = this.trade.buy(ware);
+    if (!payload) return;
+    socketManager.sendMessage(ActionType.Buy, payload);
+    const merchant = this.merchant.current();
+    if (merchant) this.showWares(this.trade.view(merchant));
+  }
+
+  /**
+   * The `buy` reply (R23): Paying… ends; a success's notice, a refusal's line on the open panel (or a
+   * notice once it is shut), and the purse line reads the wallet again.
+   */
+  private waresAnswered(reply: BuyReply): void {
+    const { notice } = this.trade.answer(reply ?? { success: false });
+    if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    this.ui.wares({ kind: "answered" });
+    const merchant = this.merchant.current();
+    if (this.trade.openFor && merchant) this.showWares(this.trade.view(merchant));
+  }
+
+  /**
+   * The gear's Drink on a bag antidote (R24) or Restoring Draught (§Change: The Restoring Draught D6):
+   * its `use_item`, unless one is still to be answered. What it is drunk as is read from the last
+   * state's bag; one not in it is the antidote's, which the server refuses `not_in_bag` anyway.
+   */
+  private drink(item: string): void {
+    const held = this.lastGameState?.current_player?.inventory?.find((i) => i.entity_id === item);
+    if (this.drinking.press(item, (held && bagDrink(held)) ?? "antidote"))
+      socketManager.sendMessage(ActionType.UseItem, { item_entity_id: item });
+  }
+
+  /**
+   * The `use_item` reply (R24, D6): a refusal in its words, nothing spent; a success plays the potion
+   * shimmer and clears nothing else. An antidote's is in the poison tint's colours (the state's
+   * `poisoned_for` going clears the tint); a draught's in the drinker's resource colour, from the
+   * pool's kind on the wire (the state's `resource` carries the refill).
+   */
+  private itemUsed(reply: UseItemReply): void {
+    const refusal = drinkRefusal(reply ?? { success: false });
+    if (refusal) {
+      this.drinking.refused();
+      return this.showNotification(refusal, NOTICE_BACKING.refused);
+    }
+    const look =
+      this.drinking.drunk() === "restoring_draught"
+        ? restoreLook(this.lastGameState?.current_player?.resource?.kind)
+        : ANTIDOTE_LOOK;
+    this.shimmers?.playGranted(look, this.playerAnim?.crown);
+  }
+
+  /**
+   * A sealed floor's seal from this broadcast (FS-5FZ4J §J R51, R53): its pieces, gate and pits,
+   * once the floor's cell grid stands; its events as HUD notices, the seal named on `arrival`'s
+   * first broadcast as on a climb's; the Braziers window's countdown, handed to the HUD only on a change.
+   */
+  private showSeal(state: ClientGameState, arrival: boolean): void {
+    const dungeon = this.dungeon;
+    // a secret door's cracks over the wall pieces of its face (FS-5FZ4J §J R51)
+    if (dungeon) this.seal.sync(state, dungeon.grid, dungeon.faces);
+    // the floor's fountain and the hallowed altar, its candles among the floor's lights (FS-5FZ4J §J R51)
+    if (dungeon) this.respites.sync(state);
+    // the wandering merchant, his lantern among the floor's lights, and his panel kept to him (FS-9JV5K §F R21, R22)
+    if (dungeon) this.merchant.sync(state);
+    this.keepWares(state);
+    for (const notice of this.sealWatch.see(state, arrival)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    const { view, changed } = this.sealWindow.see(state.seal);
+    if (changed) this.ui.hud({ world: "run", kind: "window", window: view });
+  }
+
+  /**
+   * A seal piece or a barrier cell (FS-5FZ4J §J R51): its baked frame at its spot, sorted by its
+   * footprint as props are, or laid in the ground band under every body (a pit, a bridge, a plate).
+   * A gate piece fades over a player behind it, as the walls do; a seal brazier keeps its flame
+   * for when it is lit.
+   */
+  private addSealPiece(look: SealLook, at: Point, band: SealBand, layer: number): Phaser.GameObjects.Sprite {
+    const { sprite, light } = addProp(this, this.art, look.sheet, at, { animation: look.frame, layer });
+    if (band === "ground") {
+      sprite.setDepth(SEAL_GROUND_DEPTH);
+      this.sealGround.add(sprite);
+    }
+    if (look.occludes) this.occluders.add([sprite]);
+    if (light) {
+      this.sealLights.set(sprite, light);
+      // the flame is held only while its piece is: a piece gone (a key taken) leaves no entry
+      sprite.once("destroy", () => this.sealLights.delete(sprite));
+    }
+    return sprite;
+  }
+
+  private standSealPiece(sprite: Phaser.GameObjects.Sprite, at: Point, layer: number): void {
+    if (!this.sealGround.has(sprite)) {
+      standAt(sprite, at, layer);
+      return;
+    }
+    const s = worldToScreen(at.x, at.y);
+    sprite.setPosition(s.x, s.y);
+  }
+
+  /**
+   * A seal brazier's flame lit or put out (I-5FZ4J-8: its sheet's light burns only while it is
+   * lit), or the hallowed altar's candles (only while it is dormant): one of the floor's fixed
+   * lights, by its chunk and region, under the floor's cap.
+   */
+  private glowSealPiece(sprite: Phaser.GameObjects.Sprite, at: Point, on: boolean, kind: FixedLightKind): void {
+    const source = this.sealLights.get(sprite);
+    const dungeon = this.dungeon;
+    if (!source || !dungeon) return;
+    dungeon.lights.remove([source]);
+    if (on) dungeon.lights.add(kind, source, at);
+    this.lightNearChunks();
+  }
+
+  /**
+   * A secret door's cracks over one wall piece of its face (FS-5FZ4J §J R51; I-5FZ4J-8: a decal at
+   * the piece's own spot): sorted just over the piece, and fading with it over the player when it is
+   * a full-height back piece, as the walls do.
+   */
+  private addSealDecal(look: SealLook, at: Point, depthAt: Point): Phaser.GameObjects.Sprite {
+    const { sprite } = addProp(this, this.art, look.sheet, at, { animation: look.frame });
+    sprite.setDepth(worldDepth(depthAt.x, depthAt.y, 2));
+    if (look.occludes) this.occluders.add([sprite]);
+    return sprite;
+  }
+
+  /**
+   * A trap's spring (FS-5FZ4J §J R51): its sprung frame, or a gas vent's puff, at full strength;
+   * a puff settles back to the vent's faint armed frame once its clip has played.
+   */
+  private springTrap(sprite: Phaser.GameObjects.Sprite, look: SealLook, settle?: { look: SealLook; alpha: number }): void {
+    sprite.setAlpha(1);
+    showState(sprite, this.art, look.sheet, look.frame);
+    if (!settle) return;
+    sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (!sprite.active) return;
+      showState(sprite, this.art, settle.look.sheet, settle.look.frame);
+      sprite.setAlpha(settle.alpha);
+    });
+  }
+
+  /**
+   * A floor's encounters from this broadcast (FS-4EC7Z §G): its encounter NPCs and their over-head
+   * lines, the cage and its key, their events as HUD notices (the cage key taken, the pilgrims lost);
+   * and the player's own contract (R34): its end said as a notice, its heading line and Contract
+   * Settled's status mark handed to the UI scene (it rides `statusMarks`). A taker who died still hears
+   * it lost; while they watch a teammate nothing of it is said.
+   */
+  private showEncounters(state: ClientGameState): void {
+    this.encounters.sync(state);
+    this.cages.sync(state);
+    this.npcLines.sync(state.encounter_npcs ?? [], this.time.now);
+    for (const notice of this.encounterWatch.see(state)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    const me = this.watchedPlayerId === undefined ? state.current_player : null;
+    for (const notice of this.contractWatch.see(me ? me.contract : null)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    const line = contractLine(me?.contract);
+    if (line !== this.shownContractLine) {
+      this.shownContractLine = line;
+      this.ui.hud({ world: "run", kind: "contract", line });
+    }
+  }
+
+  /** One frame of the encounter NPCs: eased and played, and their lines over their heads (FS-4EC7Z §G R29, R30). */
+  private stepEncounters(time: number): void {
+    this.encounters.step();
+    this.npcLines.step(time, (id) => {
+      const drawn = this.encounters.drawn(id);
+      return drawn && { at: this.encounterBodies.head(drawn.body), shown: drawn.body.visible };
+    });
+  }
+
+  /** The encounters' group (ADR-0071), once a scene; landed, its NPCs and its hostile humans wear their own looks. */
+  private fetchEncounterArt(): void {
+    this.onDemand?.fetch(ENCOUNTER_ART.group, () => {
+      this.encounters.landed();
+      this.monsters?.redress(ENCOUNTER_ART.group);
+    });
+  }
+
+  /**
+   * A floor's hazards from this broadcast (FS-5FZ4J §J R51, R53): its detected traps over its cell
+   * grid, and the player's own statuses said as HUD notices against the previous broadcast.
+   */
+  private showHazards(state: ClientGameState): void {
+    this.traps.sync(state.traps, this.dungeon?.grid);
+    const me = this.watchedPlayerId === undefined ? state.current_player : null;
+    for (const notice of this.statusWatch.see(me)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+  }
+
+  /**
    * Strews the floor's run dressing once (FS-8RBQY §C.4–§C.5), kept out of everything its
    * broadcast puts on the floor. Never interactive, never in physics; a brazier's flame joins the
    * floor's fixed lights. Nothing for a theme without dressing or without its art.
@@ -4892,7 +5762,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const plan = !look.dressing
       ? []
       : dungeon
-        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid))
+        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid, dungeon.quiet))
         : planDressing(look.dressing, look.seed, statics);
     // piece by piece, so each sprite and flame keeps where it stands (FS-9PN7X §C.2, §D.6)
     this.dressing = [];
@@ -4904,19 +5774,28 @@ export class BarrowspireScene extends Phaser.Scene {
       if (dungeon) {
         const dressed: DressedPiece = { piece, sprites: built.sprites, lights: built.lights, gone: false };
         dungeon.dressed.push(dressed);
-        for (const sprite of built.sprites) {
-          const part = {
-            setVisible: (visible: boolean) => sprite.setVisible(visible && !dressed.gone),
-            setTint: (tint: number) => sprite.setTint(tint),
-            clearTint: () => sprite.clearTint(),
-          };
-          dungeon.chunks.add(dungeon.fog?.gate(part, piece.at) ?? part, worldToScreen(piece.at.x, piece.at.y));
-        }
+        this.standDressing(dungeon, dressed);
       } else this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
       this.occluders.add(built.tall);
       built.lights.forEach((light) => this.queueLight("brazier", light, { at: piece.at }));
     }
     for (const c of state.containers ?? []) if (placedKind(c) !== "drop_pile") this.giveWay(c.position);
+  }
+
+  /**
+   * A dungeon floor's dressing piece shown by its ground chunk and gated by the floor's fog
+   * (FS-KE075 §H.45, FS-SRA9J §C.14), hidden for good once it has given way to a container.
+   */
+  private standDressing(dungeon: DungeonFloor, dressed: DressedPiece): void {
+    const at = dressed.piece.at;
+    for (const sprite of dressed.sprites) {
+      const part = {
+        setVisible: (visible: boolean) => sprite.setVisible(visible && !dressed.gone),
+        setTint: (tint: number) => sprite.setTint(tint),
+        clearTint: () => sprite.clearTint(),
+      };
+      dungeon.chunks.add(dungeon.fog?.gate(part, at) ?? part, worldToScreen(at.x, at.y));
+    }
   }
 
   /**
@@ -4934,10 +5813,8 @@ export class BarrowspireScene extends Phaser.Scene {
       this.dressing = this.dressing?.filter((sprite) => !dressed.sprites.includes(sprite));
       const flames = new Set(dressed.lights);
       this.pendingLights = this.pendingLights.filter((l) => !flames.has(l.light.source));
-      dungeon.lights = dungeon.lights.filter((l) => !flames.has(l.light.source));
-      for (const source of flames)
-        if (dungeon.lit.delete(source)) this.lightMap?.remove(source);
-      this.stampedLights = dungeon.lit.size;
+      dungeon.lights.remove(flames);
+      this.stampedLights = dungeon.lights.lit.size;
     }
   }
 
@@ -4974,11 +5851,8 @@ export class BarrowspireScene extends Phaser.Scene {
     if (dungeon) {
       // a dungeon floor's every fixed light waits in its chunk; those near the camera are lit
       // within the cap (FS-KE075 §H.45)
-      for (const l of this.pendingLights) {
-        // the region it lights: where it stands, or the nearest walkable cell to the wall it hangs on
-        const region = regionAt(dungeon.grid, l.light.at ?? screenToWorld(l.at.x, l.at.y));
-        dungeon.lights.push({ ...l, chunk: dungeon.chunks.grid.indexAt(l.at), region });
-      }
+      // the region each lights: where it stands, or the nearest walkable cell to the wall it hangs on
+      for (const l of this.pendingLights) dungeon.lights.add(l.kind, l.light.source, l.light.at);
       this.pendingLights = [];
       this.lightNearChunks();
       return;
@@ -5167,12 +6041,19 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     // the roster's and the runtime's objects are this scene's Phaser objects: its stage made them
     for (const m of this.monsters?.standing() ?? []) yield m as unknown as Occupant;
+    for (const h of this.hounds?.standing() ?? []) yield h as unknown as Occupant;
     for (const { sprite, pos } of [
       ...this.chests.values(),
       ...this.escapeDoors.values(),
       ...this.switches.values(),
       ...this.stairs.placed(),
       ...this.summoning.placed(),
+      ...this.seal.placed(),
+      ...this.respites.placed(),
+      ...this.merchant.placed(),
+      ...this.encounters.placed(),
+      ...this.cages.placed(),
+      ...this.traps.placed(),
       ...this.dressingAt,
     ])
       yield { parts: [sprite], at: pos };
@@ -5240,6 +6121,8 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
     this.monsters?.hideWhere((at) => hiddenAt(at) || this.fogHides(at));
+    // a hound is a body that moves, hidden as a monster is (FS-X2CMM R47)
+    this.hounds?.hideWhere((at) => hiddenAt(at) || this.fogHides(at));
 
     for (const { sprite, pos, pile } of this.chests.values())
       sprite.setVisible(!hiddenAt(pos) && !(pile ? this.fogHides(pos) : this.unexplored(pos)));
@@ -5248,9 +6131,21 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.switches.values(),
       ...this.stairs.placed(),
       ...this.summoning.placed(),
+      ...this.seal.placed(),
+      ...this.respites.placed(),
+      ...this.merchant.placed(),
+      ...this.cages.placed(),
+      ...this.traps.placed(),
       ...this.dressingAt,
     ];
     for (const { sprite, pos } of placed) sprite.setVisible(!unseen(pos));
+    // encounter NPCs are bodies that move, hidden as monsters are, their plates with them (FS-4EC7Z §G R29)
+    for (const { sprite, pos } of this.encounters.placed()) {
+      sprite.setVisible(!hiddenAt(pos) && !this.fogHides(pos));
+      this.encounterBodies.show(sprite);
+    }
+    // the merchant's nameplate over the dark goes with his body, never left to the blackout (§C.2)
+    for (const { sprite } of this.merchant.placed()) this.merchantParts.get(sprite)?.name.setVisible(sprite.visible);
     for (const { bed, glow, trail } of this.trails.placed()) {
       // a trail is a line on the floor: hidden once neither end is in sight
       const shown = !unseen(trail.from) || !unseen(trail.to);
@@ -5259,6 +6154,8 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     this.projectiles?.hideWhere(unseen);
     this.fx?.hideWhere(unseen);
+    // the book's world effects lie where they were set down, hidden as a fixed thing is (FS-X2CMM R47)
+    this.bookEffects.hideWhere(unseen);
   }
 
   private createUI(): void {
@@ -5443,6 +6340,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // R68, R69; FS-Q18Q3 R41)
     this.ui.hud({ world: "run", kind: "bars", bars: own.bars });
     this.ui.hud({ world: "run", kind: "bar", bar: own.bar });
+    // the Blessing's mark beside the own health bar, while it holds (FS-5FZ4J §J R55)
+    this.ui.hud({ world: "run", kind: "statusMarks", marks: statusMarks(state) });
+    // the roll cooldown pip beside the ability bar, swept from roll_cooldown (FS-7P736 R16)
+    this.ui.hud({ world: "run", kind: "roll", roll: rollPipView(state) });
     // the controls badge stands while the bar is live, so it goes at a death though the bar is held
     // (FS-84N1G R4; FS-Q18Q3 R42): told on each change
     const live = own.bar !== null && this.heldHud === undefined;
@@ -5730,6 +6631,50 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The stride the movement keys ask for, -1, 0 or 1 on each axis: what `move` sends, and the way a roll
+   * goes (FS-7P736 R13). The keys are the menu's while it is open (FS-9K8EZ req 5), and read as released
+   * while an archer draws a Shadow Shot (FS-JTNPR req 9).
+   */
+  private heldStride(): { vx: number; vy: number } {
+    if (this.menuOpen || this.combat.aiming) return { vx: 0, vy: 0 };
+    const down = (a: Phaser.Input.Keyboard.Key, b: Phaser.Input.Keyboard.Key) => a.isDown || b.isDown;
+    const vx = down(this.cursors.left, this.wasd.left) ? -1 : down(this.cursors.right, this.wasd.right) ? 1 : 0;
+    const vy = down(this.cursors.up, this.wasd.up) ? -1 : down(this.cursors.down, this.wasd.down) ? 1 : 0;
+    return { vx, vy };
+  }
+
+  /**
+   * Space (FS-7P736 R13, R14): a roll the client judges allowed goes up as `roll`, the held keys' way else
+   * the facing, and is started on the own body at once, swept as the server sweeps it against the floor's
+   * rock, its edge and the shut doors. The cooldown is the wire's alone. Nothing while an archer draws a
+   * Shadow Shot (the keys are the hold's) or after the run's end.
+   */
+  private roll(): void {
+    const me = this.lastGameState?.current_player;
+    const now = this.time.now;
+    const gate = { spectating: this.watchedPlayerId !== undefined, predicting: this.rolled.inFlight(now), ui: this.ui.ui };
+    if (this.runEnded || this.combat.aiming || !this.playerPos || !this.targetPosition || !rollAllowed(me, gate)) return;
+    const facing = this.playerAnim?.baked ? this.playerAnim.facing : this.playerFacing;
+    const dir = rollDirection(this.heldStride(), facing);
+    socketManager.sendMessage(ActionType.Roll, dir);
+    const length = Math.hypot(dir.dir_x, dir.dir_y);
+    const unit = { x: dir.dir_x / length, y: dir.dir_y / length };
+    // swept from where the server last put the body, the roll's real start; drawn from where it is drawn
+    const end = rollReach(this.targetPosition, unit, this.dungeon?.grid, this.shutDoors());
+    const reach = Math.hypot(end.x - this.targetPosition.x, end.y - this.targetPosition.y);
+    this.rolled.start(this.playerPos, unit, reach, now);
+    // drawn rolling at once, with the scuff where the drawn body pushes off (R15)
+    if (this.rollDraws.start(OWN_BODY, unit, now) && this.fx) playRollDust(this.fx, OWN_BODY, this.playerPos, unit);
+  }
+
+  /** The floor's shut doors as the roll's sweep stops at them (FS-7P736 R4), from the latest state. */
+  private shutDoors(): RollBlocker[] {
+    return (this.lastGameState?.doors ?? [])
+      .filter((d) => !d.is_open)
+      .map((d) => ({ x: d.position.x, y: d.position.y, width: d.width, height: d.height }));
+  }
+
+  /**
    * The stride the keys ask for, sent each frame it is non-zero; none from a player out of the
    * delve (FS-77AB6 req 17). While the menu is open the keys are its (FS-9K8EZ req 5): a stride
    * it interrupts is stopped once, and nothing more goes until it closes. The run's end stops a
@@ -5919,11 +6864,15 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     }
 
-    // the next broadcast is a baseline again (FS-XWHZP R23)
+    // the next broadcast is a baseline again (FS-XWHZP R23; FS-5FZ4J §I R48)
     this.previousEscapeDoorOpened = undefined;
     this.previousSwitchActivated = undefined;
     this.previousAltar = undefined;
     this.escapedPlayers = undefined;
+    this.sealWatch.reset();
+    this.statusWatch.reset();
+    this.encounterWatch.reset();
+    this.contractWatch.reset();
   }
 
   /**
@@ -5947,9 +6896,13 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    // the book's world effects, and their pools, where their looks hang them this frame (FS-X2CMM R47)
+    this.bookEffects.frame(time);
     this.updateLighting(time, delta);
     this.monsters?.update(delta);
+    this.hounds?.update(delta);
     this.stunTells?.show(this.monsters?.stunned() ?? []);
+    this.stepEncounters(time);
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {
       // still update other players smoothly, and keep hiding what stands in the rooms
@@ -5961,28 +6914,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     // handle movement
-    let vx = 0;
-    let vy = 0;
-
-    // calculate horizontal direction
-    if (this.cursors.left.isDown || this.wasd.left.isDown) {
-      vx = -1;
-    } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
-      vx = 1;
-    }
-
-    // calculate vertical direction
-    if (this.cursors.up.isDown || this.wasd.up.isDown) {
-      vy = -1;
-    } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
-      vy = 1;
-    }
-    // the keys are the menu's while it is open (FS-9K8EZ req 5), and read as released while an
-    // archer draws a Shadow Shot (FS-JTNPR req 9)
-    if (this.menuOpen || this.combat.aiming) {
-      vx = 0;
-      vy = 0;
-    }
+    const { vx, vy } = this.heldStride();
 
     // update player facing and legs: the placeholder rig (a baked sheet plays below)
     if (this.player && this.playerLegs && !this.playerAnim?.baked) {
@@ -6016,7 +6948,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // update player name position; none over a baked corpse
     const ownBase = this.ownMarkerBase();
     if (this.player && this.playerNameText) {
-      if (ownBase !== null) this.playerNameText.setPosition(this.player.x, ownBase - NAME_GAP);
+      if (ownBase !== null) this.playerNameText.setPosition(this.tumble.standing(this.player).x, ownBase - NAME_GAP);
       this.playerNameText.setVisible(this.player.visible && ownBase !== null);
       // the title stands where the name was just put, the name over it; none over a corpse
       if (ownBase !== null) this.playerTitle?.stand(this.playerNameText);
@@ -6028,19 +6960,15 @@ export class BarrowspireScene extends Phaser.Scene {
     // 平滑移動到目標位置 (lerp)
     const lerpFactor = 0.3; // 0-1，越大越快到達目標
 
-    // eased in world space, then drawn at the projection
+    // eased in world space, then drawn at the projection; a predicted roll draws the body where it says
+    // (FS-7P736 R14), and the ease takes it back to the server once the roll lets go
     if (this.player && this.playerPos && this.targetPosition) {
-      this.playerPos.x = Phaser.Math.Linear(
-        this.playerPos.x,
-        this.targetPosition.x,
-        lerpFactor,
-      );
-      this.playerPos.y = Phaser.Math.Linear(
-        this.playerPos.y,
-        this.targetPosition.y,
-        lerpFactor,
-      );
+      const rolling = this.rolled.at(this.time.now);
+      this.playerPos.x = rolling ? rolling.x : Phaser.Math.Linear(this.playerPos.x, this.targetPosition.x, lerpFactor);
+      this.playerPos.y = rolling ? rolling.y : Phaser.Math.Linear(this.playerPos.y, this.targetPosition.y, lerpFactor);
       standAt(this.player, this.playerPos, 1);
+      // afloat draws the body raised a little over its feet (FS-X2CMM R47)
+      this.player.y -= this.bookStates.lift(OWN_BODY, time, this.playerAnim?.crown);
       this.playerLegs?.setDepth(worldDepth(this.playerPos.x, this.playerPos.y, 2));
       // the charge's dust is kicked where the body is drawn, never where it is predicted to land
       this.charge?.follow(this.playerPos);
@@ -6054,15 +6982,28 @@ export class BarrowspireScene extends Phaser.Scene {
     this.aimFrame();
 
     // the baked sheet plays what the player is doing, read off the position just drawn
+    const ownRoll = this.rollDraws.at(OWN_BODY, this.time.now);
     if (this.player && this.playerPos && this.playerAnim?.baked) {
       const dead = isDead(this.lastGameState?.current_player);
       if (!dead) this.deathDust.alive(this.player);
       // the merc's guard clip holds while his stance does (FS-MAMHR §G.35)
       this.playerAnim.guard(this.kit.guarding, this.time.now);
+      // rolling plays the class's baked roll, else its stride under the tumble below (FS-7P736 R15)
+      this.playerAnim.roll(ownRoll?.dir, this.time.now);
       this.playerAnim.show(this.player, this.playerAnim.step(this.playerPos, time, delta, dead));
+    }
+    // the in-code tumble over a sheet with no baked roll, the placeholder's too, so the roll never waits
+    // on art (R15), over the body just stood; once the roll is over it stands upright on its own scale again
+    if (this.player && this.playerPos && this.targetPosition) {
+      const tumbling = ownRoll && !this.playerAnim?.rolls && !isDead(this.lastGameState?.current_player);
+      this.tumble.apply(this.player, tumbling ? ownRoll : null, tumbleMiddle(!!this.playerAnim?.baked, this.playerAnim?.crown));
     }
 
     this.updateOtherPlayersSmooth(time, delta);
+    // a pushed stone block slides on toward its cell (FS-5FZ4J §J R51)
+    this.seal.step(delta);
+    // an armed page's reticle, on the bodies just drawn and the cursor now (FS-X2CMM R41)
+    if (this.combat.armed && this.playerPos) this.combat.pageFrame(this.aimScene(this.cursorWorld()));
     // the map overlay on the figure just drawn (FS-1SEF0 §C.14)
     this.followMapOverlay();
 
@@ -6070,6 +7011,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.checkBuildingStatus();
     // after the hide rule, so an aura hides in the frame its body does (FS-1J1CB R35)
     this.followAuras(time);
+    // and the book's states, likewise (FS-X2CMM R47)
+    this.followBookStates(time);
     this.updateTargetFrame(delta);
 
     // the open bar fills on between states (FS-MQYEX R22)
@@ -6099,6 +7042,51 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Every body's book states from this state (FS-X2CMM §I R47): the player's own and each teammate's, on
+   * `current_player` and `other_players` alike; a body gone from the state loses its marks.
+   */
+  private syncBookStates(state: ClientGameState): void {
+    const me = state.current_player;
+    const bodies: (readonly [string, BookTimedState[] | undefined])[] = (state.other_players ?? []).map(
+      (p) => [p.id, p.book_states] as const,
+    );
+    if (me) bodies.push([OWN_BODY, me.book_states]);
+    this.bookStates.sync(bodies, this.time.now);
+  }
+
+  /**
+   * Every body's roll from this state (FS-7P736 R15): a delver first shown rolling is drawn rolling from
+   * now, with a dust scuff where its drawn body starts; the own body's press has already started its own.
+   */
+  private syncRolls(state: ClientGameState): void {
+    const me = state.current_player;
+    const bodies: (readonly [string, RollState | undefined])[] = (state.other_players ?? []).map(
+      (p) => [p.id, p.roll] as const,
+    );
+    if (me) bodies.push([OWN_BODY, me.roll]);
+    for (const { id, dir } of this.rollDraws.sync(bodies, this.time.now)) {
+      const at = id === OWN_BODY ? this.playerPos : this.otherPlayersPos.get(id);
+      if (at && this.fx) playRollDust(this.fx, id, at, dir);
+    }
+  }
+
+  /**
+   * Every body's book states on its drawn feet (FS-X2CMM R47), hidden with its body (the blackout, an
+   * escape) and from the death clip, as its aura is.
+   */
+  private followBookStates(time: number): void {
+    if (this.player && this.playerPos) {
+      const alive = this.player.visible && !isDead(this.lastGameState?.current_player);
+      this.bookStates.follow(OWN_BODY, alive ? this.playerPos : null, this.playerAnim?.crown, time);
+    }
+    for (const [playerId, sprite] of this.otherPlayers) {
+      const pos = this.otherPlayersPos.get(playerId);
+      const alive = sprite.visible && (this.otherPlayersPrevHp.get(playerId) ?? 1) > 0;
+      this.bookStates.follow(playerId, alive && pos ? pos : null, this.otherPlayersAnim.get(playerId)?.crown, time);
+    }
+  }
+
   private updateOtherPlayersSmooth(time: number, delta: number): void {
     const lerpFactor = 0.3;
     this.otherPlayers.forEach((sprite, playerId) => {
@@ -6112,13 +7100,20 @@ export class BarrowspireScene extends Phaser.Scene {
         pos.x = Phaser.Math.Linear(pos.x, target.x, lerpFactor);
         pos.y = Phaser.Math.Linear(pos.y, target.y, lerpFactor);
         standAt(sprite, pos, 1);
+        // afloat draws the body raised a little over its feet (FS-X2CMM R47)
+        sprite.y -= this.bookStates.lift(playerId, time, this.otherPlayersAnim.get(playerId)?.crown);
 
         // A rival on a baked sheet walks, idles and dies in it, off the position just
         // drawn. Their attacks are not known to this client, so they never swing.
         const anim = this.otherPlayersAnim.get(playerId);
         const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
         if (!dead) this.deathDust.alive(sprite);
+        // a rolling delver is drawn rolling from `other_players[].roll` (FS-7P736 R15): the class's baked
+        // roll, else its stride under the in-code tumble, the placeholder's too
+        const rolling = this.rollDraws.at(playerId, this.time.now);
+        anim?.roll(rolling?.dir, this.time.now);
         if (anim?.baked) anim.show(sprite, anim.step(pos, time, delta, dead));
+        this.tumble.apply(sprite, rolling && !anim?.rolls && !dead ? rolling : null, tumbleMiddle(!!anim?.baked, anim?.crown));
 
         // update facing and legs for other players: the placeholder rig
         const legs = this.otherPlayersLegs.get(playerId);
@@ -6169,15 +7164,17 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!sprite) return;
     const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
     const anim = this.otherPlayersAnim.get(playerId);
-    const base = markerBase(sprite, anim?.crown, dead, anim?.artScale);
+    // over the body as it stands, never as a roll tumbles it (FS-7P736 R15)
+    const stood = this.tumble.standing(sprite);
+    const base = markerBase(stood, anim?.crown, dead, anim?.artScale);
     // the switch alone decides, not whether a bar happens to be in the map
     const bar = this.showTeammateBars ? this.teammateHealthBars.get(playerId) : undefined;
-    const barTop = bar ? this.drawTeammateBar(bar, sprite.x, base) : null;
+    const barTop = bar ? this.drawTeammateBar(bar, stood.x, base) : null;
 
     const nameText = this.otherPlayersNameTexts.get(playerId);
     if (nameText) {
-      if (barTop !== null) nameText.setPosition(sprite.x, barTop - 1 - NAME_OVER_BAR_GAP);
-      else if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
+      if (barTop !== null) nameText.setPosition(stood.x, barTop - 1 - NAME_OVER_BAR_GAP);
+      else if (base !== null) nameText.setPosition(stood.x, base - NAME_GAP);
       nameText.setVisible(base !== null);
       // the title stands where the name was just put, the name over it (FS-E1ZDG §K.41)
       const title = this.otherPlayersTitles.get(playerId);
@@ -6187,24 +7184,15 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * One teammate's health bar over `base` (their marker base), in the monsters' overhead style:
-   * a pitch backing with a barrow rim, and the health fill. Returns the bar's top, or null when
-   * none is drawn.
+   * One teammate's health bar over `base` (their marker base), the one overhead bar teammates and
+   * allies share (`paintTeammateBar`). Returns the bar's top, or null when none is drawn.
    */
   private drawTeammateBar(bar: TeammateBar, x: number, base: number | null): number | null {
     const g = bar.graphics;
     g.clear();
     if (base === null || bar.fill === null) return null;
-
-    const { width, height, gap } = TEAMMATE_BAR;
-    const top = Math.round(base - gap - height);
-    const left = Math.round(x - width / 2);
-    g.fillStyle(MARKER_BAR.backing, 0.9);
-    g.fillRect(left - 1, top - 1, width + 2, height + 2);
-    g.lineStyle(1, MARKER_BAR.rim, 0.9);
-    g.strokeRect(left - 1, top - 1, width + 2, height + 2);
-    g.fillStyle(MARKER_BAR.hp, 1);
-    g.fillRect(left, top, Math.round(width * bar.fill), height);
+    const top = teammateBarTop(base);
+    paintTeammateBar(g, bar.fill, { poisoned: bar.poisoned, at: { x: Math.round(x - TEAMMATE_BAR.width / 2), y: top } });
     return top;
   }
 

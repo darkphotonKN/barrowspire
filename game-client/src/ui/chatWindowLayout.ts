@@ -18,7 +18,7 @@ export const CHAT_WINDOW_MARGIN = 16;
 const CORNER_ROW_REACH =
   CORNER_MARGIN + CORNER_ICONS.length * CORNER_ICON_W + (CORNER_ICONS.length - 1) * CORNER_ICON_GAP;
 /**
- * The window's width (R19): its right edge mirrors the corner row's left end (the passive tree's
+ * The window's width (R19): its right edge mirrors the corner row's left end (the class book's
  * plate), the same distance in from the left as the row reaches in from the right, so the bottom
  * corners balance (asked 2026-11-24). Derived from the row, so it follows a seventh icon.
  */

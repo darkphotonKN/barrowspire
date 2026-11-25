@@ -25,6 +25,12 @@ import {
 } from "./animationSelect";
 
 /**
+ * A clip's manifest animation name under a palette variant (`death_b`): the plain clip with none.
+ * One sheet carries several looks this way (the town's folk, the encounter cast, FS-4EC7Z §H R36).
+ */
+export const variantClip = (clip: string, variant?: string): string => (variant ? `${clip}_${variant}` : clip);
+
+/**
  * How quickly the measured speed follows the drawn motion, in ms. Positions ease toward server
  * ticks that land every other frame, so the raw per-frame speed stutters; smoothed over about
  * six frames it reads as the pace the body is actually covering.
@@ -63,6 +69,8 @@ export interface SheetClips {
   run?: boolean;
   /** The off-hand clip, `attack_offhand` (FS-1J1CB §D): only the Berserker's. */
   offhand?: boolean;
+  /** The class's baked roll, `roll` (FS-7P736 R15). */
+  roll?: boolean;
 }
 
 /** How a swing is drawn beyond its aim ({@link CharacterMotion.attack}). */
@@ -86,6 +94,8 @@ export class CharacterMotion {
   private swings = 0;
   /** The swing running is on the off hand: the last {@link attack} took the left. */
   private leftHand = false;
+  /** The way the body rolls while it rolls (FS-7P736 R15), told every frame; none when it is not. */
+  private rolling?: Point;
 
   private readonly clips: Required<SheetClips>;
 
@@ -102,7 +112,20 @@ export class CharacterMotion {
     this.clips = {
       run: clips.run ?? false,
       offhand: clips.offhand ?? false,
+      roll: clips.roll ?? false,
     };
+  }
+
+  /**
+   * Whether the body is rolling, and which world way (FS-7P736 R15), told every frame. A roll is the
+   * newest thing the body did: a swing still running is cut short, as a raised guard cuts it. Whether
+   * this started a roll.
+   */
+  roll(dir: Point | undefined, now: number): boolean {
+    const started = dir !== undefined && this.rolling === undefined;
+    if (started) this.attackEnds = Math.min(this.attackEnds, now);
+    this.rolling = dir && { ...dir };
+    return started;
   }
 
   /**
@@ -145,7 +168,7 @@ export class CharacterMotion {
   }
 
   /**
-   * Takes on `from`'s motion: its facing, its measured pace, a swing, a held aim and a guard
+   * Takes on `from`'s motion: its facing, its measured pace, a swing, a held aim, a guard and a roll
    * under way. A body changing sheet mid-scene goes on as it was (FS-1J1CB R21), save the hand:
    * its next swing is the right one (R30), as for a body first seen mid-session.
    */
@@ -157,6 +180,7 @@ export class CharacterMotion {
     this.aim = from.aim;
     this.holding = from.holding;
     this.guarding = from.guarding;
+    this.rolling = from.rolling;
   }
 
   /** One frame: `pos` is the world position just drawn, `deltaMs` the frame's length. */
@@ -183,6 +207,8 @@ export class CharacterMotion {
       guarding: this.guarding,
       run: this.clips.run,
       offhand: this.leftHand,
+      rolling: this.rolling,
+      roll: this.clips.roll,
     });
     this.facing = choice.facing;
     return choice;
@@ -201,6 +227,13 @@ export class CharacterAnimator {
   private guardPending = false;
   /** Whether the sheet carries the parry clip: only the Mercenary's does (FS-MAMHR §G.35). */
   private readonly guards: boolean;
+  /** Set as a roll starts: the roll clip plays from its first frame. */
+  private rollPending = false;
+  /**
+   * Whether the sheet carries its class's baked roll (FS-7P736 R15). Without it the scene draws the
+   * in-code tumble over the sprite while it rolls (`rollDraw.ts`).
+   */
+  readonly rolls: boolean;
   /**
    * The sprite scale that draws the sheet at its true size: 1 over its `scale` (a 2x sheet's
    * 0.5, FS-HF0WW). Not a size: markers, the crown and the footprint stay screen px. 1
@@ -224,6 +257,7 @@ export class CharacterAnimator {
     const attack = art.sheet(this.sheet)?.animations.attack;
     this.baked = this.carries("idle");
     this.guards = this.carries("parry");
+    this.rolls = this.baked && this.carries("roll");
     const sheet = this.baked ? art.sheet(this.sheet) : undefined;
     this.artScale = sheet ? 1 / sheetScale(sheet) : 1;
     this.motion = new CharacterMotion(
@@ -234,6 +268,7 @@ export class CharacterAnimator {
       {
         run: this.carries("run"),
         offhand: this.carries("attack_offhand"),
+        roll: this.rolls,
       },
     );
   }
@@ -270,6 +305,15 @@ export class CharacterAnimator {
     else if (!up) this.guardPending = false;
   }
 
+  /**
+   * Whether the body is rolling and which world way (FS-7P736 R15), told every frame; as
+   * {@link CharacterMotion.roll}. A sheet with the roll clip plays it from its first frame.
+   */
+  roll(dir: Point | undefined, now: number): void {
+    if (this.motion.roll(dir, now)) this.rollPending = this.rolls;
+    else if (!dir) this.rollPending = false;
+  }
+
   step(pos: Point, now: number, deltaMs: number, dead: boolean): AnimationChoice {
     this.chosen = this.motion.step(pos, now, deltaMs, dead);
     return this.chosen;
@@ -286,6 +330,7 @@ export class CharacterAnimator {
     next.chosen = this.chosen;
     next.swingPending = this.swingPending;
     next.guardPending = this.guardPending;
+    next.rollPending = this.rollPending && next.rolls;
     return next;
   }
 
@@ -336,6 +381,9 @@ export class CharacterAnimator {
     } else if (choice.animation === "parry" && this.guardPending) {
       this.guardPending = false;
       sprite.play({ key, startFrame: 0 });
+    } else if (choice.animation === "roll" && this.rollPending) {
+      this.rollPending = false;
+      sprite.play({ key, startFrame: 0 });
     } else if (current?.key !== key) {
       const from = current ? animationOf(current.key) : undefined;
       const at = current ? Math.max(0, current.frames.indexOf(anims.currentFrame)) : 0;
@@ -374,7 +422,7 @@ export class CharacterAnimator {
 
   /** The manifest animation a clip plays under this look's palette variant. */
   private clip(animation: CharacterAnimation): string {
-    return this.variant ? `${animation}_${this.variant}` : animation;
+    return variantClip(animation, this.variant);
   }
 }
 

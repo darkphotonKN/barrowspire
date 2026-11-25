@@ -6,6 +6,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 )
@@ -33,8 +34,9 @@ func (s *Session) FloorMapMessage() (types.Message, bool) {
 	return *message, true
 }
 
-// publishFloorMap makes the floor just built at depth the one the map
-// describes. Its walls are fresh values, never the pooled backend state's.
+// publishFloorMap makes the floor at depth, as it stands now, the one the map
+// describes: after its build, and again when a secret door opens (FS-5FZ4J §F
+// R37). Its walls are fresh values, never the pooled backend state's.
 func (s *Session) publishFloorMap(depth int) {
 	if s.worldType != types.WorldTypeRun {
 		return
@@ -46,7 +48,7 @@ func (s *Session) publishFloorMap(depth int) {
 	walls := wallStatesOf(s.EntityManager.GetAllEntities())
 	message := floorMapMessage(s.ID, depth, width, height, walls)
 	if dungeon != nil {
-		message = dungeonFloorMapMessage(s.ID, depth, dungeon, walls, pool)
+		message = dungeonFloorMapMessage(s.ID, depth, dungeon, dungeon.shownRegions(s.EntityManager.GetAllEntities()), walls, pool)
 	}
 	s.floorMap.Store(&message)
 }
@@ -85,12 +87,13 @@ func floorMapMessage(sessionID uuid.UUID, depth int, width, height float64, wall
 	}
 }
 
-// dungeonFloorMapMessage is the floor_map for a dungeon floor: its size, cell
-// size and regions all from the one layout the floor was built from, and its
-// shell walls with no house id. Its enemy_pool is every archetype the floor's
+// dungeonFloorMapMessage is the floor_map for a dungeon floor: its size and
+// cell size from the one layout the floor was built from, the regions shown of
+// it (every unopened hidden room left out, FS-5FZ4J §F R37), and its shell
+// walls with no house id. Its enemy_pool is every archetype the floor's
 // pool can spawn, never a boss, so it says nothing of the top floor
 // (FS-C8VM7 §G R40).
-func dungeonFloorMapMessage(sessionID uuid.UUID, depth int, d *dungeonFloor, walls []*types.WallState, pool floorPool) types.Message {
+func dungeonFloorMapMessage(sessionID uuid.UUID, depth int, d *dungeonFloor, regions []levelgen.Region, walls []*types.WallState, pool floorPool) types.Message {
 	shell := make([]shellWall, len(walls))
 	for i, wall := range walls {
 		shell[i] = shellWall{EntityID: wall.EntityID, Position: wall.Position, Width: wall.Width, Height: wall.Height}
@@ -103,9 +106,12 @@ func dungeonFloorMapMessage(sessionID uuid.UUID, depth int, d *dungeonFloor, wal
 			"width":      d.layout.Bounds.W,
 			"height":     d.layout.Bounds.H,
 			"cell_size":  d.layout.CellSize,
-			"regions":    d.layout.Regions,
+			"regions":    regions,
 			"walls":      shell,
 			"enemy_pool": pool.archetypes(),
+			// the rooms that rolled quiet, by region, for their dressing
+			// (FS-KE075 §Change: Room variety R84)
+			"quiet_rooms": d.quietRegions(),
 		},
 	}
 }

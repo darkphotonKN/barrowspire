@@ -52,13 +52,15 @@ describe("xpBarFrame: the piece's place (FS-77DVN §A)", () => {
     expect(XP_BAR_CLEARANCE).toBe(16);
   });
 
-  it("should centre a 348 px piece on 540 at 1080 and a capped 480 px one on 640 at 1280 (A.2)", () => {
+  // the class book's seventh corner icon (FS-X2CMM R36) moves the row's left end, and the chat window
+  // mirrors the row: 56 px less clearance on each side
+  it("should centre a 236 px piece on 540 at 1080 and a 436 px one on 640 at 1280 (A.2; FS-X2CMM R36)", () => {
     const narrow = xpBarFrame(view(1080)).piece;
-    expect(narrow.width).toBe(348);
+    expect(narrow.width).toBe(236);
     expect(narrow.x + narrow.width / 2).toBe(540);
 
     const wide = xpBarFrame(view(1280)).piece;
-    expect(wide.width).toBe(480);
+    expect(wide.width).toBe(436);
     expect(wide.x + wide.width / 2).toBe(640);
   });
 
@@ -130,11 +132,11 @@ describe("xpBarFrame: the bar, the studs and the numerals (FS-77DVN §B)", () =>
     expect(numerals.right).toEqual({ x: studs.right.x + 6, y: centre });
   });
 
-  it("should give each end a fixed slot inside the piece, the bar the span between (B.8; 276 px at 1080)", () => {
+  it("should give each end a fixed slot inside the piece, the bar the span between (B.8; 164 px at 1080)", () => {
     const { piece, bar, numerals } = xpBarFrame(view(1080));
     expect(numerals.left.x).toBe(piece.x + XP_END_SLOT_W);
     expect(numerals.right.x).toBe(piece.x + piece.width - XP_END_SLOT_W);
-    expect(bar.width).toBe(276);
+    expect(bar.width).toBe(164);
   });
 
   it("should centre the bar under the piece", () => {

@@ -13,6 +13,7 @@ import (
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
 	grpccharacter "github.com/darkphotonKN/barrowspire-server/game-service/grpc/character"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
+	grpcwallet "github.com/darkphotonKN/barrowspire-server/game-service/grpc/wallet"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/chatbus"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components/metrics"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
@@ -37,6 +38,8 @@ type Downstreams struct {
 	Auth      string
 	Items     string
 	Character string
+	// Wallet is where a run's purchases are debited (FS-9JV5K §B, ADR-0093)
+	Wallet string
 }
 
 /**
@@ -74,7 +77,11 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	if err != nil {
 		return nil, nil, errors.Join(err, authClient.Close(), itemsClient.Close())
 	}
-	conns := []io.Closer{authClient, itemsClient, characterClient}
+	walletClient, err := grpcwallet.NewClient(addrs.Wallet)
+	if err != nil {
+		return nil, nil, errors.Join(err, authClient.Close(), itemsClient.Close(), characterClient.Close())
+	}
+	conns := []io.Closer{authClient, itemsClient, characterClient, walletClient}
 	closeAll := func() error {
 		var errs []error
 		for _, c := range conns {
@@ -123,6 +130,8 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		gameserver.WithMailArrivals(chatbus.NewRedis(redisClient)),
 		// off unless main says ENVIRONMENT is development (FS-BDRTJ R1)
 		gameserver.WithDevTestRoom(devTestRoom),
+		// a run's purchases are paid by a wallet debit (FS-9JV5K §B, ADR-0093)
+		gameserver.WithWallet(walletClient),
 	)
 	if err != nil {
 		return nil, nil, errors.Join(fmt.Errorf("game server: %w", err), closeAll())

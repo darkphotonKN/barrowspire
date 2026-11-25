@@ -11,13 +11,19 @@ import (
 
 // lootPool is the session's catalogue as the loot roll sees it: one base pool
 // per item type and, apart, the uniques. A unique never enters a base pool.
-// FS-4R9M9 §Requirements 5, 6, 8, 12.
+// FS-4R9M9 §Requirements 5, 6, 8, 12. The antidote is held apart too: it is
+// never rolled, only sold by the merchant. FS-9JV5K §D R16. So is the
+// Restoring Draught (FS-9JV5K §Change: The Restoring Draught D1).
 type lootPool struct {
 	Weapons     []lootTemplate
 	Armor       []lootTemplate
 	Consumables []lootTemplate
 	Rings       []lootTemplate
 	Uniques     []uniqueTemplate
+	// Antidote is the antidote's template, nil when the catalogue has none.
+	Antidote *lootTemplate
+	// RestoringDraught is the draught's template, nil when the catalogue has none.
+	RestoringDraught *lootTemplate
 }
 
 // uniqueTemplate is a unique as the roll sees it: its template (Config carries
@@ -65,9 +71,9 @@ func (p lootPool) of(itemType types.ItemType) []lootTemplate {
 	return nil
 }
 
-// buildLootPool files every catalogue template into its pool. An unparseable
-// id or an item type the game does not know refuses the whole catalogue; a
-// unique with an unknown effect is only left out.
+// buildLootPool files every catalogue template into its pool, the antidote
+// and the Restoring Draught apart from them. An unparseable id or an item type the game does not know
+// refuses the whole catalogue; a unique with an unknown effect is only left out.
 func buildLootPool(templates []*pbitems.ItemTemplate) (lootPool, error) {
 	var pool lootPool
 	for _, t := range templates {
@@ -86,6 +92,15 @@ func buildLootPool(templates []*pbitems.ItemTemplate) (lootPool, error) {
 				continue
 			}
 			pool.Uniques = append(pool.Uniques, uniqueTemplate{lootTemplate: lt, FixedAffixes: affixRangesFrom(u.GetFixedAffixes())})
+			continue
+		}
+
+		if types.IsAntidote(lt.Config.ItemType, lt.Config.Name) {
+			pool.Antidote = &lt
+			continue
+		}
+		if types.IsRestoringDraught(lt.Config.ItemType, lt.Config.Name) {
+			pool.RestoringDraught = &lt
 			continue
 		}
 

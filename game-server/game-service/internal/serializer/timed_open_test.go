@@ -23,14 +23,14 @@ func TestFormatStateToClientState_TellsADelverTheirOwnTimedOpen(t *testing.T) {
 	opening, idle := uuid.New(), uuid.New()
 	container := uuid.New()
 	seatWithResource(em, opening, "warrior", stamina(100, 100), components.AttackDash).
-		AddComponent(&components.TimedOpenComponent{ContainerID: container, Elapsed: 0.4, Duration: 1.5, FromX: 10, FromY: 10})
+		AddComponent(&components.TimedOpenComponent{TargetID: container, TargetKind: components.TimedTargetOpen, Elapsed: 0.4, Duration: 1.5, FromX: 10, FromY: 10})
 	seatWithResource(em, idle, "mage", mana(150, 150), components.AttackTripleFireball)
 
 	_, mine := wireFor(t, em, types.WorldTypeRun, opening)
 	_, theirs := wireFor(t, em, types.WorldTypeRun, idle)
 
 	assert.Equal(t,
-		map[string]any{"entity_id": container.String(), "elapsed": 0.4, "duration": 1.5},
+		map[string]any{"entity_id": container.String(), "target_kind": "open", "elapsed": 0.4, "duration": 1.5},
 		mine["current_player"].(map[string]any)["timed_open"])
 	assert.NotContains(t, theirs["current_player"], "timed_open", "absent with none")
 }
@@ -46,7 +46,7 @@ func TestFormatStateToClientState_TimedOpenIsItsOwnersAlone(t *testing.T) {
 	chest.AddComponent(components.NewOpenableComponent(false))
 	for _, entity := range w.em.GetAllEntities() {
 		if pc, ok := entity.GetComponent(ecs.ComponentTypePlayer); ok && pc.(*components.PlayerComponent).MemberID == w.mage {
-			entity.AddComponent(&components.TimedOpenComponent{ContainerID: chest.ID, Elapsed: 1.0, Duration: 1.5})
+			entity.AddComponent(&components.TimedOpenComponent{TargetID: chest.ID, TargetKind: components.TimedTargetOpen, Elapsed: 1.0, Duration: 1.5})
 		}
 	}
 

@@ -113,3 +113,77 @@ describe("the passive tree's hues (FS-8RZ51 L4, L6)", () => {
     expect(new Set(values).size).toBe(values.length);
   });
 });
+
+// FS-X2CMM §I R45, ADR-0094: a class book page's picture is painted in one of four muted mineral
+// pigments, with bone for its highlights, each a token read only through `palette.bookPigment`.
+describe("the class book's pigments (FS-X2CMM R45, ADR-0094)", () => {
+  const PIGMENTS = ["pigmentVerdigris", "pigmentOchre", "pigmentMadder", "pigmentLapis", "pigmentBone"] as const;
+
+  /** A colour in OKLab (Björn Ottosson's matrices, from sRGB). */
+  const okLab = (color: number): [number, number, number] => {
+    const linear = (v: number) => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+    const [r, g, b] = rgb(color).map(linear);
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [
+      0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+    ];
+  };
+  const chroma = (color: number) => Math.hypot(okLab(color)[1], okLab(color)[2]);
+  const apart = (a: number, b: number) => {
+    const [p, q] = [okLab(a), okLab(b)];
+    return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  };
+
+  it("should add the five to BARROW and BARROW_HEX as one colour each", () => {
+    for (const key of PIGMENTS) expect(Number.parseInt(BARROW[key].slice(1), 16), key).toBe(BARROW_HEX[key]);
+  });
+
+  it("should resolve palette.bookPigment from those tokens, by the pigment's name", () => {
+    expect(palette.bookPigment).toEqual({
+      verdigris: BARROW_HEX.pigmentVerdigris,
+      ochre: BARROW_HEX.pigmentOchre,
+      madder: BARROW_HEX.pigmentMadder,
+      lapis: BARROW_HEX.pigmentLapis,
+      bone: BARROW_HEX.pigmentBone,
+      lockedGround: BARROW_HEX.pigmentLockedGround,
+      rimLit: BARROW_HEX.brassBright,
+    });
+  });
+
+  // ADR-0094 (I-X2CMM-23): the book's world effects wear the same pigments as its pages, through one table
+  it("should ink the book's world effects from palette.bookPigment", () => {
+    expect(palette.bookEffect.rune).toBe(palette.bookPigment.madder);
+    expect(palette.bookEffect.runeFlash).toBe(tint(palette.bookPigment.madder, 0.45));
+    expect(palette.bookEffect.witchlight).toBe(tint(palette.bookPigment.ochre, 0.35));
+    expect(palette.bookEffect.witchlightCore).toBe(palette.bookPigment.bone);
+    expect(palette.bookEffect.trackersEye).toBe(palette.bookPigment.ochre);
+  });
+
+  // ADR-0095 (I-X2CMM-24): a locked page lies on a flat warm near-ink ground, never coloured.
+  it("should keep the locked ground a warm near-ink, one colour in both maps, darker than every pigment", () => {
+    expect(Number.parseInt(BARROW.pigmentLockedGround.slice(1), 16)).toBe(BARROW_HEX.pigmentLockedGround);
+    const [r, , b] = rgb(BARROW_HEX.pigmentLockedGround);
+    expect(r).toBeGreaterThan(b);
+    expect(chroma(BARROW_HEX.pigmentLockedGround)).toBeLessThan(0.03);
+    for (const key of PIGMENTS) expect(lum(rgb(BARROW_HEX.pigmentLockedGround)), key).toBeLessThan(lum(rgb(BARROW_HEX[key])) - 40);
+  });
+
+  it("should saturate none past the barrow ramp's own ceiling, the tree's verdigris", () => {
+    for (const key of PIGMENTS) expect(chroma(BARROW_HEX[key]), key).toBeLessThanOrEqual(chroma(BARROW_HEX.verdigris));
+  });
+
+  it("should keep ochre off amber, the interactable channel, and madder off oxblood, damage", () => {
+    expect(apart(BARROW_HEX.pigmentOchre, BARROW_HEX.amber)).toBeGreaterThan(0.1);
+    expect(apart(BARROW_HEX.pigmentMadder, BARROW_HEX.oxblood)).toBeGreaterThan(0.1);
+  });
+
+  it("should give each main pigment a hue far from the others, and bone the lightest", () => {
+    const mains = PIGMENTS.filter((k) => k !== "pigmentBone");
+    for (const a of mains) for (const b of mains) if (a < b) expect(apart(BARROW_HEX[a], BARROW_HEX[b]), `${a} / ${b}`).toBeGreaterThan(0.1);
+    for (const key of mains) expect(lum(rgb(BARROW_HEX.pigmentBone)), key).toBeGreaterThan(lum(rgb(BARROW_HEX[key])) + 60);
+  });
+});

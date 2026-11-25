@@ -14,6 +14,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import {
+  DRINK_HINT,
   GEAR_HINT,
   GEAR_OVERLAY_DEPTH,
   GearOverlay,
@@ -197,6 +198,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     const self: Record<string, unknown> = chain({
       destroy: () => void (t.destroyed = true),
       setColor: (c: string) => ((t.color = c), self),
+      setText: (c: string) => ((t.content = c), self),
     });
     return self;
   };
@@ -444,6 +446,65 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
     move(...cell(1));
     overlay.handleEquipKey();
     expect(onEquip).toHaveBeenLastCalledWith(sword, "weapon");
+  });
+
+  // FS-9JV5K §F R24 (I-9JV5K-5): an antidote in the bag is drunk, never worn
+  it("should drink a hovered antidote on right-click or E, wearing nothing and leaving it in the bag for the server", () => {
+    const antidote = item("antidote-1", { name: "Antidote", item_type: "consumable" });
+    const { overlay, move, press, cell, onEquip, shown } = overlayOnStage([antidote]);
+    const onDrink = vi.fn();
+    overlay.onDrink = onDrink;
+    move(...cell(0));
+    press(...cell(0), 2);
+    overlay.handleEquipKey();
+    expect(onDrink.mock.calls).toEqual([[antidote], [antidote]]);
+    expect(onEquip).not.toHaveBeenCalled();
+    expect(shown()).toContain("1 / 30");
+  });
+
+  // FS-9JV5K §F R24: the screen names the gesture over a drinkable antidote
+  it("should hint Right-click or E: drink over a bagged antidote it drinks, and wear or take off again off it", () => {
+    const antidote = item("antidote-1", { name: "Antidote", item_type: "consumable" });
+    const sword = item("sword-1", { item_type: "weapon" });
+    const { overlay, move, cell, shown } = overlayOnStage([antidote, sword]);
+    overlay.onDrink = vi.fn();
+    move(...cell(0));
+    expect(shown()).toContain(DRINK_HINT);
+    expect(shown()).not.toContain(GEAR_HINT);
+    move(...cell(1));
+    expect(shown()).toContain(GEAR_HINT);
+    expect(shown()).not.toContain(DRINK_HINT);
+    expect(DRINK_HINT).toBe("Right-click or E: drink  //  Shift: compare  //  Ctrl+Alt+click: link in chat  //  I, B or Esc: close");
+  });
+
+  // FS-9JV5K §Change: The Restoring Draught D6 (I-9JV5K-7): Drink on a draught in the bag, as on an antidote
+  it("should drink a hovered Restoring Draught on right-click or E, hinting drink over it and wearing nothing", () => {
+    const draught = item("draught-1", { name: "Restoring Draught", item_type: "consumable" });
+    const { overlay, move, press, cell, onEquip, shown } = overlayOnStage([draught]);
+    const onDrink = vi.fn();
+    overlay.onDrink = onDrink;
+    move(...cell(0));
+    expect(shown()).toContain(DRINK_HINT);
+    press(...cell(0), 2);
+    overlay.handleEquipKey();
+    expect(onDrink.mock.calls).toEqual([[draught], [draught]]);
+    expect(onEquip).not.toHaveBeenCalled();
+  });
+
+  it("should keep wear or take off over an antidote where nothing drinks it", () => {
+    const antidote = item("antidote-1", { name: "Antidote", item_type: "consumable" });
+    const { move, cell, shown } = overlayOnStage([antidote]);
+    move(...cell(0));
+    expect(shown()).toContain(GEAR_HINT);
+    expect(shown()).not.toContain(DRINK_HINT);
+  });
+
+  it("should wear an antidote as any consumable where nothing drinks it (the town's gear)", () => {
+    const antidote = item("antidote-1", { name: "Antidote", item_type: "consumable" });
+    const { move, press, cell, onEquip } = overlayOnStage([antidote]);
+    move(...cell(0));
+    press(...cell(0), 2);
+    expect(onEquip).toHaveBeenCalledWith(antidote, "consumable_1");
   });
 
   it.each([1, 1.5, 2])(

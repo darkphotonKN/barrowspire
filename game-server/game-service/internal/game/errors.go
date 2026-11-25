@@ -1,6 +1,9 @@
 package game
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	// Core game
@@ -77,6 +80,10 @@ var (
 	// ErrContainerGuarded refuses opening a floor-1 chest while any monster its
 	// room spawned as guards still stands. FS-KE075 §J Requirement 60.
 	ErrContainerGuarded = errors.New("container is guarded")
+	// ErrUndetected refuses an interact on what the party has not detected, a
+	// secret door: answered as a target not found, since the client has no id
+	// for it, and refused quietly. FS-5FZ4J §F R38.
+	ErrUndetected = fmt.Errorf("target not detected: %w", ErrEntityNotFound)
 
 	// queue
 	ErrPlayerAlreadyInQueue = errors.New("player already in queue")

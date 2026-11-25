@@ -53,10 +53,10 @@ func TestBoneArcherSheet_CarriesItsNumbers(t *testing.T) {
 	require.True(t, ok, "the Bone Archer has a sheet")
 	assert.Equal(t, monsterSheet{
 		Name: "Bone Archer", HP: 30, Damage: 7,
-		AttackInterval: 2.0, WindUp: 0.6, AttackRange: 320, MoveSpeed: 130,
+		AttackInterval: 2.0, WindUp: 0.6, AttackRange: 320, MoveSpeed: 130 * constants.PaceScale,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 360, LeashRadius: 560,
-		Shot: monsterShot{ProjectileType: "bone_arrow", Speed: 420, Radius: 8, MaxFlight: 850},
+		Shot: monsterShot{ProjectileType: "bone_arrow", Speed: 420 * constants.PaceScale, Radius: 8, MaxFlight: 850},
 	}, sheet)
 }
 
@@ -81,7 +81,7 @@ func TestCreateMonsterEntity_BoneArcherCarriesItsShot(t *testing.T) {
 	assert.Equal(t, monsterStats{HP: 30, Damage: 7, Defense: 2, MagicResistance: 0}, statsOf(t, m))
 	vc, ok := m.GetComponent(ecs.ComponentTypeVelocity)
 	require.True(t, ok)
-	assert.Equal(t, 130.0, vc.(*components.VelocityComponent).Speed)
+	assert.Equal(t, 130*constants.PaceScale, vc.(*components.VelocityComponent).Speed)
 
 	monster := monsterOf(m)
 	assert.Equal(t, "Bone Archer", monster.Name)
@@ -91,7 +91,7 @@ func TestCreateMonsterEntity_BoneArcherCarriesItsShot(t *testing.T) {
 	assert.Equal(t, 360.0, monster.AggroRadius)
 	assert.Equal(t, 560.0, monster.LeashRadius)
 	assert.Equal(t, "bone_arrow", monster.ShotProjectileType)
-	assert.Equal(t, 420.0, monster.ShotSpeed)
+	assert.Equal(t, 420*constants.PaceScale, monster.ShotSpeed)
 	assert.Equal(t, 8.0, monster.ShotRadius)
 	assert.Equal(t, 850.0, monster.ShotMaxFlight)
 }

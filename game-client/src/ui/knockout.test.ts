@@ -656,3 +656,35 @@ describe("knockout geometry helpers (FS-7TQN4 R1: one bend, one oval)", () => {
     });
   });
 });
+
+// FS-X2CMM §I R45, ADR-0094: a page roundel is laid from knockouts, one per layer. Only its ground casts
+// the drop shadow, and a page's state (ready, recovering, dim, locked) changes a layer's ink, never its texture.
+describe("Knockout (FS-X2CMM R45: a layer of a page roundel)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it("should make no drop shadow when told none, on a build and on a rebuild", () => {
+    const env = stage();
+    const knockout = new Knockout({ scene: env.scene, depth: 1000, picture: PICTURE, ink: INK, shadow: false });
+    expect(knockout.show(SLOT, false)).toBe(true);
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(env.textures).toHaveLength(2);
+    expect(env.images).toHaveLength(0);
+    knockout.destroy();
+  });
+
+  it("should wear the ink a show is given, with no new texture, and keep it through a rebuild", () => {
+    const env = stage();
+    const knockout = new Knockout({ scene: env.scene, depth: 1000, picture: PICTURE, ink: INK });
+    const faint = { idle: { tint: palette.hudFaint, alpha: 0.6 }, hover: { tint: palette.hudFaint, alpha: 0.6 }, flat: true };
+    knockout.show(SLOT, false);
+    knockout.show(SLOT, true, faint);
+    expect(env.textures).toHaveLength(1);
+    expect(env.textures[0]).toMatchObject({ tints: [palette.hudFaint, palette.hudFaint, palette.hudFaint, palette.hudFaint], alpha: 0.6 });
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(env.textures[1]).toMatchObject({ tints: [palette.hudFaint, palette.hudFaint, palette.hudFaint, palette.hudFaint], alpha: 0.6 });
+    // a show with no ink goes back to its own
+    knockout.show(SLOT, true);
+    expectLit(env.textures[1], palette.hudText);
+    knockout.destroy();
+  });
+});

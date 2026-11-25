@@ -30,6 +30,11 @@ func (s *Session) rollChest(kind components.ContainerKind) ([]uuid.UUID, error) 
 	if kind == containerKindGuardedTreasure {
 		return s.rollContainer(s.chestRand, kind, s.guardedTreasureDrop())
 	}
+	if kind == containerKindBetterChest {
+		drop := s.chestDrop()
+		drop.RaritySteps = BetterChestRaritySteps
+		return s.rollContainer(s.chestRand, components.ContainerKindChest, drop)
+	}
 	return s.generateItems(kind)
 }
 

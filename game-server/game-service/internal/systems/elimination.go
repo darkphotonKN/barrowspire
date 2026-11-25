@@ -61,6 +61,10 @@ func (s *EliminationSystem) Update(deltaTime float64, entities []*ecs.Entity, se
 			}
 
 			loseParryState(entity)
+			// the Blessing is lost with the delver's life (FS-5FZ4J §G R44)
+			loseBlessing(entity)
+			// and so is Contract Settled (FS-4EC7Z §E R19)
+			loseContractSettled(entity)
 		}
 	}
 

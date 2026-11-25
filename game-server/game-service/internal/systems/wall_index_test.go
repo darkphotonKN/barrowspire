@@ -54,6 +54,10 @@ func closedDoor(door *ecs.Entity) bool {
 	return !hasOpenable || !openableC.(*components.OpenableComponent).IsOpen
 }
 
+// passingPits is the scan itself: it stands beside the index over floors that
+// lay no pit, so it never meets one.
+func (f *fullScan) passingPits() wallTests { return f }
+
 func (f *fullScan) sweepX(x, y, dx float64) float64 {
 	minTx := 1.0
 	for _, wallEntity := range f.walls {
@@ -333,7 +337,7 @@ func (tw *traceWorld) apply(st steer) []*ecs.Entity {
 		}
 	}
 	for i, idx := range st.charge {
-		tw.movers[idx].AddComponent(&components.DashComponent{DirX: st.chargeDir[i][0], DirY: st.chargeDir[i][1], Speed: 900, Remaining: 240})
+		tw.movers[idx].AddComponent(&components.DashComponent{Carry: components.Carry{DirX: st.chargeDir[i][0], DirY: st.chargeDir[i][1], Speed: 900, Remaining: 240}})
 	}
 	for _, idx := range st.toggle {
 		oc, _ := tw.doors[idx].GetComponent(ecs.ComponentTypeOpenable)

@@ -18,12 +18,33 @@ const TreeColoursPanel = dynamic(() => import("./TreeColoursPanel"), {
   loading: () => <p className="text-sm text-text-muted">Loading tree colours...</p>,
 });
 
+// The class book's page roundels, the art gate's contact sheet, on a canvas of their own (FS-X2CMM R46).
+const PageRoundelsPanel = dynamic(() => import("./PageRoundelsPanel"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-text-muted">Loading page roundels...</p>,
+});
+
+// The class book's open tome, on a sample book at its place in a run (FS-X2CMM §Change: the open tome).
+const OpenTomePanel = dynamic(() => import("./OpenTomePanel"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-text-muted">Loading the open tome...</p>,
+});
+
+// The player's own Health and resource bars, live, on a canvas of their own.
+const ResourceBarsPanel = dynamic(() => import("./ResourceBarsPanel"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-text-muted">Loading resource bars...</p>,
+});
+
 // One section per tracked family. Keyed by Family, so a family listed in families.ts with no
 // section here fails the typecheck.
 const SECTIONS: Record<Family, { title: string; Body: ComponentType }> = {
   effects: { title: "Effects", Body: EffectsPanel },
   "item-icons": { title: "Item icons", Body: ItemIconGrid },
   "tree-colours": { title: "Tree colours", Body: TreeColoursPanel },
+  "page-roundels": { title: "Page roundels", Body: PageRoundelsPanel },
+  "open-tome": { title: "Open tome", Body: OpenTomePanel },
+  "resource-bars": { title: "Resource bars", Body: ResourceBarsPanel },
 };
 
 export default function Gallery() {

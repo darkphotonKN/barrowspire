@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLASS_LORE } from "./classLore";
+import { BASE_MOVE_SPEED, paced } from "./pace";
 
 describe("CLASS_LORE: the Mercenary (FS-MAMHR §G.30)", () => {
   const merc = CLASS_LORE.mercenary;
@@ -28,7 +29,7 @@ describe("CLASS_LORE: the Mercenary (FS-MAMHR §G.30)", () => {
       atk: 12,
       def: 7,
       range: 1,
-      speed: 200,
+      speed: Math.round(BASE_MOVE_SPEED),
       resource: { kind: "parry_charges", max: 3 },
     });
   });
@@ -65,5 +66,14 @@ describe("CLASS_LORE: no old second names (FS-E1ZDG §K.38)", () => {
   it("should carry no title on any class: a title is the specialization's", () => {
     for (const lore of Object.values(CLASS_LORE))
       expect("title" in lore, lore.key).toBe(false);
+  });
+});
+
+/** FS-TAGWA R12: the card's Speed is what the class walks at, the server's paced walk. */
+describe("CLASS_LORE speeds (FS-TAGWA R12)", () => {
+  it("should be the paced walk for every class, the archer's its full-pace 220 at the pace", () => {
+    for (const key of ["warrior", "mage", "mercenary"] as const)
+      expect(CLASS_LORE[key].stats.speed).toBe(Math.round(BASE_MOVE_SPEED));
+    expect(CLASS_LORE.archer.stats.speed).toBe(Math.round(paced(220)));
   });
 });

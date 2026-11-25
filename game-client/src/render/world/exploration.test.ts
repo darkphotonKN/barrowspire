@@ -340,3 +340,98 @@ describe("which monsters and drop piles the fog shows (FS-SRA9J §D.15, §D.16, 
     expect(seen.shows({ x: member.x, y: -150 })).toBe(true);
   });
 });
+
+// FS-X2CMM §I R48 (I-X2CMM-12): while a witchlight burns, every viewer's fog treats the cells within 3 cells of
+// it as seen, as if a delver stood there, and they stay explored once it goes
+describe("a lit point lifts the fog within its cells (FS-X2CMM R48)", () => {
+  const light = (at: { x: number; y: number }, cells = 3) => ({ at, cells });
+
+  it("makes every region within 3 walkable steps of a lit point visible, with no member near", () => {
+    // from the corridor's (7, 2): room A's doorway cell (4, 2) is three steps west, room B's (11, 2) four east
+    const seen = new Exploration(walk());
+    seen.see([], [light(mid(7, 2))]);
+    expect([seen.state(A), seen.state(C), seen.state(B)]).toEqual(["visible", "visible", "unexplored"]);
+  });
+
+  it("reaches as far as its own cells, past a member's two steps", () => {
+    const member = new Exploration(walk());
+    member.see([mid(7, 2)]);
+    const lit = new Exploration(walk());
+    lit.see([], [light(mid(7, 2))]);
+    expect([member.state(A), lit.state(A)]).toEqual(["unexplored", "visible"]);
+  });
+
+  it("never reaches through a wall", () => {
+    const seen = new Exploration(floor(7, 4, [room(1, 1, 1, 2, 2), room(2, 4, 1, 2, 2)]));
+    seen.see([], [light(mid(2, 1))]);
+    expect([seen.state(1), seen.state(2)]).toEqual(["visible", "unexplored"]);
+  });
+
+  it("leaves what it lit explored once it goes, and says the fog changed both times", () => {
+    const seen = new Exploration(walk());
+    const changed = [seen.see([], [light(mid(7, 2))]), seen.see([], [light(mid(7, 2))]), seen.see([], [])];
+    expect(changed).toEqual([true, false, true]);
+    expect([seen.state(A), seen.state(C), seen.state(B)]).toEqual(["explored", "explored", "unexplored"]);
+  });
+
+  it("lights beside the party: both a member's regions and the light's are visible", () => {
+    const seen = new Exploration(walk());
+    seen.see([mid(13, 2)], [light(mid(1, 2))]);
+    expect([seen.state(A), seen.state(C), seen.state(B)]).toEqual(["visible", "unexplored", "visible"]);
+  });
+
+  it("shows a monster or pile within its cells' reach in px, and not past it, where no region is visible", () => {
+    // back-to-back rooms: the light in room 1, room 2 beyond the wall stays unexplored
+    const seen = new Exploration(floor(9, 4, [room(1, 1, 1, 2, 2), room(2, 4, 1, 4, 2)]));
+    const at = mid(2, 1);
+    seen.see([], [light(at)]);
+    expect(seen.state(2)).toBe("unexplored");
+    expect(seen.shows({ x: at.x + 3 * CELL, y: at.y })).toBe(true);
+    expect(seen.shows({ x: at.x + 3 * CELL + 1, y: at.y })).toBe(false);
+  });
+
+  it("walks a lit cell's reach once, however often the light is seen", () => {
+    const grid = walk();
+    const steps = vi.spyOn(grid, "walkable");
+    const seen = new Exploration(grid);
+    seen.see([], [light(mid(7, 2))]);
+    const walked = steps.mock.calls.length;
+    seen.see([], [light(mid(7, 2))]);
+    seen.see([mid(7, 2)], [light(mid(7, 2))]);
+    seen.see([], [light(mid(7, 2))]);
+    // the member's two steps from the same cell are a walk of their own, once
+    const afterMember = steps.mock.calls.length;
+    seen.see([mid(7, 2)], [light(mid(7, 2))]);
+    expect(walked).toBeGreaterThan(0);
+    expect(steps.mock.calls.length).toBe(afterMember);
+  });
+});
+
+describe("exploration carried onto a floor map re-sent for the same floor (FS-5FZ4J §J R56)", () => {
+  // the shut hidden room: room B (3) left out and the corridor's last cell (10, 2–3) cut, as the
+  // server sends the map while the secret door on it is shut; then the door open, the map whole
+  const shut = () => floor(17, 7, [room(A, 1, 1, 4, 4), corridor(C, 5, 2, 5, 2)]);
+
+  it("keeps every region already explored, and the region the party stands in visible, and adds the opened room unexplored", () => {
+    const before = new Exploration(shut());
+    before.see([mid(2, 2)]);
+    before.see([mid(7, 2)]);
+    const after = Exploration.carried(walk(), before);
+    expect([after.state(A), after.state(C), after.state(B)]).toEqual(["explored", "visible", "unexplored"]);
+  });
+
+  it("reads the party's next positions on the new cells: the room seen once a member reaches it", () => {
+    const before = new Exploration(shut());
+    before.see([mid(9, 2)]);
+    const after = Exploration.carried(walk(), before);
+    expect(after.see([mid(9, 2)])).toBe(true);
+    expect(after.state(B)).toBe("visible");
+  });
+
+  it("shows what stands near the party before the next positions come, as before", () => {
+    const before = new Exploration(shut());
+    before.see([mid(2, 2)]);
+    const after = Exploration.carried(walk(), before);
+    expect(after.shows({ x: mid(2, 2).x + SHOWN_WITHIN - 1, y: mid(2, 2).y })).toBe(true);
+  });
+});

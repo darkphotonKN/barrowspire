@@ -103,6 +103,8 @@ export interface WindowState {
   character: boolean;
   /** The passive tree (FS-8RZ51 R36): one more window, with the character panel's sounds (v1). */
   tree: boolean;
+  /** The class book (FS-X2CMM R36): one more window, with the character panel's sounds, as the tree's (v1). */
+  book?: boolean;
 }
 
 /** The windows in the S3 order, each with its open and close sound: the first to change names the sound. */
@@ -114,6 +116,8 @@ const WINDOW_ORDER: readonly { window: keyof WindowState; open: UiEffect; close:
   { window: "character", open: "character_open", close: "character_close" },
   // no sound of its own (FS-8RZ51 R36, v1: FS-WDM0X owns the set)
   { window: "tree", open: "character_open", close: "character_close" },
+  // no sound of its own either (FS-X2CMM R36, v1)
+  { window: "book", open: "character_open", close: "character_close" },
 ];
 
 /**
@@ -122,9 +126,9 @@ const WINDOW_ORDER: readonly { window: keyof WindowState; open: UiEffect; close:
  * menu ↔ OPTIONS swap leaves the slot occupied and plays nothing (S5); no change plays nothing (S6).
  */
 export function windowSound(before: WindowState, after: WindowState): UiEffect | null {
-  const opened = WINDOW_ORDER.find(({ window }) => !before[window] && after[window]);
+  const opened = WINDOW_ORDER.find(({ window }) => !before[window] && !!after[window]);
   if (opened) return opened.open;
-  const closed = WINDOW_ORDER.find(({ window }) => before[window] && !after[window]);
+  const closed = WINDOW_ORDER.find(({ window }) => !!before[window] && !after[window]);
   return closed ? closed.close : null;
 }
 

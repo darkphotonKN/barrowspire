@@ -3,6 +3,7 @@ package serializer
 import (
 	"context"
 	"math"
+	"slices"
 	"sync"
 
 	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
@@ -47,6 +48,7 @@ func NewStateSerializer(em *ecs.EntityManager, parties PartyMembership) *StateSe
 				TimedOpens:           make(map[uuid.UUID]*types.TimedOpenState),
 				AbilityCooldowns:     make(map[uuid.UUID]*types.CooldownState),
 				TreeAbilityCooldowns: make(map[uuid.UUID]*types.CooldownState),
+				RollCooldowns:        make(map[uuid.UUID]*types.CooldownState),
 				Passives:             make(map[uuid.UUID]*types.PassiveState),
 				InPlay:               make(map[uuid.UUID]types.Position),
 				Items:                make([]uuid.UUID, 0),
@@ -74,8 +76,16 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 
 	// a tome run's plan, on the run-level entity (FS-3103M §B R7)
 	var plan *components.TomePlanComponent
+	// a sealed floor's seals (FS-5FZ4J §I R46)
+	var seals []*components.SealComponent
 
 	for _, entity := range entities {
+		// what the party has not seen, and what a shut secret door hides,
+		// is sent to no one (FS-5FZ4J §F R37-R38, §D R30)
+		if unseen(entity) {
+			continue
+		}
+
 		// --- Floor (run-level entity; a hub has none) ---
 		if fc, hasFloor := entity.GetComponent(ecs.ComponentTypeFloor); hasFloor {
 			floor := fc.(*components.FloorComponent)
@@ -84,6 +94,107 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		}
 		if pc, hasPlan := entity.GetComponent(ecs.ComponentTypeTomePlan); hasPlan {
 			plan = pc.(*components.TomePlanComponent)
+		}
+		// the delve's contract, on the run-level entity (FS-4EC7Z §F R25)
+		if cc, hasContract := entity.GetComponent(ecs.ComponentTypeContract); hasContract {
+			contract := cc.(*components.ContractComponent)
+			backendState.Contract = &types.ContractState{State: string(contract.State), Heading: contract.Heading}
+			backendState.ContractTaker = contract.Taker
+		}
+
+		// --- A sealed floor's seals, pieces and barriers (FS-5FZ4J §I R46) ---
+		if sc, isSeal := entity.GetComponent(ecs.ComponentTypeSeal); isSeal {
+			seals = append(seals, sc.(*components.SealComponent))
+			continue
+		}
+		if pc, isPiece := entity.GetComponent(ecs.ComponentTypeSealPiece); isPiece {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				backendState.SealPieces = append(backendState.SealPieces, sealPieceState(entity.ID, pc.(*components.SealPieceComponent), tc.(*components.TransformComponent)))
+			}
+			continue
+		}
+		// a lore piece, a mural or a shrine, rides with the seal's pieces
+		// though it is none of them (FS-5FZ4J §I R46)
+		if lc, isLore := entity.GetComponent(ecs.ComponentTypeLorePiece); isLore {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				backendState.SealPieces = append(backendState.SealPieces, lorePieceState(entity.ID, lc.(*components.LorePieceComponent), tc.(*components.TransformComponent)))
+			}
+			continue
+		}
+		if bc, isBarrier := entity.GetComponent(ecs.ComponentTypeBarrier); isBarrier {
+			backendState.Barriers = append(backendState.Barriers, barrierState(entity, bc.(*components.BarrierComponent)))
+			continue
+		}
+		if tc, isTrap := entity.GetComponent(ecs.ComponentTypeTrap); isTrap {
+			backendState.Traps = append(backendState.Traps, trapState(entity, tc.(*components.TrapComponent)))
+			continue
+		}
+
+		// --- A floor's respites (FS-5FZ4J §I R46); a hidden altar is unseen
+		// until its room opens ---
+		if fc, isFountain := entity.GetComponent(ecs.ComponentTypeFountain); isFountain {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				at := tc.(*components.TransformComponent)
+				backendState.Fountain = &types.FountainState{
+					EntityID: entity.ID,
+					Position: &types.Position{X: at.X, Y: at.Y},
+					Dry:      fc.(*components.FountainComponent).Dry,
+				}
+			}
+			continue
+		}
+		if hc, isHallowed := entity.GetComponent(ecs.ComponentTypeHallowedAltar); isHallowed {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				at := tc.(*components.TransformComponent)
+				backendState.HallowedAltar = &types.HallowedAltarState{
+					EntityID: entity.ID,
+					Position: &types.Position{X: at.X, Y: at.Y},
+					Prayed:   hc.(*components.HallowedAltarComponent).Prayed,
+				}
+			}
+			continue
+		}
+
+		// --- The wandering merchant and his wares (FS-9JV5K §A R4) ---
+		if mc, isMerchant := entity.GetComponent(ecs.ComponentTypeMerchant); isMerchant {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				backendState.Merchant = merchantState(entity.ID, mc.(*components.MerchantComponent), tc.(*components.TransformComponent))
+			}
+			continue
+		}
+
+		// --- The Captives' cage, its key and whether the party carries it
+		// (FS-4EC7Z §F R23) ---
+		if cc, isCaptives := entity.GetComponent(ecs.ComponentTypeCaptives); isCaptives {
+			backendState.CageKeyCarried = backendState.CageKeyCarried || cc.(*components.CaptivesComponent).KeyCarried
+			continue
+		}
+		if cc, isCage := entity.GetComponent(ecs.ComponentTypeCage); isCage {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				at := tc.(*components.TransformComponent)
+				backendState.Cages = append(backendState.Cages, &types.CageState{
+					EntityID: entity.ID,
+					Position: types.Position{X: at.X, Y: at.Y},
+					Open:     cc.(*components.CageComponent).Open,
+				})
+			}
+			continue
+		}
+		if entity.HasComponent(ecs.ComponentTypeCageKey) {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				at := tc.(*components.TransformComponent)
+				backendState.EncounterKeys = append(backendState.EncounterKeys, &types.EncounterKeyState{
+					EntityID: entity.ID,
+					Position: types.Position{X: at.X, Y: at.Y},
+				})
+			}
+			continue
+		}
+
+		// --- A floor's encounter NPCs (FS-4EC7Z §F R22) ---
+		if nc, isNPC := entity.GetComponent(ecs.ComponentTypeEncounterNPC); isNPC {
+			backendState.EncounterNPCs = append(backendState.EncounterNPCs, encounterNPCState(entity, nc.(*components.EncounterNPCComponent)))
+			continue
 		}
 
 		// --- Player ---
@@ -188,6 +299,10 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			if cooldown := cooldownState(systems.TreeAbilityCooldown(entity)); cooldown != nil {
 				backendState.TreeAbilityCooldowns[player.MemberID] = cooldown
 			}
+			// the roll cooldown only while it runs (FS-7P736 §A R12)
+			if cooldown, running := systems.RollCooldown(entity); running {
+				backendState.RollCooldowns[player.MemberID] = &types.CooldownState{Remaining: cooldown.Remaining, Total: cooldown.Total}
+			}
 
 			level, experience := 1, int64(0)
 			if statsC, ok := entity.GetComponent(ecs.ComponentTypeStats); ok {
@@ -222,8 +337,21 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				Inventory: inventory,
 				Equipment: equipmentState,
 			}
+			setBook(playerState, entity, worldType)
 			if next, ok := progression.NextLevelAt(int32(level)); ok {
 				playerState.NextLevelAt = &next
+			}
+			// a delver's poison, public (FS-5FZ4J §I R47)
+			if left, poisoned := systems.PoisonedFor(entity); poisoned {
+				playerState.PoisonedFor = left
+			}
+			// and their Blessing (FS-5FZ4J §I R47)
+			playerState.Blessed = systems.Blessed(entity)
+			// and their Contract Settled (FS-4EC7Z §F R25)
+			playerState.ContractSettled = systems.ContractSettled(entity)
+			// and their roll in flight, public (FS-7P736 §A R12)
+			if dirX, dirY, rolling := systems.RollHeading(entity); rolling {
+				playerState.Roll = &types.RollState{DirX: dirX, DirY: dirY}
 			}
 
 			// a body in play is a centre of interest (FS-KE075 §G R37)
@@ -421,6 +549,11 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			})
 		}
 
+		// -- Book effects (a run's witchlights; FS-X2CMM §F R34) --
+		if effect, ok := bookEffectState(entity); ok {
+			backendState.BookEffects = append(backendState.BookEffects, effect)
+		}
+
 		// -- Projectiles --
 		projComp, isProj := entity.GetComponent(ecs.ComponentTypeProjectile)
 		if isProj {
@@ -541,8 +674,106 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		}
 		backendState.TomeCarried = plan.Carried && !plan.Burned
 	}
+	backendState.Seal = sealState(seals)
 
 	return backendState, nil
+}
+
+// unseen is whether entity is kept off the wire: undetected, or concealed in
+// a hidden room whose secret door is shut. FS-5FZ4J §F R37-R39, §D R30.
+func unseen(entity *ecs.Entity) bool {
+	if entity.HasComponent(ecs.ComponentTypeConcealed) {
+		return true
+	}
+	dc, detectable := entity.GetComponent(ecs.ComponentTypeDetectable)
+	return detectable && !dc.(*components.DetectableComponent).Detected
+}
+
+// sealState is the floor's seal on the wire: the first unbroken seal's kind
+// and stage, the last one's once every one is broken; nil with no seal.
+// FS-5FZ4J §I R46, R48.
+func sealState(seals []*components.SealComponent) *types.SealState {
+	if len(seals) == 0 {
+		return nil
+	}
+	ordered := slices.SortedFunc(slices.Values(seals), func(a, b *components.SealComponent) int { return a.Stage - b.Stage })
+	current := ordered[len(ordered)-1]
+	if i := slices.IndexFunc(ordered, func(sc *components.SealComponent) bool { return !sc.Broken }); i >= 0 {
+		current = ordered[i]
+	}
+	state := &types.SealState{
+		Kind:       string(current.Kind),
+		Stage:      current.Stage,
+		Stages:     len(ordered),
+		Broken:     !slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return !sc.Broken }),
+		KeyCarried: slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return sc.KeyCarried && !sc.Broken }),
+	}
+	// a Braziers window runs on the current seal alone (§E R34)
+	if !current.Broken && current.WindowLeft > 0 {
+		state.WindowEndsIn = current.WindowLeft
+	}
+	return state
+}
+
+// sealPieceState is one seal piece on the wire. FS-5FZ4J §I R46.
+func sealPieceState(id uuid.UUID, piece *components.SealPieceComponent, at *components.TransformComponent) *types.SealPieceState {
+	return &types.SealPieceState{
+		EntityID: id,
+		Kind:     string(piece.Kind),
+		Position: &types.Position{X: at.X, Y: at.Y},
+		Cell:     types.CellState{X: piece.Cell.X, Y: piece.Cell.Y},
+		Glyph:    piece.Glyph,
+		Active:   piece.Active,
+	}
+}
+
+// lorePieceState is one lore piece on the wire, as a seal piece of its kind:
+// never active, no glyph. FS-5FZ4J §I R46.
+func lorePieceState(id uuid.UUID, lore *components.LorePieceComponent, at *components.TransformComponent) *types.SealPieceState {
+	return &types.SealPieceState{
+		EntityID: id,
+		Kind:     string(lore.Kind),
+		Position: &types.Position{X: at.X, Y: at.Y},
+		Cell:     types.CellState{X: lore.Cell.X, Y: lore.Cell.Y},
+	}
+}
+
+// trapState is one detected trap on the wire: revealed as its Detectable says
+// (a book page's reveal, FS-X2CMM §J R49), a gas vent's last puff once it has
+// puffed. FS-5FZ4J §I R46, R48.
+func trapState(entity *ecs.Entity, trap *components.TrapComponent) *types.TrapState {
+	state := &types.TrapState{
+		EntityID: entity.ID,
+		Kind:     string(trap.Kind),
+		Cell:     types.CellState{X: trap.Cell.X, Y: trap.Cell.Y},
+		Armed:    trap.Armed,
+	}
+	if dc, ok := entity.GetComponent(ecs.ComponentTypeDetectable); ok {
+		state.Revealed = dc.(*components.DetectableComponent).Revealed
+	}
+	if trap.Puffed {
+		puffedAt := trap.PuffedAt
+		state.PuffedAt = &puffedAt
+	}
+	return state
+}
+
+// barrierState is one barrier on the wire, open as its Openable says and
+// revealed as its Detectable says. FS-5FZ4J §I R46, FS-4EC7Z §F R28.
+func barrierState(entity *ecs.Entity, barrier *components.BarrierComponent) *types.BarrierState {
+	cells := make([]types.CellState, len(barrier.Cells))
+	for i, c := range barrier.Cells {
+		cells[i] = types.CellState{X: c.X, Y: c.Y}
+	}
+	open := false
+	if oc, ok := entity.GetComponent(ecs.ComponentTypeOpenable); ok {
+		open = oc.(*components.OpenableComponent).IsOpen
+	}
+	revealed := false
+	if dc, ok := entity.GetComponent(ecs.ComponentTypeDetectable); ok {
+		revealed = dc.(*components.DetectableComponent).Revealed
+	}
+	return &types.BarrierState{EntityID: entity.ID, Kind: string(barrier.Kind), Cells: cells, Open: open, Revealed: revealed}
 }
 
 func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGameState, playerID uuid.UUID) *types.ClientGameState {
@@ -589,7 +820,12 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 			TimedOpen:           backendState.TimedOpens[playerID],
 			AbilityCooldown:     backendState.AbilityCooldowns[playerID],
 			TreeAbilityCooldown: backendState.TreeAbilityCooldowns[playerID],
+			RollCooldown:        backendState.RollCooldowns[playerID],
 			PassiveState:        backendState.Passives[playerID],
+		}
+		// the contract is its taker's alone (FS-4EC7Z §F R25)
+		if backendState.Contract != nil && backendState.ContractTaker == playerID {
+			currentPlayer.Contract = backendState.Contract
 		}
 	}
 
@@ -614,6 +850,23 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Tome:          backendState.Tome,
 		Altar:         backendState.Altar,
 		TomeCarried:   backendState.TomeCarried,
+		BookEffects:   backendState.BookEffects,
+		// a sealed floor's landmarks, sent whole (FS-5FZ4J §I R46)
+		Seal:       backendState.Seal,
+		SealPieces: backendState.SealPieces,
+		Barriers:   backendState.Barriers,
+		Traps:      backendState.Traps,
+		// a floor's respites, sent whole (FS-5FZ4J §I R46)
+		Fountain:      backendState.Fountain,
+		HallowedAltar: backendState.HallowedAltar,
+		// the floor's merchant, sent whole (FS-9JV5K §A R4)
+		Merchant: backendState.Merchant,
+		// the floor's encounter NPCs, cut below as monsters are (FS-4EC7Z §F R22)
+		EncounterNPCs: backendState.EncounterNPCs,
+		// the Captives' cage and key, sent whole (FS-4EC7Z §F R23)
+		Cages:          backendState.Cages,
+		EncounterKeys:  backendState.EncounterKeys,
+		CageKeyCarried: backendState.CageKeyCarried,
 	}
 
 	// on a dungeon floor each recipient is sent only what lies near it
@@ -621,7 +874,9 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 	if backendState.WorldType == types.WorldTypeRun && backendState.CellSize > 0 {
 		if centres := interestCentres(backendState, playerID); len(centres) > 0 {
 			state.Monsters = nearAny(backendState.Monsters, centres, monsterAt)
+			state.EncounterNPCs = nearAny(backendState.EncounterNPCs, centres, encounterNPCAt)
 			state.Containers = nearAny(backendState.Containers, centres, containerAt)
+			state.BookEffects = nearAny(backendState.BookEffects, centres, bookEffectAt)
 			// the tome is hidden: cut as a container is (FS-3103M §E R14)
 			if state.Tome != nil && !isNearAny(*state.Tome.Position, centres) {
 				state.Tome = nil
@@ -673,6 +928,9 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	for k := range state.TreeAbilityCooldowns {
 		delete(state.TreeAbilityCooldowns, k)
 	}
+	for k := range state.RollCooldowns {
+		delete(state.RollCooldowns, k)
+	}
 	for k := range state.Passives {
 		delete(state.Passives, k)
 	}
@@ -699,11 +957,25 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Stairs = fresh(state.Stairs)
 	state.Monsters = fresh(state.Monsters)
 	state.Trails = fresh(state.Trails)
+	state.BookEffects = fresh(state.BookEffects)
 	state.Gates = fresh(state.Gates)
 	// a sent frame keeps its own pointers; the next tick makes new ones
 	state.Tome = nil
 	state.Altar = nil
 	state.TomeCarried = false
+	state.Seal = nil
+	state.SealPieces = fresh(state.SealPieces)
+	state.Barriers = fresh(state.Barriers)
+	state.Traps = fresh(state.Traps)
+	state.Fountain = nil
+	state.HallowedAltar = nil
+	state.Merchant = nil
+	state.EncounterNPCs = fresh(state.EncounterNPCs)
+	state.Cages = fresh(state.Cages)
+	state.EncounterKeys = fresh(state.EncounterKeys)
+	state.CageKeyCarried = false
+	state.Contract = nil
+	state.ContractTaker = uuid.Nil
 }
 
 // fresh is an empty list on new memory as large as the old, or nil if it was
@@ -757,6 +1029,8 @@ func isNearAny(p types.Position, centres []types.Position) bool {
 }
 
 func monsterAt(m *types.MonsterState) types.Position { return m.Position }
+
+func encounterNPCAt(n *types.EncounterNPCState) types.Position { return n.Position }
 
 func containerAt(c *types.ContainerState) types.Position { return *c.Position }
 
@@ -820,7 +1094,7 @@ func timedOpenState(entity *ecs.Entity) *types.TimedOpenState {
 		return nil
 	}
 	open := oc.(*components.TimedOpenComponent)
-	return &types.TimedOpenState{EntityID: open.ContainerID, Elapsed: open.Elapsed, Duration: open.Duration}
+	return &types.TimedOpenState{EntityID: open.TargetID, TargetKind: string(open.TargetKind), Elapsed: open.Elapsed, Duration: open.Duration}
 }
 
 // monsterState is a monster as the client draws it. One at no health lies dead,
@@ -829,6 +1103,7 @@ func monsterState(entity *ecs.Entity, monster *components.MonsterComponent) *typ
 	state := &types.MonsterState{
 		EntityID:  entity.ID,
 		Archetype: string(monster.Archetype),
+		Look:      monster.Look,
 		Name:      monster.Name,
 		Level:     monster.Level,
 		Elite:     monster.Elite,
@@ -852,6 +1127,41 @@ func monsterState(entity *ecs.Entity, monster *components.MonsterComponent) *typ
 		}
 	}
 
+	return state
+}
+
+// encounterNPCState is one encounter NPC on the wire: dead once its health
+// is 0, its line and line_at once it has said one, its hirer for an ally.
+// FS-4EC7Z §F R22.
+func encounterNPCState(entity *ecs.Entity, npc *components.EncounterNPCComponent) *types.EncounterNPCState {
+	state := &types.EncounterNPCState{
+		EntityID: entity.ID,
+		Kind:     string(npc.Kind),
+		Look:     npc.Look,
+		Facing:   types.Position{X: npc.FacingX, Y: npc.FacingY},
+		Stance:   string(npc.Stance),
+		Action:   string(npc.Action),
+	}
+	if tc, ok := entity.GetComponent(ecs.ComponentTypeTransform); ok {
+		at := tc.(*components.TransformComponent)
+		state.Position = types.Position{X: at.X, Y: at.Y}
+	}
+	if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok {
+		health := hc.(*components.HealthComponent)
+		state.Health, state.MaxHealth = health.CurrentHealth, health.MaxHealth
+		if health.CurrentHealth <= 0 {
+			state.Action = string(components.EncounterActionDead)
+		}
+	}
+	if npc.Line != "" {
+		state.Line = string(npc.Line)
+		lineAt := npc.LineAt
+		state.LineAt = &lineAt
+	}
+	if npc.HirerID != uuid.Nil {
+		hirer := npc.HirerID
+		state.HirerID = &hirer
+	}
 	return state
 }
 
@@ -909,4 +1219,25 @@ func ItemStateOf(itemID uuid.UUID, entityID uuid.UUID, item *components.ItemComp
 		UniqueEffect:    item.UniqueEffectText,
 		Unsafe:          item.Unsafe,
 	}
+}
+
+// merchantState is the merchant on the wire: where he stands and every ware,
+// each on new memory, so a sent frame never shares the tick's stock.
+// FS-9JV5K §A R4.
+func merchantState(id uuid.UUID, merchant *components.MerchantComponent, at *components.TransformComponent) *types.MerchantState {
+	wares := make([]*types.MerchantWareState, 0, len(merchant.Wares))
+	for _, w := range merchant.Wares {
+		ware := &types.MerchantWareState{Ware: string(w.Kind), Price: w.Price, Left: w.Left}
+		if w.Item != nil {
+			ware.Item = &types.MerchantWareItem{
+				Name:          w.Item.Name,
+				ItemType:      w.Item.ItemType,
+				Rarity:        w.Item.RarityCode,
+				HealingAmount: w.Item.HealingAmount,
+				ManaAmount:    w.Item.ManaAmount,
+			}
+		}
+		wares = append(wares, ware)
+	}
+	return &types.MerchantState{EntityID: id, Position: &types.Position{X: at.X, Y: at.Y}, Wares: wares}
 }

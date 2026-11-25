@@ -3,6 +3,7 @@ package game
 import (
 	"math"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 )
 
@@ -46,40 +47,47 @@ const (
 // mix, levels, elite chance and demon above stay the floor's own.
 const (
 	// the floor's monsters besides a demon, held to [min, max] by topping up
-	// ordinary rooms and trimming ordinary rooms, then corridors
-	DungeonMonstersMin = 30
-	DungeonMonstersMax = 45
+	// ordinary rooms and trimming ordinary rooms, then corridors, then hall-pack
+	// fodder, then treasure-guard packs: a sealed floor's fewer monsters
+	// (FS-5FZ4J §D R21, from 30-45), fewer again room by room (FS-KE075
+	// §Change: Room variety R83, from 15-25)
+	DungeonMonstersMin = 8
+	DungeonMonstersMax = 18
 
 	// a hall is a room at least this many cells wide and tall (width × height,
-	// as the generator draws rooms: up to 10 × 8)
-	HallMinWidth  = 8
+	// as the generator draws rooms: up to 8 × 7; FS-KE075 §Change: Room
+	// variety R66)
+	HallMinWidth  = 7
 	HallMinHeight = 6
 	// a hall that is not the start or a treasure room holds one pack: a brute
 	// of the floor pool and a uniform [min, max] of the pool's fodder, each
-	// within the radius of the brute, in px
-	HallPackFodderMin = 1
-	HallPackFodderMax = 3
+	// within the radius of the brute, in px (R82, from 1-3)
+	HallPackFodderMin = 0
+	HallPackFodderMax = 1
 	HallPackRadius    = 160.0
 	// brute spots a hall pack tries before it settles for the one that fitted
 	// the most of its fodder
 	HallPackBruteTries = 20
 
-	// every other room but the start holds a uniform [min, max] rolled monsters;
-	// a top-up never takes a room past RoomMonstersTopUpMax
-	RoomMonstersMin      = 0
+	// every room that rolled monsters and is not a hall holds a uniform [min,
+	// max] rolled monsters (FS-KE075 §Change: Room variety R79, from 0-2 in
+	// every room); a top-up never takes a room past RoomMonstersTopUpMax (R83,
+	// from 3)
+	RoomMonstersMin      = 1
 	RoomMonstersMax      = 2
-	RoomMonstersTopUpMax = 3
+	RoomMonstersTopUpMax = 2
 
 	// the corridors hold a uniform [min, max] rolled monsters in all, at most one
-	// per corridor segment
-	CorridorMonstersMin = 3
-	CorridorMonstersMax = 5
+	// per corridor segment (R83, from 3-5)
+	CorridorMonstersMin = 1
+	CorridorMonstersMax = 3
 
 	// a treasure room is guarded by one elite, or with this chance by a pack of
 	// a uniform [min, max] elites; every guard is elite, its archetype rolled
-	TreasureGuardPackShare = 0.5
+	// (R83, from 2-3 at 0.5)
+	TreasureGuardPackShare = 0.25
 	TreasureGuardPackMin   = 2
-	TreasureGuardPackMax   = 3
+	TreasureGuardPackMax   = 2
 
 	// on every dungeon floor, Bone Archers take ghouls' places (FS-B4SG9 §B
 	// R14–R17): a monster rolled for an ordinary room, a top-up included, that
@@ -159,11 +167,12 @@ const (
 
 	// step k of a family at level 1 is step 0's HP, damage, defence and magic
 	// resistance times these growths to the k (defence at least the step
-	// below's + 1), and its move speed plus k × the gain, in px/s (R5)
+	// below's + 1), and its move speed plus k × the gain, in px/s (R5), paced
+	// as every speed is (FS-TAGWA)
 	VariantStepHPGrowth         = 1.2
 	VariantStepDamageGrowth     = 1.15
 	VariantStepMitigationGrowth = 1.25
-	VariantStepSpeedGain        = 8.0
+	VariantStepSpeedGain        = 8 * commonconstants.PaceScale
 
 	// each goblin spawned of a variant takes its blade + shield look at this
 	// share, with this much more defence than the blade look (R8)
@@ -178,7 +187,9 @@ const (
 	// a dark warrior variant weighs this in a pool draw; every other weighs 1
 	DarkWarriorPoolWeight = 2
 	// a floor holds at most min(cap, ⌊its monsters / per⌋) dark warriors
-	DarkWarriorPer    = 12
+	// (FS-KE075 §Change: Room variety R83, from 12: the floor's thinner 8-18
+	// keeps the one or two that 15-25 gave)
+	DarkWarriorPer    = 8
 	DarkWarriorCapMax = 4
 )
 
@@ -376,6 +387,9 @@ var BloodDemonChanceByFloor = []float64{0.02, 0.05, 0.10}
 const MonsterCorpseLifetime = 4.0
 
 // The level curve. Speeds, radii and timings do not scale.
+//
+// Every speed below, a sheet's MoveSpeed and every shot's, is its full-pace
+// figure times PaceScale (FS-TAGWA R2, ADR-0099); timings and reach are not.
 const (
 	// HP and damage × (1 + growth × (level − 1))
 	MonsterPowerGrowth = 0.12
@@ -391,7 +405,7 @@ type monsterSheet struct {
 	AttackInterval  float64 // s
 	WindUp          float64 // s
 	AttackRange     float64 // px
-	MoveSpeed       float64 // px/s; delvers move at 200 and outrun every archetype
+	MoveSpeed       float64 // px/s, paced; delvers walk at DefaultSpeed and outrun every archetype
 	Defense         int
 	MagicResistance int
 	AggroRadius     float64 // px
@@ -405,6 +419,9 @@ type monsterSheet struct {
 	// roster archetype's is its variant's (spireRoster), never its sheet
 	// literal's (FS-C8VM7 §B R10).
 	Ability components.MonsterAbility
+	// PoisonSeconds is how long each of its hits that costs health poisons
+	// for; 0 for an archetype whose hits do not poison (FS-4EC7Z §E R18).
+	PoisonSeconds float64
 }
 
 // The demons' two moves: the slam, their wind-up strike doubled and rationed,
@@ -448,11 +465,13 @@ type monsterShot struct {
 
 // The Bone Archer's arrow: a hostile one, drawn apart from a party archer's.
 // Its max flight catches a delver at the base speed who runs straight away
-// from shooting range from the first tick of the draw (826 px of flight).
+// from shooting range from the first tick of the draw (826 px of flight at
+// full pace; under 850 at any slower pace, the wind-up not scaling: about
+// 725 at 0.5).
 // FS-B4SG9 §A R2. Starting values.
 var boneArrowShot = monsterShot{
 	ProjectileType: "bone_arrow",
-	Speed:          420,
+	Speed:          420 * commonconstants.PaceScale,
 	Radius:         8,
 	MaxFlight:      850,
 }
@@ -495,13 +514,13 @@ var (
 	thrownDaggerAbility = components.MonsterAbility{
 		Kind: components.MonsterAbilityDagger, Shape: components.AbilityShots,
 		MinRange: 90, MaxRange: 260, WindUp: 0.4, Cooldown: 5, Multiplier: 1.0,
-		ProjectileType: "thrown_dagger", ShotSpeed: 480, ShotRadius: 8, ShotMaxFlight: 520, Shots: 1,
+		ProjectileType: "thrown_dagger", ShotSpeed: 480 * commonconstants.PaceScale, ShotRadius: 8, ShotMaxFlight: 520, Shots: 1,
 	}
 	// every ogre's: slow, large and long-wound, easy to dodge but painful
 	rockThrowAbility = components.MonsterAbility{
 		Kind: components.MonsterAbilityRock, Shape: components.AbilityShots,
 		MinRange: 140, MaxRange: 380, WindUp: 1.0, Cooldown: 7, Multiplier: 1.5,
-		ProjectileType: "ogre_rock", ShotSpeed: 240, ShotRadius: 18, ShotMaxFlight: 420, Shots: 1,
+		ProjectileType: "ogre_rock", ShotSpeed: 240 * commonconstants.PaceScale, ShotRadius: 18, ShotMaxFlight: 420, Shots: 1,
 	}
 	// every dark warrior's: a wide cone in front
 	cleaveAbility = components.MonsterAbility{
@@ -513,7 +532,7 @@ var (
 var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	components.MonsterArchetypeGhoul: {
 		Name: "Ghoul", HP: 40, Damage: 6,
-		AttackInterval: 1.0, WindUp: 0.35, AttackRange: 45, MoveSpeed: 150,
+		AttackInterval: 1.0, WindUp: 0.35, AttackRange: 45, MoveSpeed: 150 * commonconstants.PaceScale,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 260, LeashRadius: 520,
 	},
@@ -521,7 +540,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// range (FS-B4SG9 §A R2)
 	components.MonsterArchetypeBoneArcher: {
 		Name: "Bone Archer", HP: 30, Damage: 7,
-		AttackInterval: 2.0, WindUp: 0.6, AttackRange: 320, MoveSpeed: 130,
+		AttackInterval: 2.0, WindUp: 0.6, AttackRange: 320, MoveSpeed: 130 * commonconstants.PaceScale,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 360, LeashRadius: 560,
 
@@ -529,13 +548,13 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	},
 	components.MonsterArchetypeTroll: {
 		Name: "Troll", HP: 140, Damage: 16,
-		AttackInterval: 2.0, WindUp: 0.7, AttackRange: 60, MoveSpeed: 90,
+		AttackInterval: 2.0, WindUp: 0.7, AttackRange: 60, MoveSpeed: 90 * commonconstants.PaceScale,
 		Defense: 10, MagicResistance: 4,
 		AggroRadius: 220, LeashRadius: 480,
 	},
 	components.MonsterArchetypeDemon: {
 		Name: "Vorsk", HP: 1200, Damage: 28,
-		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
+		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120 * commonconstants.PaceScale,
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
 
@@ -544,7 +563,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// the red boss: the demon's sheet, harder and longer (FS-VHGE7 §A R3)
 	components.MonsterArchetypeBloodDemon: {
 		Name: "Blood Demon", HP: 1600, Damage: 34,
-		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
+		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120 * commonconstants.PaceScale,
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
 
@@ -553,7 +572,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// a Master Spire's boss: the blood demon's sheet, harder (FS-M8CSE §E R25)
 	components.MonsterArchetypeDaagon: {
 		Name: "Daa'gon", HP: 2200, Damage: 45,
-		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
+		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120 * commonconstants.PaceScale,
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
 
@@ -562,21 +581,21 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// field wildlife: a lowered-head charge (FS-X2F2H §Requirements 37)
 	components.MonsterArchetypeBoar: {
 		Name: "Boar", HP: 36, Damage: 5,
-		AttackInterval: 1.2, WindUp: 0.45, AttackRange: 45, MoveSpeed: 140,
+		AttackInterval: 1.2, WindUp: 0.45, AttackRange: 45, MoveSpeed: 140 * commonconstants.PaceScale,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 200, LeashRadius: 450,
 	},
 	// the Forest's shambling default (FS-3QHQZ §Requirements 18)
 	components.MonsterArchetypeZombie: {
 		Name: "Zombie", HP: 70, Damage: 9,
-		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100,
+		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100 * commonconstants.PaceScale,
 		Defense: 5, MagicResistance: 1,
 		AggroRadius: 240, LeashRadius: 480,
 	},
 	// the Forest's rare drifter: faster and frailer than the zombie
 	components.MonsterArchetypeGhost: {
 		Name: "Ghost", HP: 30, Damage: 8,
-		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175,
+		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175 * commonconstants.PaceScale,
 		Defense: 0, MagicResistance: 8,
 		AggroRadius: 300, LeashRadius: 560,
 	},
@@ -584,14 +603,14 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// field factor (FS-M8CSE §D R19). The Barrow Thrall is the zombie's
 	components.MonsterArchetypeBarrowThrall: {
 		Name: "Barrow Thrall", HP: 70, Damage: 9,
-		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100,
+		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100 * commonconstants.PaceScale,
 		Defense: 5, MagicResistance: 1,
 		AggroRadius: 240, LeashRadius: 480,
 	},
 	// and the Spire Wraith the ghost's
 	components.MonsterArchetypeSpireWraith: {
 		Name: "Spire Wraith", HP: 30, Damage: 8,
-		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175,
+		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175 * commonconstants.PaceScale,
 		Defense: 0, MagicResistance: 8,
 		AggroRadius: 300, LeashRadius: 560,
 	},
@@ -600,23 +619,46 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// the ghoul's reach, quicker and keener, frail with a medium hit
 	components.MonsterArchetypeGoblin: {
 		Name: "Goblin", HP: 32, Damage: 8,
-		AttackInterval: 1.0, WindUp: 0.3, AttackRange: 45, MoveSpeed: 160,
+		AttackInterval: 1.0, WindUp: 0.3, AttackRange: 45, MoveSpeed: 160 * commonconstants.PaceScale,
 		Defense: 1, MagicResistance: 0,
 		AggroRadius: 280, LeashRadius: 540,
 	},
 	// the ogre: slower and harder-hitting than the troll
 	components.MonsterArchetypeOgre: {
 		Name: "Ogre", HP: 200, Damage: 24,
-		AttackInterval: 2.4, WindUp: 0.9, AttackRange: 70, MoveSpeed: 75,
+		AttackInterval: 2.4, WindUp: 0.9, AttackRange: 70, MoveSpeed: 75 * commonconstants.PaceScale,
 		Defense: 12, MagicResistance: 4,
 		AggroRadius: 220, LeashRadius: 480,
 	},
 	// the dark warrior: a disciplined greatsword, the demons' rhythm
 	components.MonsterArchetypeDarkWarrior: {
 		Name: "Dark Warrior", HP: 260, Damage: 30,
-		AttackInterval: 1.6, WindUp: 0.6, AttackRange: 70, MoveSpeed: 120,
+		AttackInterval: 1.6, WindUp: 0.6, AttackRange: 70, MoveSpeed: 120 * commonconstants.PaceScale,
 		Defense: 16, MagicResistance: 10,
 		AggroRadius: 320, LeashRadius: 600,
+	},
+	// a turned Cutthroat (FS-4EC7Z §D R14, §F R24): a quick human blade, the
+	// goblin's pace with a fodder's reach, sturdier than a ghoul and well
+	// short of a brute. Never in a floor's pool; spawned at the floor's
+	// monster level
+	components.MonsterArchetypeCutthroat: {
+		Name: "Cutthroat", HP: 60, Damage: 10,
+		AttackInterval: 1.0, WindUp: 0.35, AttackRange: 50, MoveSpeed: 165 * commonconstants.PaceScale,
+		Defense: 4, MagicResistance: 1,
+		AggroRadius: 300, LeashRadius: 560,
+	},
+	// a contract's mark (FS-4EC7Z §E R17-R18): a human duelist. It is always
+	// spawned a champion, so its HP and damage are a champion's at the
+	// floor's champion level (FS-C8VM7 §D R28) and the sheet holds none; its
+	// mitigation is this sheet's × the champion multiplier; its blades
+	// poison as a gas trap does (FS-5FZ4J §D R29). Never in a floor's pool
+	components.MonsterArchetypeContractMark: {
+		Name:           "Mark",
+		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 55, MoveSpeed: 150 * commonconstants.PaceScale,
+		Defense: 12, MagicResistance: 10,
+		AggroRadius: 320, LeashRadius: 700,
+
+		PoisonSeconds: PoisonDuration,
 	},
 }
 
@@ -660,6 +702,9 @@ var killExperienceBase = map[components.MonsterArchetype]int{
 	components.MonsterArchetypeOgreTyrant:      51,
 	components.MonsterArchetypeDarkWarrior:     46,
 	components.MonsterArchetypeDarkReaper:      56,
+	// FS-4EC7Z §D R14: standard experience, the ghoul's base × its HP over
+	// the ghoul's
+	components.MonsterArchetypeCutthroat: 15,
 }
 
 // Kill experience scaling. FS-BDA7X §Requirements 10.

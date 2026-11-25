@@ -43,6 +43,10 @@ const PLAIN_ICONS = [
   "potion_health",
   "potion_mana",
   "vial_tonic",
+  // FS-9JV5K §G R26: the antidote, a slim stoppered vial apart from the round potions
+  "antidote",
+  // FS-9JV5K §Change: The Restoring Draught D6: a flat pilgrim's flask in the resource-refill tone
+  "restoring_draught",
   "coins",
   "gem",
   "scroll",
@@ -94,6 +98,10 @@ const ARMOR_ICONS: Record<string, GearIcon> = {
 
 /** Words in an item's name that pick an icon when its stats do not. First match wins. */
 const NAME_ICONS: [RegExp, GearIcon | PlainIcon][] = [
+  // FS-9JV5K §F R25: the ANTIDOTE template, by its name (its template code is not on the wire)
+  [/\bantidote\b/i, "antidote"],
+  // §Change: The Restoring Draught D6: its template, by its whole name (a Brew's floor draught is no item)
+  [/\brestoring draught\b/i, "restoring_draught"],
   [/\b(ring|signet|band)\b/i, "ring"],
   [/\bscroll\b/i, "scroll"],
   [/\b(gold|coins?)\b/i, "coins"],

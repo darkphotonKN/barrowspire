@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { composeDarkRoom, composeLooks, composeOutline, contactPages, lookSets, outlineTexts, writeReview } from "./contact.mjs";
+import { LINEUPS, WARE_ICONS, composeDarkRoom, composeLineup, composeLooks, composeOutline, contactPages, lineupSets, lookSets, outlineTexts, writeReview } from "./contact.mjs";
 import { decodePng } from "./png.mjs";
 
 // a creature sheet as the bake hands it to the review: 8 facings, four clips of `n` frames
@@ -146,5 +146,117 @@ describe("the outline strip (FS-1J1CB §Change: Looks v2 R70, lib/contact.mjs)",
       "char_knight_guardian  ·  outline vs char_knight_base 0.000  ·  vs char_knight_berserker 0.000",
       "char_knight_berserker  ·  outline vs char_knight_base 0.000  ·  vs char_knight_guardian 0.000",
     ]);
+  });
+});
+
+describe("the sealed floor's contact sheet (FS-5FZ4J §K R57, lib/contact.mjs)", () => {
+  // a one-direction prop sheet as the bake hands it over: each state one solid, opaque 4 x 4 frame
+  const frame = Buffer.from(Array.from({ length: 16 }, () => [200, 200, 200, 255]).flat()).toString("base64");
+  const prop = (name, group, states) => ({
+    name,
+    group,
+    frameWidth: 4,
+    frameHeight: 4,
+    directions: 1,
+    animations: Object.fromEntries(states.map((s) => [s, { fps: 0, loop: false, frames: [[frame]] }])),
+  });
+
+  it("writes the sealed group's props, every state, at 2x with the review", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sealed-review-"));
+    const sheets = [prop("seal_lever", "sealed", ["up", "down"]), prop("gate_x", "sealed", ["shut", "open"]), prop("chest", "props", ["closed", "open"])];
+    const files = writeReview({ sheets, facings: FACINGS, labels: new Map(), manifest: { sheets: {} }, theme: THEME, dir });
+    const names = files.map((f) => f.slice(dir.length + 1));
+    expect(names).toContain("contact-sealed-2x.png");
+    const png = decodePng(readFileSync(join(dir, "contact-sealed-2x.png")));
+    // the two sealed sheets' four states at 2x, and nothing of the chest
+    const lit = [];
+    for (let i = 0; i < png.rgba.length; i += 4) if (png.rgba[i] === 200) lit.push(i);
+    expect(lit).toHaveLength(4 * 8 * 8);
+  });
+});
+
+describe("the wandering merchant's contact sheet (FS-9JV5K §G R26, lib/contact.mjs)", () => {
+  // solid, opaque 4 x 4 frames, one grey per sheet, so each sheet's pixels can be counted apart
+  const frame = (v) => Buffer.from(Array.from({ length: 16 }, () => [v, v, v, 255]).flat()).toString("base64");
+  const still = (name, group, v) => ({
+    name,
+    group,
+    frameWidth: 4,
+    frameHeight: 4,
+    directions: 1,
+    animations: { default: { fps: 0, loop: false, frames: [[frame(v)]] } },
+  });
+  const merchant = {
+    name: "npc_merchant",
+    group: "merchant",
+    frameWidth: 4,
+    frameHeight: 4,
+    directions: 8,
+    animations: { idle: { fps: 3, loop: true, frames: Array.from({ length: 8 }, () => Array.from({ length: 4 }, () => frame(201))) } },
+  };
+
+  it("lists the icons of his wares, the antidote among the potions it must stand apart from", () => {
+    expect(WARE_ICONS).toEqual(["icon_potion_health", "icon_potion_mana", "icon_vial_tonic", "icon_antidote", "icon_restoring_draught"]);
+  });
+
+  it("writes him, every facing of his idle, and the wares' icons at 2x, and nothing else", () => {
+    const dir = mkdtempSync(join(tmpdir(), "merchant-review-"));
+    const sheets = [merchant, ...WARE_ICONS.map((n) => still(n, "icons", 202)), still("icon_sword_t1", "icons", 203), still("chest", "props", 204)];
+    // the review page frames him from the manifest, as it does every sheet in the cast
+    const manifest = { sheets: { npc_merchant: { atlas: "merchant-0", animations: { idle: {} } } }, atlases: { "merchant-0": { image: "merchant-0.png" } } };
+    const files = writeReview({ sheets, facings: FACINGS, labels: new Map(), manifest, theme: THEME, dir });
+    const names = files.map((f) => f.slice(dir.length + 1));
+    expect(names).toContain("contact-merchant-2x.png");
+    const png = decodePng(readFileSync(join(dir, "contact-merchant-2x.png")));
+    const count = (v) => {
+      let n = 0;
+      for (let i = 0; i < png.rgba.length; i += 4) if (png.rgba[i] === v) n++;
+      return n;
+    };
+    // 8 facings x 4 frames of him, the five wares once each, each frame 8 x 8 px at 2x
+    expect(count(201)).toBe(8 * 4 * 64);
+    expect(count(202)).toBe(5 * 64);
+    expect(count(203)).toBe(0);
+    expect(count(204)).toBe(0);
+  });
+});
+
+describe("the encounter cast's lineup (FS-4EC7Z §H R36, lib/contact.mjs)", () => {
+  // solid, opaque 4 x 4 frames, one grey per clip, so each clip's cells can be counted apart
+  const frame = (v) => Buffer.from(Array.from({ length: 16 }, () => [v, v, v, 255]).flat()).toString("base64");
+  const clip = (v, n) => ({ fps: 3, loop: true, frames: Array.from({ length: 8 }, () => Array.from({ length: n }, () => frame(v))) });
+  const pilgrim = {
+    name: "npc_pilgrim",
+    frameWidth: 4,
+    frameHeight: 4,
+    anchor: { x: 0.5, y: 1 },
+    directions: 8,
+    animations: { idle: clip(211, 4), walk: clip(212, 8), attack: clip(213, 7), death: clip(214, 7), cower: clip(215, 4), idle_b: clip(216, 4), walk_b: clip(217, 8), cower_b: clip(218, 4) },
+  };
+  const count = (png, v) => {
+    let n = 0;
+    for (let i = 0; i < png.rgba.length; i += 4) if (png.rgba[i] === v) n++;
+    return n;
+  };
+
+  it("lines up the cast beside a townsman of its builds, then the cage and its key", () => {
+    const l = LINEUPS.find((x) => x.file === "contact-encounter-2x.png");
+    expect(l.sheets).toEqual(["folk_resident_trousers", "npc_pilgrim", "npc_captive", "npc_cutthroat", "npc_hooded_duelist", "npc_debtor_knight", "cage", "cage_key"]);
+    const named = (n) => ({ ...pilgrim, name: n });
+    expect(lineupSets(l.sheets.map(named)).map((x) => x.file)).toContain("contact-encounter-2x.png");
+  });
+
+  it("shows a sheet's idle in every facing, its walk, strike and death, then each variant's idle and its own clip, once each", () => {
+    const png = composeLineup([pilgrim], FACINGS, new Map(), THEME, 1);
+    // 16 px a cell at 1x: 8 idle facings, one walk, two attack keys, one death; one cower and one idle_b
+    expect(count(png, 211)).toBe(8 * 16);
+    expect(count(png, 212)).toBe(16);
+    expect(count(png, 213)).toBe(2 * 16);
+    expect(count(png, 214)).toBe(16);
+    expect(count(png, 215)).toBe(16);
+    expect(count(png, 216)).toBe(16);
+    // a variant's other clips are its contact sheet's, not the lineup's
+    expect(count(png, 217)).toBe(0);
+    expect(count(png, 218)).toBe(0);
   });
 });

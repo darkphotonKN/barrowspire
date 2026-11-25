@@ -13,10 +13,11 @@ import (
 // map and the hub are different sizes, and a run's floors may differ too (the
 // session hands its floor's size over every tick, FS-KE075 §B R11).
 //
-// A charge in flight (DashComponent) carries its body in place of the walk: a
-// step a tick at the charge's speed, through bodies but never through a wall, a
-// closed door or the world's edge. Anything that stops a step short stops the
-// charge; the CombatSystem then ends it.
+// A move in flight (a charge's DashComponent, a roll's RollComponent) carries
+// its body in place of the walk: a step a tick at its own speed, through bodies
+// but never through a wall, a closed door, a stone block or the world's edge.
+// Anything that stops a step short stops it; the CombatSystem then ends a
+// charge, the RollSystem a roll (FS-7P736 §A R4).
 //
 // PlayersPassThrough belongs to the world, like its bounds: in the hub and the
 // fields two player bodies never push each other; in a run they do. Every other
@@ -27,7 +28,8 @@ import (
 // a run, once per floor (FS-KE075 §E R28–29). It is built here, on the tick,
 // because the first floor is built on another goroutine while the loop already
 // runs (gameserver.CreateGameSession); a set changed by anything else, a wall
-// added mid-floor included, is caught the same way.
+// added mid-floor included, is caught the same way. A stone block is no wall
+// to it: blocks move, so they are tested live beside it (FS-5FZ4J §C R19).
 type MovementSystem struct {
 	MapWidth, MapHeight float64
 	PlayersPassThrough  bool
@@ -105,7 +107,7 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 
 		transformComp, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
 		_, hasVelocity := entity.GetComponent(ecs.ComponentTypeVelocity)
-		hasCharge := entity.HasComponent(ecs.ComponentTypeDash)
+		hasCarry := carried(entity)
 
 		_, hasWallComp := entity.GetComponent(ecs.ComponentTypeWall)
 		if hasWallComp {
@@ -129,7 +131,7 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 			continue
 		}
 
-		if hasTransform && (hasVelocity || hasCharge) {
+		if hasTransform && (hasVelocity || hasCarry) {
 			// type assertion
 			transform := transformComp.(*components.TransformComponent)
 
@@ -144,7 +146,12 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 
 	}
 
-	blockers := against(wallEntities, doorEntities)
+	// a floor's stone blocks move, so the walk tests them live beside the
+	// static index (FS-5FZ4J §C R19)
+	blockers := withStoneBlocks(against(wallEntities, doorEntities), entities)
+	// an afloat body's, over the same index, set up the first time one moves
+	// (FS-X2CMM §J R51)
+	var afloatBlockers wallTests
 
 	for _, entity := range movers {
 		targetEntity := entity
@@ -155,15 +162,14 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 		cellX := int(transform.X / hashCellSize)
 		cellY := int(transform.Y / hashCellSize)
 
-		// a charge in flight replaces the walk: held input neither adds to it
-		// nor steers it, so it can never stack into a faster move
-		var dx, dy, chargeStep float64
-		dashComp, charging := targetEntity.GetComponent(ecs.ComponentTypeDash)
-		var charge *components.DashComponent
-		if charging {
-			charge = dashComp.(*components.DashComponent)
-			chargeStep = min(charge.Speed*deltaTime, max(charge.Remaining, 0))
-			dx, dy = charge.DirX*chargeStep, charge.DirY*chargeStep
+		// a charge or a roll in flight replaces the walk: held input neither
+		// adds to it nor steers it, so it can never stack into a faster move,
+		// and nothing that scales a walk scales it (FS-7P736 §A R3)
+		var dx, dy, carryStep float64
+		carry, carrying := carryOf(targetEntity)
+		if carrying {
+			carryStep = min(carry.Speed*deltaTime, max(carry.Remaining, 0))
+			dx, dy = carry.DirX*carryStep, carry.DirY*carryStep
 		} else {
 			velocityComp, _ := targetEntity.GetComponent(ecs.ComponentTypeVelocity)
 			velocity := velocityComp.(*components.VelocityComponent)
@@ -172,15 +178,27 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 			dy = velocity.VY * speed * deltaTime
 		}
 
+		// an afloat body passes a chasm's pits; walls, closed doors and
+		// blocks stop it as they stop anyone. Its carry passes them too, as its
+		// walk does: a roll begun over a pit is never pushed out of it
+		// (FS-7P736 Reconciled at build (I-7P736-1))
+		walls := blockers
+		if afloat(targetEntity) {
+			if afloatBlockers == nil {
+				afloatBlockers = blockers.passingPits()
+			}
+			walls = afloatBlockers
+		}
+
 		// split-axis swept collision against walls and closed doors, X first
-		newX := transform.X + dx*blockers.sweepX(transform.X, transform.Y, dx)
+		newX := transform.X + dx*walls.sweepX(transform.X, transform.Y, dx)
 
 		// Y second
-		newY := transform.Y + dy*blockers.sweepY(newX, transform.Y, dy)
+		newY := transform.Y + dy*walls.sweepY(newX, transform.Y, dy)
 
-		// check collision in 9-grid and resolve position by hashmap; a charge
-		// runs through bodies, as the teleport it replaced did
-		for i := -1; i <= 1 && !charging; i++ {
+		// check collision in 9-grid and resolve position by hashmap; a carry
+		// runs through bodies, as the teleport the charge replaced did
+		for i := -1; i <= 1 && !carrying; i++ {
 			for j := -1; j <= 1; j++ {
 				cellKey := hashKey(cellX+i, cellY+j)
 				for _, other := range cells[cellKey] {
@@ -201,7 +219,7 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 
 		// depenetration: push player out of walls, then closed doors, after
 		// entity collision resolve
-		newX, newY = blockers.depenetrate(newX, newY)
+		newX, newY = walls.depenetrate(newX, newY)
 
 		// clamp position to this world's boundaries
 		mapWidth, mapHeight := s.bounds()
@@ -218,12 +236,13 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 		if newY > mapHeight-constants.PlayerRadius {
 			newY = mapHeight - constants.PlayerRadius
 		}
-		// a charge stopped short by a wall, a closed door or the edge is over
-		if charging {
-			if math.Hypot(newX-(transform.X+dx), newY-(transform.Y+dy)) > dashEpsilon {
-				charge.Remaining = 0
+		// a charge or a roll stopped short by a wall, a closed door, a block
+		// or the edge is over
+		if carrying {
+			if math.Hypot(newX-(transform.X+dx), newY-(transform.Y+dy)) > carryEpsilon {
+				carry.Remaining = 0
 			} else {
-				charge.Remaining -= chargeStep
+				carry.Remaining -= carryStep
 			}
 		}
 
@@ -270,7 +289,7 @@ func (s *MovementSystem) Reach(entities []*ecs.Entity, fromX, fromY, toX, toY fl
 	}
 	dx, dy = dx*share, dy*share
 
-	blockers := s.wallIndexOf(wallsAndDoors(entities))
+	blockers := withStoneBlocks(s.wallIndexOf(wallsAndDoors(entities)), entities)
 	legs := max(1, int(math.Ceil(length*share/reachStep)))
 	legX, legY := dx/float64(legs), dy/float64(legs)
 

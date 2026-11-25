@@ -5,6 +5,7 @@
  */
 
 import type { ClassKey, ClassStats } from "@/data/classLore";
+import { paced } from "@/data/pace";
 import { palette } from "@/utils/canvasPalette";
 import { HUD_BAR_FILL } from "./ResourceHud";
 import { RESOURCE_KINDS } from "./resources";
@@ -109,7 +110,8 @@ export function loreStatRows(stats: ClassStats): LoreStatRow[] {
     {
       label: "SPD",
       value: stats.speed,
-      fill: fillOf(stats.speed, 250),
+      // the full mark is paced with the speed, so the bar reads as it did (FS-TAGWA R12)
+      fill: fillOf(stats.speed, paced(250)),
       color: measure,
     },
   ];

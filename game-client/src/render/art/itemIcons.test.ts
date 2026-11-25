@@ -72,6 +72,36 @@ describe("itemIcon over the two wire shapes", () => {
     expect(itemIcon({ name })).toBe(icon);
   });
 
+  // FS-9JV5K §F R25, §G R26: the ANTIDOTE template carries no healing or mana, and its template
+  // code is not on the wire, so it is found by its name, "Antidote"
+  it.each([
+    ["the canvas item state", { name: "Antidote", item_type: "consumable" }],
+    ["the marketplace summary", { name: "Antidote", itemType: "Consumable" }],
+    ["a ware's display data", { name: "antidote" }],
+  ])("should draw an antidote from %s with its own icon", (_label, item) => {
+    expect(itemIcon(item)).toBe("antidote");
+  });
+
+  it("should keep the antidote among the baked icons, apart from the potions and the tonic", () => {
+    expect(ITEM_ICONS).toContain("antidote");
+    expect(itemIcon({ name: "Antidote", healing_amount: 50 })).toBe("potion_health");
+  });
+
+  // FS-9JV5K §Change: The Restoring Draught D6 (I-9JV5K-7): its template carries no healing or mana
+  // either, so it too is found by its name, and its flask is its own icon
+  it.each([
+    ["the canvas item state", { name: "Restoring Draught", item_type: "consumable" }],
+    ["the marketplace summary", { name: "Restoring Draught", itemType: "Consumable" }],
+    ["a ware's display data", { name: "restoring draught" }],
+  ])("should draw a Restoring Draught from %s with its own icon", (_label, item) => {
+    expect(itemIcon(item)).toBe("restoring_draught");
+    expect(ITEM_ICONS).toContain("restoring_draught");
+  });
+
+  it("should not take a draught of any other name for the Restoring Draught", () => {
+    expect(itemIcon({ name: "Bitter Draught" })).toBe("generic");
+  });
+
   it("should draw an item with no name as generic", () => {
     expect(itemIcon({})).toBe("generic");
   });

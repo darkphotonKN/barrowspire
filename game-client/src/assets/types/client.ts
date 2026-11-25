@@ -20,9 +20,15 @@ export interface PickupPayload {
   itemId: string;
 }
 
-export interface UsePayload {
-  itemId: string;
-  targetId?: string; // 可選：對誰使用
+/** Using an item in the player's bag (FS-9JV5K §D R17): an antidote drunk, by its entity id. */
+export interface UseItemPayload {
+  item_entity_id: string;
+}
+
+/** Buying a ware from the wandering merchant (FS-9JV5K §B R5): who sells it and which. */
+export interface BuyPayload {
+  merchant_id: string;
+  ware: string;
 }
 
 /** A chat line as the client sends it; the pod stamps everything else (FS-WJGFJ R2). */
@@ -62,6 +68,20 @@ export interface CastSkillPayload {
   skill_id: string;
   target_x: number;
   target_y: number;
+  /**
+   * The entity a class book page names (FS-X2CMM §F R35): a teammate's `other_players[].id`, or this
+   * player's own `current_player.id`, for an ally page; an interactable's entity id for one of those.
+   */
+  target_id?: string;
+}
+
+/**
+ * A dodge roll (FS-7P736 R2, R13): the direction the client chose, the held movement keys' (as `move`
+ * sends them) else the delver's facing. The server normalises it and judges everything else.
+ */
+export interface RollPayload {
+  dir_x: number;
+  dir_y: number;
 }
 
 // ====== 動作類型對應 Payload ======
@@ -88,13 +108,18 @@ export interface ActionMap {
   move: MovePayload;
   attack: AttackPayload;
   pickup: PickupPayload;
-  use: UsePayload;
+  /** A player in the run using a bag item (FS-9JV5K §D R17); answered by a `use_item` reply. */
+  use_item: UseItemPayload;
+  /** A player in the run buying a ware (FS-9JV5K §B R5); answered by a `buy` reply. */
+  buy: BuyPayload;
   chat: ChatPayload;
   find_game: FindGamePayload;
   interact: InteractPayload;
   equip: EquipPayload;
   unequip: UnequipPayload;
   cast_skill: CastSkillPayload;
+  /** A delver in play in a run rolling (FS-7P736 R1, R13): refused silently, as an unaffordable cast. */
+  roll: RollPayload;
   /** A dead player leaving the run for the hub (FS-QPDKN req 13): no payload. */
   leave_run: Record<string, never>;
   /** A queued player cancelling (FS-G4VMQ req 18): no payload. */
@@ -158,13 +183,15 @@ export const ActionType = {
   Move: "move",
   Attack: "attack",
   Pickup: "pickup",
-  Use: "use",
+  UseItem: "use_item",
+  Buy: "buy",
   Chat: "chat",
   Find_Game: "find_game",
   Interact: "interact",
   Equip: "equip",
   Unequip: "unequip",
   CastSkill: "cast_skill",
+  Roll: "roll",
   LeaveRun: "leave_run",
   LeaveQueue: "leave_queue",
   LeaveHub: "leave_hub",
@@ -203,9 +230,11 @@ export type ClientAction =
   | { action: "move"; payload: MovePayload; seq: number }
   | { action: "attack"; payload: AttackPayload; seq: number }
   | { action: "pickup"; payload: PickupPayload; seq: number }
-  | { action: "use"; payload: UsePayload; seq: number }
+  | { action: "use_item"; payload: UseItemPayload; seq: number }
+  | { action: "buy"; payload: BuyPayload; seq: number }
   | { action: "chat"; payload: ChatPayload; seq: number }
-  | { action: "cast_skill"; payload: CastSkillPayload; seq: number };
+  | { action: "cast_skill"; payload: CastSkillPayload; seq: number }
+  | { action: "roll"; payload: RollPayload; seq: number };
 
 // ====== Server → Client ======
 

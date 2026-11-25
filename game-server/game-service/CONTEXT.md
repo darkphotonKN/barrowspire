@@ -255,6 +255,14 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   (`ChestRestockDelay`; 5 minutes in the Forest), so its next opening rolls afresh. What a player
   already took is theirs. Timed from the first open, not from the last item taken.
 
+### Movement pace (FS-TAGWA, ADR-0099)
+
+- **Pace scale** — the one knob every travel speed is multiplied by (`PaceScale`): walks,
+  ambles, monster and ally pace, the variant step gain and every projectile. Never a timing or a
+  reach. A speed's **full-pace figure** is its number before the scale (the delver's 200). A
+  **travel budget** is a timer sized to a walk (the brazier windows, the mark's longest flight):
+  its full-pace length over the scale.
+
 ### Dungeon floors and the floor map (FS-KE075, ADR-0060, ADR-0061, ADR-0062)
 
 - **Cell** — one square of a generated floor's grid, 80 px a side (`levelgen`). A cell is
@@ -264,8 +272,20 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Region** — one named part of a dungeon floor's walkable cells: a **room** or a **corridor
   segment**. Every walkable cell belongs to exactly one region. Regions have ids, carried on the
   floor map; the client's fog and minimap are built on them.
-- **Room** — a rectangular region carved as a chamber, from a 4×4-cell crypt to a 10×8-cell hall.
+- **Room** — a region carved as a chamber in a rect of cells, from a 4×4 crypt to an 8×7 hall, its
+  floor the rect less its **shape**'s cut cells (FS-KE075 §Change: Room variety).
   In game-service the word means only this; the walls of floors 2–3 make **buildings**.
+- **Room shape** — which cells of a room's rect are cut: **rectangle**, **L**, **cross**,
+  **pillared** or **cut corners**. A **cut cell** is not walkable; where it touches the floor it is
+  shell wall, so a pillar is a wall cell standing on its own. Server-only: the client sees the cells.
+- **Room contents** — what a room holds, given when its floor is planned: a role room keeps its role;
+  a **claimed decision room** holds a seal's piece, the encounter or its key on the ground; every
+  other room is **ordinary** and rolls **quiet**, **monsters** (one or two, or a hall's pack) or a
+  **decision** (a trap or a chest or sack). Not a room role.
+- **Quiet room** — an ordinary room that rolled quiet: no monster, container or trap, only dressing
+  and light. Named on the floor map (`quiet_rooms`). The build's wider "quiet rooms" set
+  (`quietRooms`: plates, hidden, respite and encounter rooms, empty of rolled monsters and
+  containers) is a different thing; say *rolled quiet room* where both could be meant.
 - **Corridor segment** — a region of corridor cells: corridors are cut into segments so that a
   long corridor is not one region.
 - **Doorway** — a walkable cell of a room that touches a corridor cell. Always open: a dungeon
@@ -308,6 +328,100 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   the Spire's standard mix, dropping on the ghoul row. A "zombie" is only ever the Forest's.
 - **Spire Wraith** — the Spire's bone-white recolour of the Forest's ghost: its own archetype in
   the Spire's standard mix, dropping on the ghoul row. A "ghost" is only ever the Forest's.
+
+### Sealed floors (FS-5FZ4J, ADR-0092)
+
+- **Seal** — what stops a floor's stairs from being climbed until the party breaks it: one puzzle
+  rolled per floor from a pool (**Lever Order**, **Weighted Plates**, **Hidden Key**, **Chasm**,
+  **Braziers**), two **chained** on floors 8–10 (the second's pieces appear once the first
+  breaks). A seal is **broken** once, for the whole party, and stays broken. The top floor has no
+  stairs and no seal. Never blocks the escape door. *Avoid*: "lock" (a lock is what Pick the Lock
+  opens and a key fits), "puzzle" for the seal itself (the puzzle is how a seal is broken).
+- **Seal piece** — one interactable a seal is broken through: a lever, a pressure plate, the stair
+  key, the bridge lever, a brazier. Stands on a branch other than the stairs'.
+- **Lore piece** — an interactable that tells, never breaks a seal: the Lever Order's **mural**
+  (answers the glyph order) and a hidden room's **lore shrine**. Not a seal piece and wakes nothing;
+  on the wire it rides `seal_pieces` beside them. *Avoid*: calling the mural a seal piece.
+- **Solvable by one** — every seal, gap and hidden room the way up depends on can be passed by one
+  living delver of any class with no book page (ADR-0092). A shortcut (a book page, an ally, a
+  second delver) is faster, never required.
+- **Stone block** — a pushable block on the floor's 80 px cell grid, placed by Weighted Plates
+  (always at least one per plate). Walking into it pushes it one cell, slowly; it never moves into
+  a wall, another block or a covered plate. A block on a plate holds it.
+- **Pressure plate** — a seal piece held down by a body (a delver, a hired ally) or a stone block
+  standing on it. Monsters do not hold plates.
+- **Trap** — a hazard on a floor cell: **spike plate**, **dart wall**, **fire jet**, **tripwire**
+  (wakes an ambush, fires once) or **gas vent** (poisons). Fires when a delver or a hired ally steps
+  on it; monsters never trigger one. **Detected** per party: until a party member has detected it,
+  the server never sends it to that party's clients. *Avoid*: "hazard" as a code name.
+- **Detected** — a trap or secret door one party member has seen (within 2 cells, or revealed):
+  from then on it is sent to every member of that party. A detection never un-happens on that
+  floor.
+- **Poison** — a delver status: 1% of max health a second for 60 s, lethal, refreshed (never
+  stacked) by a second poisoning, carried across floors until it runs out or is cured. Cured by
+  an **antidote** (FS-9JV5K) or the archer's Brew (FS-X2CMM). Not a monster ability's damage over
+  time.
+- **Secret door** — a wall cell that opens into a **hidden room**. Shows faint cracks to a delver
+  within 2 cells (that is its detection); opened by a **search**. Sent only once detected, as a
+  trap is.
+- **Hidden room** — a room reached only through a secret door: off the minimap and out of the
+  floor map's open regions until its door opens. Holds a better chest (one rarity step up), a lore
+  shrine, the hallowed altar or the Hidden Key's key.
+- **Search** — holding interact 2 s on a detected secret door: a timed interact (the FS-MQYEX
+  rule: moving or taking damage breaks it). Completing it opens the door for everyone.
+- **Ambush** — a pack of 2–4 monsters from the floor's pool, **dormant** in a shut alcove or room
+  until a **wake** (pulling a lever, lifting the key, lighting a brazier, a wrong lever order, a
+  tripwire) sends it at the delver who woke it. Not a top-up and not a guard.
+- **Respite** — a moment on a floor where the party can recover: the **healing fountain**, the
+  **hallowed altar**, and the wandering merchant (FS-9JV5K).
+- **Healing fountain** — a fixture in a room where no monster spawns, on about half of floors 2+:
+  heals each delver within 2 cells 4% of max health a second from one shared **pool** (150% of one
+  delver's max health), and is **dry** once the pool is spent.
+- **Hallowed altar** — the holy recolour of the Altar of Consecration's model (FS-3103M), in about
+  30% of delves, at most once: one delver **prays** (a 2 s timed interact) and every living party
+  member on the floor gains the **Blessing**. Never the Altar of Consecration: they share a model,
+  not a name, a rule or a wire kind.
+- **Blessing** — a delve-long delver buff from the hallowed altar: +10% item drop chance and +5%
+  class-resource regen. Lost on death, never stacked, never carried out of the run.
+
+### The wandering merchant (FS-9JV5K, ADR-0093)
+
+- **Wandering merchant** — a friendly NPC met on about a third of floors 2+ (never the top), in a
+  room where no monster spawns, selling **wares** for account gold. Never attacked, never
+  targeted. Not a hub function NPC: he lives in a run and his stock is the run's.
+- **Ware** — one line of the merchant's stock: an item template, a price in gold and a count left,
+  shared by the party, first come.
+- **Purchase** — one delver buying one ware: the stock is **reserved** on the tick, the wallet
+  **debit** runs off the tick, and on a later tick the item is granted (success) or the reserve
+  released (refusal). Identified by its **purchase key** (run, buyer, the buyer's purchase
+  sequence), the debit's idempotency key. A bought item is an unsafe find.
+- **Debit** — wallet-service's idempotent gold removal for a purchase (ADR-0093), bounded by
+  available gold, reached through an interface game-service owns. Not Withdraw, which takes no
+  key. The gold the client shows is its **purse line** (FS-7TGZ3), a read, not this.
+- **Antidote** — a consumable item template: drunk from the bag (the `use` action), it ends
+  poison at once; refused and not spent when its drinker is not poisoned.
+- **Restoring Draught** — a consumable item template the merchant sells: drunk from the bag (`use_item`), it refills half the drinker's class resource max (at least 1). Held apart from the loot pool, as the antidote is (FS-9JV5K §Change: The Restoring Draught).
+
+### Encounters (FS-4EC7Z)
+
+- **Encounter** — a group of humanoid NPCs met on a Spire floor (at most one a floor, about 40% of
+  floors 2+, never floor 1 or the top), of one **encounter kind**: **Lost Pilgrims** (defend them
+  from a wave; a better chest if one lives), **Captives** (caged; freed, they fight beside the
+  party), **Cutthroats** (talk first; half turn hostile, the rest reveal the hidden room). An
+  encounter NPC is not a monster until it turns, and never a hub NPC.
+- **Hired ally** — an encounter NPC fighting on the party's side: hired (FS-X2CMM's Strike a
+  Deal) or freed. Follows its **hirer** (the delver who hired it, or who opened the cage for freed captives), fights monsters, holds a
+  pressure plate, triggers traps, is targeted by monsters, never climbs. At most 3 a party. Its
+  kills give no experience and count as the hirer's for loot.
+- **Contract** — the once-a-delve job the mercenary takes (FS-X2CMM's Take a Contract): a **mark**
+  spawns on the current floor. **Settled** when the party kills it; **lost** when the party
+  climbs with it alive or the mercenary dies.
+- **Mark** — the contract's target: a humanoid in a variant look, champion health scaled to the
+  party, poison blades, calls three cutthroats once at half health, flees and heals once at a
+  quarter. Off the minimap; the mercenary sees only a **heading** (a compass word, refreshed every
+  5 s).
+- **Contract Settled** — the mercenary's delve-long buff for a settled contract: +15% damage. Lost
+  on death. The mercenary who took the contract only.
 
 ### Ranged monsters (FS-B4SG9, locked, not built)
 
@@ -701,6 +815,8 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 
 ### Classes and abilities (FS-8AY7S, FS-MAMHR, FS-JTNPR, FS-04EEA, ADR-0030)
 
+- **Roll** (FS-7P736) — a delver's dodge: on `roll {dir_x, dir_y}`, a fixed 200 px tumble over 0.4 s, swept against walls, through bodies, untouchable while **rolling**; then a 3 s **roll cooldown** (`current_player.roll_cooldown`). Free, no class resource. Not an ability: it has no attack row and no class.
+
 - **Class** — a character's archetype, by its server id: `warrior`, `mage`, `archer`, `mercenary`
   (FS-MAMHR). The id is the term in code and on the wire. Display names belong to game-client:
   the screen and the art say other things (the warrior is drawn from the *knight* sheet, the mage
@@ -720,7 +836,69 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   resource, ADR-0030); a cast by a caster without the node is refused as an unaffordable one is.
   On the wire, `tree_ability_cooldown` and `resource.tree_ability_cost` (FS-Q18Q3). Not a monster
   ability.
-- **Stun** (FS-04EEA) — server state on a monster, applied only by Earthbreaker: while it runs the
+- **Class book** (FS-X2CMM) — a class's set of **pages**, by class id, held in the class config
+  beside the class ability and the tree ability: the mage's **Spellbook**, the archer's **Hunter's
+  Journal**, the mercenary's **The Ledger**, the warrior's **Scars**. The book names are display
+  (game-client draws them); the server knows a book only as its class's page table. Runs only:
+  a cast of a page in the hub or a field is refused.
+- **Page** (FS-X2CMM) — one entry of a class book: a **book ability** with the level it unlocks
+  at, its **target kind**, its **cast time**, its cost in the class resource and its cooldown.
+  Unlocked by character level alone (no tree points); the level is checked on every cast. The
+  14 pages by id: mage `witchlight`, `far_hand`, `levitate`, `binding_glyph`, `recall`; archer
+  `trackers_eye`, `brew`, `call_the_hound`; mercenary `pick_the_lock`, `strike_a_deal`,
+  `take_a_contract`; warrior `heave`, `hardened`, `long_night`. The warrior's pages are **scars**
+  and their screen names carry it ("Scar of the Gate (Heave)", "Scar of the Pit (Hardened)",
+  "Scar of the Long Night (Last Stand)"). **Collides**: *Last Stand* is already the Guardian's
+  saving rule (`LastStandSpentComponent`, FS-E1ZDG), so the page's id and its code are
+  `long_night`, never `last_stand`; write "the Long Night" for the page.
+- **Book ability** (FS-X2CMM) — what a page casts. Goes out as `cast_skill` with the page id as
+  the skill id, and resolves like every cast (ADR-0030): refused when locked, outside a run, on
+  cooldown, short of cost or out of range, with no effect, no cost and no cooldown. Parallel to
+  **tree ability**; never a bare "ability". Does not start the **pin** and is not shortened by
+  attack speed.
+- **Target kind** (FS-X2CMM) — what a page is aimed at: `ground` (a point within range), `ally`
+  (a living teammate, or the caster where the page allows self), `interactable` (a Spire entity
+  within range), `self`, `none` (casts on the click). The client arms its reticle by it; the
+  server checks the target against it.
+- **Cast time** (FS-X2CMM) — the wait, counted by the server, between a book ability's accepted
+  cast and its effect. The caster is **casting** while it runs. Moving or taking damage **breaks**
+  it: no effect, no cost, no cooldown (the FS-MQYEX rule). Cost and cooldown are taken when it
+  completes. One cast at a time: a second page cast while casting is refused. Not a wind-up (a
+  monster's) and not the pin.
+- **Book cooldown** (FS-X2CMM) — a page's own cooldown: per run, reset at run start, kept across
+  floors, sent to the owner beside the other cooldowns (FS-Q18Q3). **Once per floor** resets on
+  climbing; **once per delve** never resets inside the run.
+- **Rune** (FS-X2CMM, Binding Glyph) — the 1.5-cell mark the Binding Glyph page lays on the
+  ground for 30 s; the first three monsters to cross it are held as by a **stun**. Write "rune"
+  for the thing on the floor, "Binding Glyph" for the page; game-client's *line glyph* is an icon
+  term and unrelated.
+- **Book effect** (FS-X2CMM) — a thing a page leaves standing in the run for every delver to see:
+  a witchlight, a rune, a draught, a hound. Its own entity (`BookEffectComponent`, kind, time
+  left, caster), never a delver or a monster; gone at its time or on a floor change. On the wire,
+  `book_effects`. FS-X2CMM R34 calls them "world effects"; in code and here, *book effect*.
+- **Witchlight** (FS-X2CMM) — the drifting light the page of that name sets down for 20 s; lifts
+  fog within 3 cells of it for the party.
+- **Draught** (FS-X2CMM, Brew) — the drink the Brew page sets down; any delver drinks it by
+  interacting. Heals over time; lasts until drunk or the floor ends. Not a **health potion**
+  (carried, key 1).
+- **Hound** (FS-X2CMM, Call the Hound) — the archer's summoned beast, a **wolf** to players (FS-X2CMM §Change: The archer's wolf: the page reads *Call the Wolf*; every code, wire and file name stays *hound*): an ally entity for 40 s that
+  fights monsters. Not a monster and not a delver: monsters may strike it, it never counts toward
+  a floor's clear or a party's roster, and it leaves no body.
+  It holds a pressure plate as a delver does (its own body kind, which weighs). It **bays**: every
+  few seconds it calls at the nearest shut secret door, or seal piece or tripwire whose ambush has
+  not woken, within 6 cells (the **hound's bay**, a point on its wire entry). A bay reveals nothing.
+- **Revealed** (FS-X2CMM R49, FS-4EC7Z §D R14) — a trap or secret door the party was told of rather
+  than came upon: by a page (Witchlight within 3 cells, Tracker's Eye within 10 of the archer) or the
+  Cutthroats' tip. Always detected as well; sent as `revealed: true`. *Avoid*: "revealed" for a plain
+  detection.
+- **Afloat** (FS-X2CMM, Levitate) — the 8 s state of a delver the Levitate page lifts: cannot
+  attack while it runs; walks over a chasm's pits and fires no trap. Ending over a pit, the delver
+  is set down on the nearest bank the pit reaches (else the nearest walkable cell).
+- **Hardened** (FS-X2CMM) — the 10 s self state the Scar of the Pit sets on the warrior: traps deal
+  them nothing and no poisoning takes hold (a poison already running runs on).
+- **Long Night** (FS-X2CMM) — the 6 s self state the Scar of the Long Night sets: monsters within
+  5 cells turn on the warrior, who takes 30% less damage.
+- **Stun** (FS-04EEA; FS-X2CMM) — server state on a monster, applied by Earthbreaker and by a Binding Glyph's **rune**: while it runs the
   monster neither moves, strikes nor starts a wind-up, and a wind-up in progress ends with nothing
   landing; its cooldowns keep counting. A second stun takes the longer, never stacks. On the wire,
   monster `action: "stunned"`. Delvers are never stunned.

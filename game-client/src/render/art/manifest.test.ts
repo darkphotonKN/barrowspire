@@ -609,6 +609,246 @@ describe("the baked manifest (public/art/manifest.json)", () => {
 
   });
 
+  describe("the wandering merchant and the antidote's icon (FS-9JV5K §G R26)", () => {
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+
+    it("bakes the merchant idle only, four frames at the folk's pace, looping, in eight facings", () => {
+      const sheet = baked.sheets.npc_merchant;
+      expect(sheet.directions).toBe(8);
+      expect(Object.keys(sheet.animations)).toEqual(["idle"]);
+      expect(sheet.animations.idle).toMatchObject({ fps: 3, loop: true });
+      expect(sheet.animations.idle.frames).toHaveLength(8);
+      for (const facing of sheet.animations.idle.frames) expect(facing).toHaveLength(4);
+      expect(sheet.source).toBe("authored: tools/bake/page/characters/folk.js#merchant");
+    });
+
+    it("packs him alone on a group of his own, scene-scoped, so no committed atlas reflows", () => {
+      expect(atlasGroup(baked.sheets.npc_merchant.atlas)).toBe("merchant");
+      expect(SCENE_SCOPED_GROUPS.has("merchant")).toBe(true);
+      const onGroup = Object.entries(baked.sheets as Record<string, { atlas: string }>)
+        .filter(([, s]) => atlasGroup(s.atlas) === "merchant")
+        .map(([n]) => n);
+      expect(onGroup).toEqual(["npc_merchant"]);
+    });
+
+    it("bakes the antidote's icon on the resident icons atlas, one still frame like the potions'", () => {
+      const icon = baked.sheets.icon_antidote;
+      const potion = baked.sheets.icon_potion_health;
+      expect(atlasGroup(icon.atlas)).toBe("icons");
+      expect([icon.frameWidth, icon.frameHeight]).toEqual([potion.frameWidth, potion.frameHeight]);
+      expect(icon.animations.default.frames).toEqual([[expect.any(Object)]]);
+      expect(icon.source).toBe("procedural: tools/bake/page/models/items.js#antidote");
+    });
+
+    // §Change: The Restoring Draught D6 (I-9JV5K-7): its flask, baked beside the antidote
+    it("bakes the Restoring Draught's icon on the resident icons atlas, one still frame like the potions'", () => {
+      const icon = baked.sheets.icon_restoring_draught;
+      const potion = baked.sheets.icon_potion_health;
+      expect(atlasGroup(icon.atlas)).toBe("icons");
+      expect([icon.frameWidth, icon.frameHeight]).toEqual([potion.frameWidth, potion.frameHeight]);
+      expect(icon.animations.default.frames).toEqual([[expect.any(Object)]]);
+      expect(icon.source).toBe("procedural: tools/bake/page/models/items.js#restoring_draught");
+    });
+  });
+
+  describe("the encounters' cage and its key, added to the sealed props (FS-4EC7Z §H R36)", () => {
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+    const sealed = () => Object.entries(baked.sheets as Record<string, { atlas: string }>).filter(([, s]) => atlasGroup(s.atlas) === "sealed");
+
+    it("packs them on a page of their own after the floor's props, so the committed sealed-0 keeps its bytes", () => {
+      expect(baked.sheets.cage.atlas).toBe("sealed-1");
+      expect(baked.sheets.cage_key.atlas).toBe("sealed-1");
+      expect(sealed().filter(([, s]) => s.atlas === "sealed-1").map(([n]) => n).sort()).toEqual(["cage", "cage_key"]);
+    });
+
+    it("frames the whole cage and its two layers together, so the layers lie on the whole", () => {
+      const cage = baked.sheets.cage;
+      expect(cage.directions).toBe(1);
+      for (const state of ["shut", "open"])
+        for (const layer of ["", "_back", "_front"]) expect(cage.animations[`${state}${layer}`].frames[0], `${state}${layer}`).toHaveLength(1);
+      expect(cage.source).toBe("procedural: tools/bake/page/models/sealed.js#cage");
+      expect(baked.sheets.cage_key.source).toBe("procedural: tools/bake/page/models/sealed.js#cageKey");
+    });
+
+    it("stands the cage a floor cell wide at most and taller than a delver, the key smaller than the stair key's stone", () => {
+      const cage = baked.sheets.cage;
+      // a crown is measured in screen px at 1x, as the cage's frame is baked
+      expect(cage.frameWidth).toBeLessThanOrEqual(4 * baked.tile.width);
+      expect(cage.frameHeight).toBeGreaterThan(baked.sheets.char_knight_base.crown);
+      expect(baked.sheets.cage_key.frameWidth).toBeLessThan(baked.sheets.stair_key.frameWidth);
+    });
+  });
+
+  describe("the encounter cast (FS-4EC7Z §H R36)", () => {
+    /** The decoded px bytes the group's pages may hold (RGBA): the trimmed bake's 63.0 MB, with headroom. */
+    const ENCOUNTER_DECODED_BUDGET = 70e6;
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+    /** Each sheet, its variants' letters after the first, and its own clip. */
+    const CAST: [string, string[], string | null][] = [
+      ["npc_pilgrim", ["b", "c"], "cower"],
+      ["npc_captive", ["b"], "bound"],
+      ["npc_cutthroat", ["b"], null],
+      ["npc_hooded_duelist", [], null],
+      ["npc_debtor_knight", [], null],
+    ];
+
+    it("bakes each in eight facings: idle, walk, attack and death, its own clip, then each variant's", () => {
+      for (const [name, letters, own] of CAST) {
+        const sheet = baked.sheets[name];
+        expect(sheet.directions, name).toBe(8);
+        const clips = ["idle", "walk", "attack", "death", ...(own ? [own] : [])];
+        expect(Object.keys(sheet.animations), name).toEqual([...clips, ...letters.flatMap((l) => clips.map((c) => `${c}_${l}`))]);
+        expect(sheet.source, name).toMatch(/^authored: tools\/bake\/page\/characters\/encounter\.js#/);
+      }
+    });
+
+    it("times the clips as the classes' and the folk's: a short breathing idle, the classes' walk, attack and death", () => {
+      for (const [name] of CAST) {
+        const a = baked.sheets[name].animations;
+        expect(a.idle, name).toMatchObject({ fps: 3, loop: true });
+        expect(a.idle.frames[0], name).toHaveLength(4);
+        expect(a.walk, name).toMatchObject({ fps: 10, loop: true });
+        expect(a.attack, name).toMatchObject({ fps: 12, loop: false });
+        expect(a.attack.frames[0], name).toHaveLength(7);
+        expect(a.death, name).toMatchObject({ loop: false });
+      }
+      expect(baked.sheets.npc_pilgrim.animations.cower).toMatchObject({ fps: 6, loop: true });
+      expect(baked.sheets.npc_captive.animations.bound).toMatchObject({ fps: 3, loop: true });
+    });
+
+    it("packs them alone on their own scene-scoped group, so no committed atlas reflows", () => {
+      expect(SCENE_SCOPED_GROUPS.has("encounter")).toBe(true);
+      const onGroup = Object.entries(baked.sheets as Record<string, { atlas: string }>)
+        .filter(([, s]) => atlasGroup(s.atlas) === "encounter")
+        .map(([n]) => n)
+        .sort();
+      expect(onGroup).toEqual(CAST.map(([n]) => n).sort());
+    });
+
+    // ADR-0071 Consequences: an on-demand group's decoded pages are memory a run holds; untrimmed,
+    // the cast's frames held 202 MB of mostly empty px
+    it("trims every frame to its pixels, so the group's decoded pages stay in budget", () => {
+      for (const [name] of CAST) expect(baked.sheets[name].trimmed, name).toBe(true);
+      const pages = Object.entries(baked.atlases as Record<string, { width: number; height: number }>).filter(([k]) => atlasGroup(k) === "encounter");
+      const decoded = pages.reduce((sum, [, a]) => sum + a.width * a.height * 4, 0);
+      expect(decoded).toBeLessThanOrEqual(ENCOUNTER_DECODED_BUDGET);
+    });
+
+    it("measures each one's crown, where its plate and bar sit, at a townsman's height, no staff or blade over it", () => {
+      const townsman = baked.sheets.folk_resident_trousers.crown;
+      for (const [name] of CAST) {
+        expect(baked.sheets[name].crown, name).toBeGreaterThanOrEqual(townsman * 0.9);
+        expect(baked.sheets[name].crown, name).toBeLessThanOrEqual(townsman * 1.15);
+      }
+    });
+  });
+
+  describe("the sealed floor's props (FS-5FZ4J §K R57)", () => {
+    type PropSheet = {
+      atlas: string;
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { fps: number; loop: boolean; frames: unknown[][] }>;
+      light?: { color: string };
+      source: string;
+      licence: string;
+    };
+    const prop = (name: string): PropSheet => baked.sheets[name];
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+    const GLYPHS = ["crow", "key", "flame", "eye", "serpent", "moon"];
+    /** Every prop of R57 and the states the client plays, in bake order. */
+    const SEALED: [string, string[]][] = [
+      ["seal_lever", ["up", "down", ...GLYPHS.map((g) => `glyph_${g}`)]],
+      ["pressure_plate", ["up", "pressed"]],
+      ["stone_block", ["default"]],
+      ["seal_brazier", ["cold", "lit"]],
+      ["stair_key", ["default"]],
+      ["bridge_lever", ["up", "down"]],
+      ["mural", ["default"]],
+      ["lore_shrine", ["default"]],
+      ["gate_x", ["shut", "open"]],
+      ["gate_y", ["shut", "open"]],
+      ["pit_cell", ["open", "n", "w", "nw"]],
+      ["bridge_cell", ["x", "y"]],
+      ["secret_cracks", ["x", "y", "front_x", "front_y"]],
+      ["trap_spike_plate", ["armed", "sprung"]],
+      ["trap_dart_wall", ["armed", "sprung"]],
+      ["trap_fire_jet", ["armed", "sprung"]],
+      ["trap_tripwire", ["armed", "sprung"]],
+      ["trap_gas_vent", ["armed", "sprung", "puff"]],
+      ["healing_fountain", ["full", "dry"]],
+      ["hallowed_altar", ["dormant", "prayed"]],
+      // the encounters' cage and its key (FS-4EC7Z §H R36), on the group's second page
+      ["cage", ["shut", "shut_back", "shut_front", "open", "open_back", "open_front"]],
+      ["cage_key", ["default"]],
+    ];
+
+    it("bakes every prop with the states the client plays, framed together on one sheet", () => {
+      for (const [name, states] of SEALED) {
+        expect(prop(name), name).toBeDefined();
+        expect(Object.keys(prop(name).animations), name).toEqual(states);
+        expect(prop(name).directions, name).toBe(1);
+      }
+    });
+
+    it("bakes each state as one still frame, and the gas vent's puff as a short effect that does not loop", () => {
+      for (const [name, states] of SEALED)
+        for (const state of states.filter((s) => s !== "puff")) {
+          expect(prop(name).animations[state].frames[0], `${name}/${state}`).toHaveLength(1);
+          expect(prop(name).animations[state].fps, `${name}/${state}`).toBe(0);
+        }
+      const puff = prop("trap_gas_vent").animations.puff;
+      expect(puff.frames[0].length).toBeGreaterThan(3);
+      expect(puff.fps).toBeGreaterThan(0);
+      expect(puff.loop).toBe(false);
+    });
+
+    it("packs them on a resident atlas of their own, so no committed atlas reflows", () => {
+      for (const [name] of SEALED) expect(atlasGroup(prop(name).atlas), name).toBe("sealed");
+      expect(SCENE_SCOPED_GROUPS.has("sealed")).toBe(false);
+      expect(
+        Object.entries(baked.sheets as Record<string, PropSheet>)
+          .filter(([, s]) => atlasGroup(s.atlas) === "sealed")
+          .map(([n]) => n)
+          .sort(),
+      ).toEqual(SEALED.map(([n]) => n).sort());
+    });
+
+    it("reuses the run's brazier and the Altar of Consecration rather than copies of them", () => {
+      expect(prop("seal_brazier").source).toBe(baked.sheets.brazier.source);
+      expect(prop("hallowed_altar").source).toBe(baked.sheets.altar.source);
+      expect(prop("seal_brazier").light).toEqual(baked.sheets.brazier.light);
+      // the hallowed altar's candlelight, from a BARROW token
+      expect(prop("hallowed_altar").light?.color).toBe("amberBright");
+    });
+
+    it("draws the hallowed altar on the Altar of Consecration's frame: recoloured, not resized", () => {
+      const altar = prop("altar");
+      const hallowed = prop("hallowed_altar");
+      expect(Math.abs(hallowed.frameWidth - altar.frameWidth)).toBeLessThanOrEqual(4);
+      expect(Math.abs(hallowed.frameHeight - altar.frameHeight)).toBeLessThanOrEqual(4);
+    });
+
+    it("lays a gate piece, a pit cell and a bridge cell one floor cell (80 world px) wide", () => {
+      // a cell's diamond: 80 world px is two 64 px tiles across, so 128 screen px, padded a little
+      const cell = 2 * baked.tile.width;
+      for (const name of ["pit_cell", "bridge_cell"]) {
+        expect(prop(name).frameWidth, name).toBeGreaterThanOrEqual(cell);
+        expect(prop(name).frameWidth, name).toBeLessThanOrEqual(cell + 12);
+        expect(prop(name).anchor, name).toEqual({ x: 0.5, y: expect.closeTo(0.5, 1) });
+      }
+    });
+
+    it("is modelled in code, under the project's licence", () => {
+      for (const [name] of SEALED) {
+        expect(prop(name).source, name).toMatch(/^procedural: tools\/bake\/page\/models\/(sealed|props|interactables)\.js#/);
+        expect(prop(name).licence, name).toBe(baked.sheets.brazier.licence);
+      }
+    });
+  });
+
   it("records the measured mean colour of every ground sheet, for lighting (FS-2325V §C.9)", () => {
     const ground = Object.keys(baked.sheets).filter((n) =>
       n.startsWith("ground_"),
@@ -1524,15 +1764,16 @@ describe("the baked manifest (public/art/manifest.json)", () => {
      * the move now (FS-HF0WW's and FS-3V7GC's, retired by FS-JS7C8 § Change: The knight's sprint,
      * and the attack-on-the-move clips retired R149).
      */
+    // and each class its roll, last (FS-7P736 R15)
     const OWN_CLIPS: Record<string, string[]> = {
       // his sprint dropped his attacks on the move, the last class's (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)
-      char_knight_base: ["run"],
+      char_knight_base: ["run", "roll"],
       // her sprint dropped her attacks on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
-      char_archer_base: ["run"],
+      char_archer_base: ["run", "roll"],
       // her sprint and pointed cast dropped her attacks on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131)
-      char_wizard_base: ["run"],
+      char_wizard_base: ["run", "roll"],
       // his sprint dropped his attacks on the move, the parry kept (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)
-      char_mercenary_base: ["parry", "run"],
+      char_mercenary_base: ["parry", "run", "roll"],
     };
     /** The class sheets re-baked with the run, at 1.5x (FS-JS7C8 slices 12, 7, 6, 8). */
     const RUNNING = ["char_archer_base", "char_wizard_base", "char_knight_base", "char_mercenary_base"];
@@ -1609,12 +1850,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       }
     });
 
-    it("trims the four classes' frames, and only theirs (FS-HF0WW, FS-3V7GC)", () => {
+    // and the encounter cast's, for its on-demand group's memory (FS-4EC7Z §H R36, ADR-0071 Consequences)
+    it("trims the four classes' frames, their spec looks' and the encounter cast's, and only theirs (FS-HF0WW, FS-3V7GC)", () => {
       const trimmed = Object.entries(baked.sheets as Record<string, { trimmed?: boolean }>)
         .filter(([, sheet]) => sheet.trimmed)
         .map(([name]) => name);
+      const encounterCast = ["npc_pilgrim", "npc_captive", "npc_cutthroat", "npc_hooded_duelist", "npc_debtor_knight"];
       expect(trimmed.sort()).toEqual(
-        ["char_archer_base", "char_knight_base", "char_mercenary_base", "char_wizard_base", ...specLooks()].sort(),
+        ["char_archer_base", "char_knight_base", "char_mercenary_base", "char_wizard_base", ...specLooks(), ...encounterCast].sort(),
       );
     });
 
@@ -1639,11 +1882,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
      * change in either dimension, so a tune round cannot grow either unseen. Integrated with
      * Looks v2 (2026-11-23): the looks' ceilings are their Looks v2 boxes (main 697260c6), which
      * the integrated bake matches exactly; the Berserker's heavy axes and pelt grew his from 267 × 240
-     * and the Guardian's bigger shield cut his to 255 × 219 there, not the sprint.
+     * and the Guardian's bigger shield cut his to 255 × 219 there, not the sprint. The roll (FS-7P736
+     * R15, I-7P736-3) turns him over, his cloak flung round him, and grew the base's from 276 × 228
+     * (anchor 114, 168) and the Guardian's from 255 × 219 (105, 165) to these, its own bake; the
+     * Berserker's held.
      */
     const KNIGHT_BOX: [string, { width: number; height: number; x: number; y: number }][] = [
-      ["char_knight_base", { width: 276, height: 228, x: 114, y: 168 }],
-      ["char_knight_guardian", { width: 255, height: 219, x: 105, y: 165 }],
+      ["char_knight_base", { width: 279, height: 234, x: 117, y: 174 }],
+      ["char_knight_guardian", { width: 270, height: 243, x: 120, y: 180 }],
       ["char_knight_berserker", { width: 291, height: 258, x: 117, y: 195 }],
     ];
     it.each(KNIGHT_BOX)("keeps %s's frame box and anchor within the pre-change ones (FS-JS7C8 R151, K5)", (name, max) => {
@@ -1927,11 +2173,13 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       },
     );
 
-    it("writes a per-animation atlas only on the boss's spilled animations and a spec look's, never on existing sheets", () => {
+    it("writes a per-animation atlas only on the boss's spilled animations, a spec look's and the encounter cast's, never on existing sheets", () => {
       // the 1.5x archer is one page again (FS-HF0WW § Change: Class sheets at 1.5x R34); a spec
       // look alone in its group may spill to a second page of it (the Berserker's off-hand clips,
-      // FS-1J1CB R15, R28)
-      const spills = [...ROSTER.map(([n]) => n), ...specLooks()];
+      // FS-1J1CB R15, R28), and an encounter sheet over the pages of its own group (the pilgrim's
+      // three variants, FS-4EC7Z §H R36)
+      const encounter = Object.keys(baked.sheets).filter((n) => atlasGroup(baked.sheets[n].atlas) === "encounter");
+      const spills = [...ROSTER.map(([n]) => n), ...specLooks(), ...encounter];
       for (const [name, sheet] of Object.entries(baked.sheets) as [
         string,
         RosterSheet,
@@ -2300,7 +2548,57 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         BoarSheet,
       ][])
         if (sheet.length !== undefined)
-          expect(BOARS.map(([n]) => n)).toContain(name);
+          expect([...BOARS.map(([n]) => n), "creature_hound_base"]).toContain(name);
+    });
+  });
+
+  describe("the archer's hound, on the quadruped rig (FS-X2CMM §I R47)", () => {
+    type HoundSheet = {
+      atlas: string;
+      directions: number;
+      crown?: number;
+      length?: number;
+      animations: Record<string, { fps: number; loop: boolean; frames: unknown[][] }>;
+      source: string;
+      licence: string;
+    };
+    const hound = (): HoundSheet => baked.sheets.creature_hound_base;
+    const playerCrown =
+      ["char_knight_base", "char_archer_base", "char_wizard_base"].reduce(
+        (n, name) => n + baked.sheets[name].crown,
+        0,
+      ) / 3;
+
+    it("has 8-way idle, walk (its run), attack (its bite) and death (its fall), idle and the run looping", () => {
+      const sheet = hound();
+      expect(sheet).toBeDefined();
+      expect(sheet.directions).toBe(8);
+      expect(Object.keys(sheet.animations)).toEqual(["idle", "walk", "attack", "death"]);
+      for (const a of Object.values(sheet.animations)) expect(a.frames).toHaveLength(8);
+      const a = sheet.animations;
+      expect([a.idle.loop, a.walk.loop, a.attack.loop, a.death.loop]).toEqual([true, true, false, false]);
+    });
+
+    it("is authored in code in characters/hound.js#hound, under the project's licence", () => {
+      expect(hound().source).toBe("authored: tools/bake/page/characters/hound.js#hound");
+      expect(hound().licence).toBe(baked.sheets.brazier.licence);
+    });
+
+    it("packs alone into its own hound group, resident as an unnamed group is, so no existing atlas reflows", () => {
+      expect(hound().atlas).toMatch(/^hound-\d+$/);
+      for (const [name, sheet] of Object.entries(baked.sheets) as [string, HoundSheet][])
+        if (/^hound-/.test(sheet.atlas)) expect(name).toBe("creature_hound_base");
+    });
+
+    it("is measured by its length, and stands well under a player: its head below a player's shoulder", () => {
+      expect(Number.isInteger(hound().length)).toBe(true);
+      expect(hound().crown as number).toBeLessThan(0.75 * playerCrown);
+    });
+
+    it("bites inside the server's 1 s between bites, and falls in under a second", () => {
+      const { attack, death } = hound().animations;
+      expect(attack.frames[0].length / attack.fps).toBeLessThan(1);
+      expect((death.frames[0].length / death.fps) * 1000).toBeLessThanOrEqual(800);
     });
   });
 

@@ -43,6 +43,8 @@ function combatOnStage(me: ReturnType<CombatSelf> = undefined) {
     rainAim: vi.fn(),
     endRainAim: vi.fn(),
     arrowRain: vi.fn(),
+    reticle: vi.fn(),
+    endReticle: vi.fn(),
   };
   const self = { me };
   const combat = new PlayerCombat(
@@ -950,5 +952,181 @@ describe("PlayerCombat attack pin (FS-JS7C8 §Change: Attacking pins the attacke
       expect(combat.releaseAim(me, target)).toBe(true);
       expect(send).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+// FS-X2CMM §H R40–R42 (I-X2CMM-11): a page pressed in the book arms or casts at once; while armed the
+// reticle is drawn each frame, a left-click on a valid target sends the one cast_skill and disarms, and no
+// attack or class ability answers a click. Nothing of the effect is played (R42).
+describe("PlayerCombat book pages (FS-X2CMM §H R40–R42)", () => {
+  const CELL = 80;
+  const scene = (cursor: { x: number; y: number }) => ({
+    from: me,
+    cursor,
+    cell: CELL,
+    allies: [{ id: "me-id", at: me, self: true }, { id: "ally-id", at: { x: 300, y: 100 } }],
+  });
+
+  it("should cast a none or a self page on the press, from where the player stands, and arm nothing", () => {
+    const { combat, send, look } = combatOnStage();
+
+    expect(combat.pressPage("hardened", me)).toBe(true);
+    expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "hardened", target_x: 100, target_y: 100 });
+    expect(combat.armed).toBe(false);
+    expect(look.attackClip).not.toHaveBeenCalled();
+  });
+
+  it("should arm a ground page: nothing is sent, and the reticle is drawn each frame", () => {
+    const { combat, send, look } = combatOnStage();
+
+    expect(combat.pressPage("witchlight", me)).toBe(true);
+    expect(combat.armed).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    combat.pageFrame(scene({ x: 500, y: 100 }));
+    expect(look.reticle).toHaveBeenCalledWith(expect.objectContaining({ page: "witchlight", at: { x: 500, y: 100 }, valid: true }));
+  });
+
+  it("should send the page and the point on a valid click 5 cells off, and disarm", () => {
+    const { combat, send, look } = combatOnStage();
+    combat.pressPage("witchlight", me);
+
+    expect(combat.castArmed(scene({ x: 100 + 5 * CELL, y: 100 }))).toBe(true);
+    expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "witchlight", target_x: 500, target_y: 100 });
+    expect(combat.armed).toBe(false);
+    expect(look.endReticle).toHaveBeenCalled();
+    // nothing of the effect is predicted (R42)
+    expect(look.attackClip).not.toHaveBeenCalled();
+  });
+
+  it("should send an ally page's target id, snapped under the teammate", () => {
+    const { combat, send } = combatOnStage();
+    combat.pressPage("levitate", me);
+
+    expect(combat.castArmed(scene({ x: 310, y: 110 }))).toBe(true);
+    expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "levitate", target_x: 300, target_y: 100, target_id: "ally-id" });
+  });
+
+  // I-X2CMM-15: Far Hand's click casts with the interactable's id, the reticle under the nearest lever
+  it("should send an interactable page's target id, snapped under the lever nearest the pointer", () => {
+    const { combat, send } = combatOnStage();
+    combat.pressPage("far_hand", me);
+    const lever = { id: "lever-id", at: { x: 100 + 4 * CELL, y: 100 }, kind: "lever" } as const;
+
+    expect(combat.castArmed({ ...scene({ x: lever.at.x + 10, y: 110 }), interactables: [lever] })).toBe(true);
+    expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "far_hand", target_x: lever.at.x, target_y: 100, target_id: "lever-id" });
+  });
+
+  it("should send nothing on a click with no valid target, the page kept armed", () => {
+    const { combat, send } = combatOnStage();
+    combat.pressPage("witchlight", me);
+
+    expect(combat.castArmed(scene({ x: 100 + 9 * CELL, y: 100 }))).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+    expect(combat.armed).toBe(true);
+  });
+
+  it("should answer no attack, no class ability and no strike while armed", () => {
+    const { combat, send } = combatOnStage();
+    combat.pressPage("witchlight", me);
+
+    expect(combat.cast("primary", "mage", me, { x: 200, y: 100 })).toBe(false);
+    expect(combat.cast("special", "mage", me, { x: 200, y: 100 })).toBe(false);
+    expect(combat.strike(me, "boar-1", { x: 120, y: 100 })).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should disarm with nothing sent and no reticle left, saying whether a page was armed", () => {
+    const { combat, send, look } = combatOnStage();
+    expect(combat.disarm()).toBe(false);
+    expect(look.endReticle).not.toHaveBeenCalled();
+    combat.pressPage("witchlight", me);
+
+    expect(combat.disarm()).toBe(true);
+    expect(combat.armed).toBe(false);
+    expect(look.endReticle).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should hold a page's send while the attack pin runs, as the server refuses one (FS-JS7C8 R62)", () => {
+    const { combat, send, elapse } = combatOnStage();
+    combat.cast("primary", "mage", me, { x: 200, y: 100 });
+    send.mockClear();
+
+    expect(combat.pressPage("hardened", me)).toBe(false);
+    combat.pressPage("witchlight", me);
+    expect(combat.castArmed(scene({ x: 300, y: 100 }))).toBe(false);
+    expect(combat.armed).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    elapse(ATTACK_PIN_MS);
+    expect(combat.castArmed(scene({ x: 300, y: 100 }))).toBe(true);
+  });
+
+  it("should leave no page armed after a reset", () => {
+    const { combat } = combatOnStage();
+    combat.pressPage("witchlight", me);
+    combat.reset();
+    expect(combat.armed).toBe(false);
+  });
+});
+
+describe("PlayerCombat one aim at a time (FS-X2CMM R41; FS-04EEA R38 one hold at a time; I-X2CMM-23)", () => {
+  /** An archer holding Arrow Rain, with stamina to spare. */
+  const archer: ReturnType<CombatSelf> = {
+    passive_ranks: { "archer.t3": 1 },
+    tree_ability_cooldown: { remaining: 0, total: 12 },
+    resource: { kind: "stamina", current: 100, max: 100, ability_cost: 25, tree_ability_cost: 35 },
+  };
+  const near = { x: 220, y: 150 };
+
+  it("should disarm an armed page on 3 and raise no Arrow Rain circle, so its release sends nothing", () => {
+    const { combat, send, look } = combatOnStage(archer);
+    combat.pressPage("call_the_hound", me);
+
+    expect(combat.treeAbility("archer", me, near)).toBe(false);
+    expect(combat.armed).toBe(false);
+    expect(look.endReticle).toHaveBeenCalledTimes(1);
+    expect(combat.rainAiming).toBe(false);
+    expect(look.rainAim).not.toHaveBeenCalled();
+    expect(combat.releaseTreeAbility("archer", me, near)).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should disarm an armed page on 3 for a class that casts at once, sending nothing", () => {
+    const { combat, send } = combatOnStage({
+      passive_ranks: { "mage.t3": 1 },
+      tree_ability_cooldown: { remaining: 0, total: 12 },
+      resource: { kind: "mana", current: 150, max: 150, ability_cost: 25, tree_ability_cost: 35 },
+    });
+    combat.pressPage("witchlight", me);
+
+    expect(combat.treeAbility("mage", me, near)).toBe(false);
+    expect(combat.armed).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should refuse a page pressed during an Arrow Rain aim, the aim kept and its release still sent", () => {
+    const { combat, send, look } = combatOnStage(archer);
+    combat.treeAbility("archer", me, near);
+
+    expect(combat.pressPage("call_the_hound", me)).toBe(false);
+    expect(combat.pressPage("trackers_eye", me)).toBe(false);
+    expect(combat.armed).toBe(false);
+    expect(look.endReticle).not.toHaveBeenCalled();
+    expect(combat.rainAiming).toBe(true);
+    expect(combat.releaseTreeAbility("archer", me, near)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(ActionType.CastSkill, expect.objectContaining({ skill_id: "arrow_rain" }));
+  });
+
+  it("should refuse a page pressed during a Shadow Shot hold, sending nothing and arming nothing", () => {
+    const { combat, send } = combatOnStage(archer);
+    combat.cast("special", "archer", me, near);
+    expect(combat.aiming).toBe(true);
+
+    expect(combat.pressPage("call_the_hound", me)).toBe(false);
+    expect(combat.pressPage("trackers_eye", me)).toBe(false);
+    expect(combat.armed).toBe(false);
+    expect(combat.aiming).toBe(true);
+    expect(send).not.toHaveBeenCalled();
   });
 });

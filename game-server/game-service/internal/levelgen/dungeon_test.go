@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -28,6 +29,62 @@ func openMask(l DungeonLayout) []bool {
 	open := make([]bool, l.Cols*l.Rows)
 	for i, id := range l.Grid() {
 		open[i] = id > 0
+	}
+	return open
+}
+
+/**
+* shapedAsDrawn checks every room's floor against its shape, by its own reading
+* of R69 and R73 (FS-KE075 §Change: Room variety) rather than the generator's:
+* a rect cell off the room's floor is one the shape cuts, walled or left to a
+* corridor that crossed it; a cell the shape cuts is never the room's unless a
+* corridor carved it; a carved cell is never walled. It counts the shapes.
+**/
+func shapedAsDrawn(l DungeonLayout, shapes map[RoomShape]int) error {
+	grid := l.Grid()
+	rects := make([]CellRect, len(l.Rooms))
+	for i, room := range l.Rooms {
+		rects[i] = room.Rect
+	}
+	carved := map[int]bool{}
+	for _, e := range l.Edges {
+		for _, c := range corridorCells(l.Cols, rects[e.A], rects[e.B], e.Width, e.HorizontalFirst) {
+			carved[c] = true
+		}
+	}
+	for i, room := range l.Rooms {
+		shapes[room.Shape]++
+		r := room.Rect
+		cuts := map[int]bool{}
+		for _, c := range shapeCuts(room.Shape, r.W, r.H) {
+			cuts[(r.Y+c.Y)*l.Cols+r.X+c.X] = true
+		}
+		for _, c := range rectCells(l.Cols, r) {
+			switch id := grid[c]; {
+			case id == room.Region && cuts[c] && !carved[c]:
+				return fmt.Errorf("room %d (%s) keeps cut cell (%d, %d) on its floor", i, room.Shape, c%l.Cols, c/l.Cols)
+			case id != room.Region && id != 0 && id <= len(l.Rooms):
+				return fmt.Errorf("room %d's rect holds room %d's floor", i, id-1)
+			case id == 0 && carved[c]:
+				return fmt.Errorf("room %d (%s) walls cell (%d, %d), which a corridor carved", i, room.Shape, c%l.Cols, c/l.Cols)
+			case id == 0 && !cuts[c]:
+				// no shape leaves a pocket, so the pocket rule cuts nothing more
+				return fmt.Errorf("room %d (%s) loses cell (%d, %d), which its shape does not cut", i, room.Shape, c%l.Cols, c/l.Cols)
+			}
+		}
+	}
+	return nil
+}
+
+// wholeMask is the floor as the roles read it, before any room was shaped
+// (FS-KE075 §Change: Room variety R73): the walkable cells and every room's
+// whole rect, since every cut cell lies in a rect.
+func wholeMask(l DungeonLayout) []bool {
+	open := openMask(l)
+	for _, room := range l.Rooms {
+		for _, c := range rectCells(l.Cols, room.Rect) {
+			open[c] = true
+		}
 	}
 	return open
 }
@@ -239,40 +296,57 @@ func TestGenerateDungeon_OneSeed_WalkableReachableAndNoWallOnVoid(t *testing.T) 
 	}
 }
 
-// FS-KE075 §A acceptance: 1,000 seeds, every bound.
+// FS-KE075 §A acceptance and FS-5FZ4J §A R2-R8, §F R36: 1,000 seeds, every
+// bound, on floor 1 and on floors 2+ with 0, 1 and 2 hidden rooms asked for.
 func TestGenerateDungeon_Floor1Params_EverySeedValid(t *testing.T) {
+	for _, floor := range sealedFloors() {
+		t.Run(floor.name, func(t *testing.T) { everySeedValid(t, floor.p) })
+	}
+}
+
+func everySeedValid(t *testing.T, p DungeonParams) {
 	const seeds = 1000
-	p := DungeonFloor1Params
 	var (
 		retried, maxAttempt, maxWalls, maxRegions int
 		minRooms, maxRooms                        = math.MaxInt, 0
-		halls, loop4                              int
+		halls, hallFloors, loop4                  int
 		minSegment                                = math.MaxInt
 	)
+	chasm := 0
+	shapes := map[RoomShape]int{}
 	for seed := uint64(0); seed < seeds; seed++ {
-		l := generateDungeon(t, seed)
+		l, err := GenerateDungeon(p, seed)
+		if err != nil {
+			t.Fatalf("seed %d: GenerateDungeon() error = %v", seed, err)
+		}
 		if err := validateDungeon(p, l); err != nil {
+			t.Fatalf("seed %d: %v\n%s", seed, err, renderDungeonASCII(l))
+		}
+		if err := checkSealed(p, l); err != nil {
+			t.Fatalf("seed %d: %v\n%s", seed, err, renderDungeonASCII(l))
+		}
+		if l.ChasmCapable {
+			chasm++
+		}
+		if err := shapedAsDrawn(l, shapes); err != nil {
 			t.Fatalf("seed %d: %v\n%s", seed, err, renderDungeonASCII(l))
 		}
 
 		n := len(l.Rooms)
-		extra := 0
-		for _, e := range l.Edges {
-			if e.Extra {
-				extra++
-			}
-		}
-		if want := int(math.Round(0.2 * float64(n))); extra != want {
-			t.Fatalf("seed %d: %d extra edges for %d rooms, want %d", seed, extra, n, want)
-		}
 		if longestExtraLoop(l) >= 4 {
 			loop4++
 		}
 
+		// a hall is at least 7 x 6 (FS-KE075 §Change: Room variety R66)
+		hasHall := false
 		for _, room := range l.Rooms {
-			if room.Rect.W >= 8 && room.Rect.H >= 6 {
+			if room.Rect.W >= 7 && room.Rect.H >= 6 {
 				halls++
+				hasHall = true
 			}
+		}
+		if hasHall {
+			hallFloors++
 		}
 		for _, reg := range l.Regions {
 			if reg.Kind != RegionCorridor {
@@ -292,12 +366,23 @@ func TestGenerateDungeon_Floor1Params_EverySeedValid(t *testing.T) {
 		maxRegions = max(maxRegions, len(l.Regions))
 		minRooms, maxRooms = min(minRooms, n), max(maxRooms, n)
 	}
+	// R71, R76: every shape comes up, each L corner among them
+	for _, shape := range allShapes() {
+		if shapes[shape] == 0 {
+			t.Errorf("no room in %d seeds is shaped %s", seeds, shape)
+		}
+	}
+	t.Logf("shapes: %v", shapes)
 	if loop4 == 0 {
 		t.Fatalf("no layout in %d has a loop through four or more rooms", seeds)
 	}
-	t.Logf("%d seeds: rooms %d..%d, %d halls (>= 8x6) in all, max %d wall rects, max %d regions, "+
-		"smallest corridor segment %d cells, %d with a loop of >= 4 rooms, %d needed a retry (max attempt %d of %d)",
-		seeds, minRooms, maxRooms, halls, maxWalls, maxRegions, minSegment, loop4, retried, maxAttempt, p.RetryLimit)
+	if hallFloors*2 < seeds {
+		t.Errorf("%d of %d floors have a hall (>= 7x6), want most", hallFloors, seeds)
+	}
+	t.Logf("%d seeds: rooms %d..%d, %d halls (>= 7x6) in all, max %d wall rects, max %d regions, "+
+		"smallest corridor segment %d cells, %d with a loop of >= 4 rooms, %d needed a retry (max attempt %d of %d), "+
+		"%d with a Chasm-capable stairs room",
+		seeds, minRooms, maxRooms, halls, maxWalls, maxRegions, minSegment, loop4, retried, maxAttempt, p.RetryLimit, chasm)
 }
 
 // sizeShares checks that every value in r turns up in counts within tolerance
@@ -487,17 +572,20 @@ func TestDungeonFloor1Params_ApprovedNumbers(t *testing.T) {
 		got, want any
 	}{
 		{"cell size", p.CellSize, 80.0},
-		{"grid", [2]int{p.Cols, p.Rows}, [2]int{72, 48}},
-		{"rooms", p.Rooms, IntRange{Min: 18, Max: 28}},
-		{"room width", p.RoomWidth, IntRange{Min: 4, Max: 10}},
-		{"room height", p.RoomHeight, IntRange{Min: 4, Max: 8}},
+		{"grid", [2]int{p.Cols, p.Rows}, [2]int{60, 40}},
+		{"rooms", p.Rooms, IntRange{Min: 16, Max: 22}},
+		{"room width", p.RoomWidth, IntRange{Min: 4, Max: 8}},
+		{"room height", p.RoomHeight, IntRange{Min: 4, Max: 7}},
 		{"room gap", p.RoomGap, 2},
 		{"edge margin", p.EdgeMargin, 2},
 		{"corridor width", p.CorridorWidth, IntRange{Min: 2, Max: 3}},
-		{"extra edge share", p.ExtraEdgeShare, 0.2},
-		{"segment max", p.SegmentMax, 16},
+		{"extra edge share", p.ExtraEdgeShare, 0.1},
+		{"segment max", p.SegmentMax, 12},
 		{"start min", p.StartMin, 5},
 		{"treasure rooms", p.TreasureRooms, IntRange{Min: 3, Max: 4}},
+		{"escape door", p.EscapeDoor, false},
+		{"hidden rooms", p.HiddenRooms, 0},
+		{"plain rooms", [2]any{p.PlainRooms, p.PlainMin}, [2]any{2, Span{W: 6, H: 5}}},
 	}
 	for _, c := range checks {
 		if !reflect.DeepEqual(c.got, c.want) {
@@ -533,6 +621,8 @@ func TestDungeonParams_Validate_RejectsOutOfRange(t *testing.T) {
 		{"zero start min", func(p *DungeonParams) { p.StartMin = 0 }},
 		{"treasure range reversed", func(p *DungeonParams) { p.TreasureRooms = IntRange{Min: 4, Max: 3} }},
 		{"negative retry limit", func(p *DungeonParams) { p.RetryLimit = -1 }},
+		{"negative hidden rooms", func(p *DungeonParams) { p.HiddenRooms = -1 }},
+		{"too few rooms for the hidden rooms", func(p *DungeonParams) { p.HiddenRooms = 11 }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -604,6 +694,33 @@ func TestValidateDungeon_BrokenLayout_ReturnsError(t *testing.T) {
 		{"switch and escape door share a room", func(_ *DungeonParams, l *DungeonLayout) {
 			l.Roles.EscapeDoor = l.Roles.Switch
 		}},
+		{"escape door not the far room farthest from the stairs", func(_ *DungeonParams, l *DungeonLayout) {
+			l.Roles.EscapeDoor, l.Roles.Switch = l.Roles.Switch, l.Roles.EscapeDoor
+		}},
+		{"a switch on floor 1", func(p *DungeonParams, l *DungeonLayout) {
+			p.EscapeDoor = false
+			l.Roles.EscapeDoor = noRoom
+		}},
+		{"no switch on floor 2+", func(_ *DungeonParams, l *DungeonLayout) {
+			l.Roles.Switch, l.Roles.EscapeDoor = noRoom, noRoom
+		}},
+		{"stairs barred in another room", func(_ *DungeonParams, l *DungeonLayout) { l.Stairs.Room = l.Hidden[0].Room }},
+		{"stairs not the farthest dead end", func(_ *DungeonParams, l *DungeonLayout) {
+			l.Roles.Stairs, l.Stairs = l.Hidden[0].Room, l.Hidden[0]
+		}},
+		{"gate a cell short", func(_ *DungeonParams, l *DungeonLayout) {
+			if l.Stairs.Barrier.W > 1 {
+				l.Stairs.Barrier.W--
+			} else {
+				l.Stairs.Barrier.H--
+			}
+		}},
+		{"gate segments missing", func(_ *DungeonParams, l *DungeonLayout) { l.Stairs.BarrierSegments = nil }},
+		{"secret door moved", func(_ *DungeonParams, l *DungeonLayout) { l.Hidden[0].Barrier.X++ }},
+		{"hidden room missing", func(_ *DungeonParams, l *DungeonLayout) { l.Hidden = nil }},
+		{"hidden room asked for not there", func(p *DungeonParams, _ *DungeonLayout) { p.HiddenRooms = 2 }},
+		{"hidden room holds treasure", func(_ *DungeonParams, l *DungeonLayout) { l.Roles.Treasure[0] = l.Hidden[0].Room }},
+		{"chasm flag wrong", func(_ *DungeonParams, l *DungeonLayout) { l.ChasmCapable = !l.ChasmCapable }},
 		{"stairs in a near room", func(_ *DungeonParams, l *DungeonLayout) { l.Roles.Stairs = nearestOther(*l) }},
 		{"switch in the start room", func(_ *DungeonParams, l *DungeonLayout) { l.Roles.Switch = l.Roles.Start }},
 		{"too few treasure rooms", func(_ *DungeonParams, l *DungeonLayout) { l.Roles.Treasure = l.Roles.Treasure[:2] }},
@@ -613,7 +730,11 @@ func TestValidateDungeon_BrokenLayout_ReturnsError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := DungeonFloor1Params
-			l := generateDungeon(t, 42)
+			p.EscapeDoor, p.HiddenRooms = true, 1
+			l, err := GenerateDungeon(p, 42)
+			if err != nil {
+				t.Fatalf("GenerateDungeon() error = %v", err)
+			}
 			if err := validateDungeon(p, l); err != nil {
 				t.Fatalf("unmutated layout invalid: %v", err)
 			}

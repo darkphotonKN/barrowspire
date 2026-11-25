@@ -1,6 +1,7 @@
 /**
  * The logical view and the render scale (FS-ZAJMH §A): who owns them (`viewport`), how a camera
- * is fitted, bounded and made to follow under them (`camera`), how the game follows a change
+ * is fitted, bounded and made to follow under them (`camera`), how a world's camera stands closer
+ * with its HUD on a camera of its own (`worldView`), how the game follows a change
  * (`game`), how a mask is laid in screen space (`mask`), how the HUD keeps to the view's edges
  * (`anchor`), and every game object rounded to the backing px (`rounding`, ADR-0057), installed
  * once by whatever configures a game (the game bridge, the dev gallery). The Phaser plugin is imported from `./ViewportFit` by the
@@ -20,6 +21,7 @@ export {
 export { anchorAt, relayoutOn, type Anchor, type Placement } from "./anchor";
 export {
   STAGE_WIDTH,
+  WORLD_ZOOM,
   afterFrameSetUp,
   boundCamera,
   centreStage,
@@ -29,8 +31,11 @@ export {
   roundsPixels,
   stagePoint,
   viewRect,
+  worldZoomOf,
+  zoomWorld,
   type ViewCamera,
 } from "./camera";
+export { HUD_DEPTH_FLOOR, zoomWorldView, type WorldViewScene } from "./worldView";
 export { crispen } from "./crispen";
 export { roundEveryObject } from "./rounding";
 export {

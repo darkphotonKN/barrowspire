@@ -24,6 +24,9 @@ service WalletService {
   rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {}
   // Add gold to the caller's own account once per idempotency key.
   rpc Credit(CreditRequest) returns (CreditResponse) {}
+  // Take gold from the caller's own account once per idempotency key, up to
+  // what is not already held.
+  rpc Debit(DebitRequest) returns (DebitResponse) {}
 }
 
 // CreateAccount
@@ -148,5 +151,27 @@ message CreditRequest {
 // applied is false when an earlier call with the same key already credited:
 // success, and nothing moved.
 message CreditResponse {
+  bool applied = 1;
+}
+
+// Debit
+// The idempotent debit (FS-9JV5K Req 13, ADR-0093): gold taken from the account
+// of the member in the forwarded token, once per caller-minted key, bounded by
+// available gold (held gold is not spendable). An in-run purchase pays with it.
+// Not Withdraw, which takes no key.
+//
+// Names no account or member on purpose, same rule as CreditRequest: the account
+// is always the caller's own, so nobody can debit another's.
+message DebitRequest {
+  int64  amount          = 1;  // gold to take, must be positive
+  // Minted by the caller per purchase and stable across its retries (ADR-0009,
+  // ADR-0093). Required.
+  string idempotency_key = 2;
+}
+
+// applied is false when an earlier call with the same key already debited:
+// success, and nothing moved. Not enough available gold fails with
+// FailedPrecondition and leaves the key unused.
+message DebitResponse {
   bool applied = 1;
 }

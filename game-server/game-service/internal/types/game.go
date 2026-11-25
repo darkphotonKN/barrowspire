@@ -33,6 +33,9 @@ type PlayerState struct {
 	PublicPlayerState
 	Inventory []*ItemState    `json:"inventory"`
 	Equipment *EquipmentState `json:"equipment"`
+	// Book is the owner's class book, in a run only: never another player's,
+	// who is sent PublicPlayerState alone. FS-X2CMM §F R32–R33.
+	Book *BookState `json:"book,omitempty"`
 }
 
 // PublicPlayerState is what a player shows anyone in their world: who they
@@ -58,6 +61,36 @@ type PublicPlayerState struct {
 	// Specialization is the body's (systems.Specialization), public as the
 	// title is; absent before the pick. FS-E1ZDG §B R9.
 	Specialization string `json:"specialization,omitempty"`
+	// BookStates are the timed book states on the delver; absent when none.
+	// FS-X2CMM §F R34.
+	BookStates []BookTimedState `json:"book_states,omitempty"`
+	// PoisonedFor is the seconds of poison left, absent when not poisoned:
+	// public, so teammates' bars can show it. FS-5FZ4J §I R47.
+	PoisonedFor float64 `json:"poisoned_for,omitempty"`
+	// Blessed is true while the delver carries the hallowed altar's Blessing,
+	// absent when not: public, as poison is. FS-5FZ4J §I R47.
+	Blessed bool `json:"blessed,omitempty"`
+	// ContractSettled is true while the delver holds Contract Settled,
+	// absent when not: public, as the Blessing is. FS-4EC7Z §F R25.
+	ContractSettled bool `json:"contract_settled,omitempty"`
+	// Roll is the delver's roll in flight, absent when not rolling: public, so
+	// every viewer can draw it. FS-7P736 §A R12.
+	Roll *RollState `json:"roll,omitempty"`
+}
+
+// RollState is a roll in flight as every viewer is told it: its unit heading.
+// FS-7P736 §A R12.
+type RollState struct {
+	DirX float64 `json:"dir_x"`
+	DirY float64 `json:"dir_y"`
+}
+
+// ContractState is the delve's contract as its taker is told it: its state
+// (active, settled or lost) and, while active, the mark's heading from them
+// as a compass word, never its position. FS-4EC7Z §F R25, §E R21.
+type ContractState struct {
+	State   string `json:"state"`
+	Heading string `json:"heading,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole
@@ -94,9 +127,11 @@ type ParryState struct {
 }
 
 // TimedOpenState is a delver's timed open as its owner is told it: the
-// container being opened and how far along it is. FS-MQYEX §Requirements 18.
+// target being worked, what for, and how far along it is. FS-MQYEX
+// §Requirements 18; target_kind open, search or pray, FS-5FZ4J §I R49.
 type TimedOpenState struct {
-	EntityID uuid.UUID `json:"entity_id"`
+	EntityID   uuid.UUID `json:"entity_id"`
+	TargetKind string    `json:"target_kind"`
 	// Elapsed is the seconds of simulation time counted so far.
 	Elapsed float64 `json:"elapsed"`
 	// Duration is the seconds it takes.
@@ -371,6 +406,10 @@ type MonsterState struct {
 	EntityID uuid.UUID `json:"entity_id"`
 	// ghoul | troll | demon | blood_demon | bone_archer
 	Archetype string `json:"archetype"`
+	// Look is a hostile human's art variant within its archetype (a turned
+	// Cutthroat's `cutthroat_a`), absent for every archetype whose look is the
+	// archetype itself (FS-4EC7Z §F R24)
+	Look string `json:"look,omitempty"`
 	// server-authored, elite prefix included, level excluded: the client
 	// composes the nameplate
 	Name     string   `json:"name"`
@@ -428,6 +467,148 @@ type AltarState struct {
 	EntityID uuid.UUID `json:"entity_id"`
 	Position *Position `json:"position"`
 	Burned   bool      `json:"burned"`
+}
+
+// FountainState is a floor's healing fountain: where it stands and whether
+// its pool is spent. FS-5FZ4J §I R46.
+type FountainState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+	Dry      bool      `json:"dry"`
+}
+
+// HallowedAltarState is the hallowed altar on its floor, once reachable:
+// prayed once a prayer at it completed. Never the Altar of Consecration's
+// AltarState. FS-5FZ4J §I R46.
+type HallowedAltarState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+	Prayed   bool      `json:"prayed"`
+}
+
+// EncounterNPCState is one encounter NPC on the wire. Kind is pilgrim,
+// captive or cutthroat; Look its art variant; Stance peaceful, caged or ally;
+// Action idle, move, attack, cower or dead. Line is the key of the last line
+// it said and LineAt when, on its own clock; both absent until it says one.
+// HirerID is an ally's hirer's member id, absent for any other. FS-4EC7Z §F
+// R22, R26.
+type EncounterNPCState struct {
+	EntityID  uuid.UUID  `json:"entity_id"`
+	Kind      string     `json:"kind"`
+	Look      string     `json:"look"`
+	Position  Position   `json:"position"`
+	Facing    Position   `json:"facing"`
+	Health    int        `json:"health"`
+	MaxHealth int        `json:"max_health"`
+	Stance    string     `json:"stance"`
+	Action    string     `json:"action"`
+	Line      string     `json:"line,omitempty"`
+	LineAt    *float64   `json:"line_at,omitempty"`
+	HirerID   *uuid.UUID `json:"hirer_id,omitempty"`
+}
+
+// CageState is the Captives' cage on the wire, sent whole: where it stands
+// and whether it is open. FS-4EC7Z §F R23.
+type CageState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position Position  `json:"position"`
+	Open     bool      `json:"open"`
+}
+
+// EncounterKeyState is the cage key lying on the floor, sent whole while it
+// lies. FS-4EC7Z §F R23.
+type EncounterKeyState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position Position  `json:"position"`
+}
+
+// MerchantState is the wandering merchant on his floor and his wares, sent
+// whole; absent in the hub, a field and on a floor without him. FS-9JV5K §A R4.
+type MerchantState struct {
+	EntityID uuid.UUID            `json:"entity_id"`
+	Position *Position            `json:"position"`
+	Wares    []*MerchantWareState `json:"wares"`
+}
+
+// MerchantWareState is one of his wares: what it is, its price in gold, how
+// many are neither sold nor reserved, and the item the client draws, absent
+// for the tome.
+type MerchantWareState struct {
+	Ware  string            `json:"ware"`
+	Price int64             `json:"price"`
+	Left  int               `json:"left"`
+	Item  *MerchantWareItem `json:"item,omitempty"`
+}
+
+// MerchantWareItem is a ware's display data: its name, rarity and the stats
+// the client's icon resolver keys on (item type, healing, mana), since the
+// catalogue carries no icon or item code.
+type MerchantWareItem struct {
+	Name          string   `json:"name"`
+	ItemType      ItemType `json:"item_type"`
+	Rarity        string   `json:"rarity,omitempty"`
+	HealingAmount int      `json:"healing_amount,omitempty"`
+	ManaAmount    int      `json:"mana_amount,omitempty"`
+}
+
+// CellState is a cell's column and row on the floor map's grid.
+type CellState struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+// SealState is a sealed floor's seal: the current, first unbroken seal's kind
+// and stage, or the last one's once all are broken; stages is how many the
+// floor chains; broken is set once every one is. FS-5FZ4J §I R46, R48.
+type SealState struct {
+	Kind   string `json:"kind"`
+	Stage  int    `json:"stage"`
+	Stages int    `json:"stages"`
+	Broken bool   `json:"broken"`
+	// KeyCarried is true while the party carries the floor's stair key and
+	// its seal is unbroken (§E R32; amended 2026-11-25: false once the key
+	// has turned the gate), absent otherwise
+	KeyCarried bool `json:"key_carried,omitempty"`
+	// WindowEndsIn is the seconds left of a Braziers window while one runs
+	// (§E R34), absent otherwise
+	WindowEndsIn float64 `json:"window_ends_in,omitempty"`
+}
+
+// SealPieceState is one seal piece: a lever's glyph, absent on the others;
+// active a lever down, a plate held, a brazier lit, a bridge lowered.
+// FS-5FZ4J §I R46.
+type SealPieceState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Kind     string    `json:"kind"`
+	Position *Position `json:"position"`
+	Cell     CellState `json:"cell"`
+	Glyph    string    `json:"glyph,omitempty"`
+	Active   bool      `json:"active"`
+}
+
+// BarrierState is one barrier, a gate, a secret door or a pit, and the cells
+// it covers. FS-5FZ4J §I R46. Revealed is set on a secret door the
+// Cutthroats' tip revealed, absent on every other (FS-4EC7Z §F R28).
+type BarrierState struct {
+	EntityID uuid.UUID   `json:"entity_id"`
+	Kind     string      `json:"kind"`
+	Cells    []CellState `json:"cells"`
+	Open     bool        `json:"open"`
+	Revealed bool        `json:"revealed,omitempty"`
+}
+
+// TrapState is one detected trap (FS-5FZ4J §I R46): armed false while a
+// fired trap waits to re-arm and for a spent tripwire, a gas vent always
+// armed; revealed once a book page revealed it (FS-X2CMM §J R49). PuffedAt is
+// a gas vent's last puff, in seconds of the floor's simulation time, absent
+// before its first; the client reads a puff off it rising (R48).
+type TrapState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Kind     string    `json:"kind"`
+	Cell     CellState `json:"cell"`
+	Armed    bool      `json:"armed"`
+	Revealed bool      `json:"revealed"`
+	PuffedAt *float64  `json:"puffed_at,omitempty"`
 }
 
 // GateState is a hub gate as the client sees it: where it goes, where it
@@ -535,6 +716,27 @@ const (
 	// ItemTypeRing has no base stats: its power is its affixes. FS-4R9M9 §Requirements 5.
 	ItemTypeRing ItemType = "ring"
 )
+
+// AntidoteName is the antidote's catalogue name. The template data the session
+// loads carries no item code, so the name is how the game knows an antidote:
+// a consumable keeps its base name whatever rarity it rolls. FS-9JV5K §D R16.
+const AntidoteName = "Antidote"
+
+// IsAntidote is whether an item of itemType named name is an antidote.
+func IsAntidote(itemType ItemType, name string) bool {
+	return itemType == ItemTypeConsumable && name == AntidoteName
+}
+
+// RestoringDraughtName is the Restoring Draught's catalogue name, by which the
+// game knows one as it knows an antidote. FS-9JV5K §Change: The Restoring
+// Draught D1.
+const RestoringDraughtName = "Restoring Draught"
+
+// IsRestoringDraught is whether an item of itemType named name is a Restoring
+// Draught.
+func IsRestoringDraught(itemType ItemType, name string) bool {
+	return itemType == ItemTypeConsumable && name == RestoringDraughtName
+}
 
 type ArmorSlot string
 

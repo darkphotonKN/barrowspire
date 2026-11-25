@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { screenToWorld } from "@/render/iso";
 import { BARROW_HEX } from "@/utils/theme";
 import {
   FIXED_LIGHT_CAP,
+  FloorLights,
   budgetLights,
   interactablePool,
   nearLights,
@@ -163,5 +165,132 @@ describe("nearLights under the fog (FS-SRA9J §C.12)", () => {
     const kept = nearLights(floor, everywhere, 10, (l) => l.region === 2);
     expect(kept).toHaveLength(10);
     expect(kept.every((l) => l.region === 2)).toBe(true);
+  });
+});
+
+// the review's fix round 1: the hallowed altar's candles are their own kind, not a brazier's
+describe("budgetLights: the hallowed altar's candles (FS-5FZ4J §J R51, FS-8RBQY §C.6)", () => {
+  it("should drop the floor's lights in order: slits, braziers, sconces, the altar's candles, then interactable pools; never the stairs", () => {
+    const floor = [
+      ...row("interactable", 2, 400),
+      ...row("hallowed_altar", 1, 500),
+      ...row("sconce", 3, 100),
+      ...row("brazier", 3, 300),
+      ...row("slit", 3, 0),
+      ...row("stairs", 1, 200),
+    ];
+    const left = (cap: number) => {
+      const kept = budgetLights(floor, cap);
+      return (["slit", "brazier", "sconce", "hallowed_altar", "interactable", "stairs"] as const).map((k) => count(kept, k));
+    };
+    expect(left(13)).toEqual([3, 3, 3, 1, 2, 1]);
+    expect(left(10)).toEqual([0, 3, 3, 1, 2, 1]);
+    expect(left(7)).toEqual([0, 0, 3, 1, 2, 1]);
+    expect(left(4)).toEqual([0, 0, 0, 1, 2, 1]);
+    expect(left(3)).toEqual([0, 0, 0, 0, 2, 1]);
+    expect(left(1)).toEqual([0, 0, 0, 0, 0, 1]);
+  });
+});
+
+// FS-9JV5K §F R21 (I-9JV5K-5): the merchant's lantern marks a trader to reach, as an interactable's pool does
+describe("budgetLights: the merchant's lantern (FS-9JV5K §F R21, FS-8RBQY §C.6)", () => {
+  it("should drop the lantern after the altar's candles and before the interactable pools; never the stairs", () => {
+    const floor = [...row("interactable", 1, 400), ...row("merchant_lantern", 1, 600), ...row("hallowed_altar", 1, 500), ...row("stairs", 1, 200)];
+    const left = (cap: number) => (["hallowed_altar", "merchant_lantern", "interactable", "stairs"] as const).map((k) => count(budgetLights(floor, cap), k));
+    expect(left(3)).toEqual([0, 1, 1, 1]);
+    expect(left(2)).toEqual([0, 0, 1, 1]);
+  });
+});
+
+describe("FloorLights: a dungeon floor's fixed lights, by chunk and region, under the cap (FS-KE075 §H.45, FS-SRA9J §C.12)", () => {
+  type Src = { x: number; y: number; name: string };
+  const src = (name: string, x: number, y = 0): Src => ({ x, y, name });
+  /** Chunks 1000 screen px wide; regions by world x, 100 px wide, as the floor's first grid. */
+  const chunkAt = (p: { x: number }) => Math.floor(p.x / 1000);
+  const regionAt = (p: { x: number }) => Math.floor(p.x / 100);
+  const floorLights = () => {
+    const onMap: string[] = [];
+    const calls: string[] = [];
+    const lights = new FloorLights<Src>(chunkAt, regionAt, {
+      add: (s) => (onMap.push(s.name), calls.push(`add ${s.name}`)),
+      remove: (s) => (onMap.splice(onMap.indexOf(s.name), 1), calls.push(`remove ${s.name}`)),
+    });
+    return { lights, onMap, calls };
+  };
+  const everywhere = () => true;
+
+  it("should hold each light with its chunk by its screen point and its region by the world point it stands on", () => {
+    const { lights } = floorLights();
+    lights.add("sconce", src("a", 1500), { x: 250, y: 40 });
+    expect(lights.all).toEqual([{ kind: "sconce", at: { x: 1500, y: 0 }, light: { source: src("a", 1500), at: { x: 250, y: 40 } }, chunk: 1, region: 2 }]);
+  });
+
+  it("should take the region under its screen point for a light standing on no world point (a wall's slit)", () => {
+    const { lights } = floorLights();
+    const s = src("slit", 800, 400);
+    lights.add("slit", s);
+    const under = Math.floor(screenToWorld(800, 400).x / 100);
+    expect(lights.all[0]).toMatchObject({ chunk: 0, region: under });
+  });
+
+  it("should hold a source once, however often it is added", () => {
+    const { lights } = floorLights();
+    const s = src("a", 10);
+    lights.add("brazier", s, { x: 10, y: 0 });
+    lights.add("brazier", s, { x: 10, y: 0 });
+    expect(lights.all).toHaveLength(1);
+  });
+
+  it("should light those in shown chunks and visible regions, a light in no region lit wherever it is shown, and put out the rest", () => {
+    const { lights, onMap, calls } = floorLights();
+    lights.add("sconce", src("near", 100), { x: 150, y: 0 });
+    lights.add("sconce", src("dark", 200), { x: 350, y: 0 });
+    lights.add("sconce", src("none", 300), { x: 50, y: 0 });
+    lights.add("sconce", src("far", 2100), { x: 150, y: 0 });
+    lights.light((chunk) => chunk === 0, (region) => region === 1);
+    expect(onMap.sort()).toEqual(["near", "none"]);
+    expect([...lights.lit].map((s) => s.name).sort()).toEqual(["near", "none"]);
+    // the same view again stamps nothing again
+    calls.length = 0;
+    lights.light((chunk) => chunk === 0, (region) => region === 1);
+    expect(calls).toEqual([]);
+    lights.light((chunk) => chunk === 2, everywhere);
+    expect(onMap).toEqual(["far"]);
+  });
+
+  it("should never light more than the cap at once, dropped by the floor's order", () => {
+    const { lights } = floorLights();
+    for (let i = 0; i < 4; i++) lights.add("slit", src(`slit${i}`, i * 9), { x: 150, y: i });
+    for (let i = 0; i < 3; i++) lights.add("sconce", src(`sconce${i}`, 50 + i * 9), { x: 150, y: i });
+    lights.light(everywhere, everywhere, 5);
+    expect([...lights.lit].map((s) => s.name).filter((n) => n.startsWith("sconce"))).toHaveLength(3);
+    expect(lights.lit.size).toBe(5);
+  });
+
+  it("should take removed lights off the floor, and off the light-map only those it lit", () => {
+    const { lights, calls } = floorLights();
+    const lit = src("lit", 100);
+    const unlit = src("unlit", 2100);
+    lights.add("brazier", lit, { x: 150, y: 0 });
+    lights.add("brazier", unlit, { x: 150, y: 0 });
+    lights.light((chunk) => chunk === 0, everywhere);
+    calls.length = 0;
+    lights.remove([lit, unlit]);
+    expect(lights.all).toEqual([]);
+    expect(lights.lit.size).toBe(0);
+    expect(calls).toEqual(["remove lit"]);
+  });
+
+  it("should give every light the new grid's region on a re-region, and place the lights added after by it", () => {
+    const { lights, onMap } = floorLights();
+    lights.add("sconce", src("a", 100), { x: 150, y: 0 });
+    lights.light(everywhere, (region) => region === 1);
+    expect(onMap).toEqual(["a"]);
+    // the new grid: regions 50 px wide
+    lights.reRegion((p) => Math.floor(p.x / 50));
+    lights.add("sconce", src("b", 200), { x: 160, y: 0 });
+    expect(lights.all.map((l) => l.region)).toEqual([3, 3]);
+    lights.light(everywhere, (region) => region === 3);
+    expect(onMap.sort()).toEqual(["a", "b"]);
   });
 });

@@ -8,6 +8,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -207,6 +208,41 @@ var actingCases = []actingCase{
 			return wornRing1(frame.CurrentPlayer) == uuid.Nil && carries(frame.CurrentPlayer, ringID)
 		}
 	}},
+	// FS-7P736 §A R1: a member in the run rolls, their roll cooldown running
+	{constants.ActionRoll, func(t *testing.T, world *game.Session, member, _ actor) (map[string]interface{}, func(*types.ClientGameState) bool) {
+		return map[string]interface{}{"dir_x": -1.0, "dir_y": 0.0}, func(frame *types.ClientGameState) bool {
+			own := frame.CurrentPlayer
+			return own != nil && own.RollCooldown != nil
+		}
+	}},
+	// FS-9JV5K §D R17: a poisoned member drinks the antidote in their bag
+	{constants.ActionUseItem, func(t *testing.T, world *game.Session, member, _ actor) (map[string]interface{}, func(*types.ClientGameState) bool) {
+		antidoteID := actGiveAntidote(t, world, member)
+		return map[string]interface{}{"item_entity_id": antidoteID.String()}, func(frame *types.ClientGameState) bool {
+			own := frame.CurrentPlayer
+			return own != nil && own.PlayerState != nil && !carries(own, antidoteID)
+		}
+	}},
+}
+
+// actGiveAntidote poisons the member and puts an antidote in their bag, and
+// waits for a frame that shows it carried.
+func actGiveAntidote(t *testing.T, world *game.Session, a actor) uuid.UUID {
+	t.Helper()
+
+	antidoteID := world.AddItem(types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemTypeConsumable, Name: types.AntidoteName})
+	body := forfeitBodyOf(t, world, a.player.ID)
+	lc, ok := body.GetComponent(ecs.ComponentTypeItemIDList)
+	require.True(t, ok)
+	bag := append([]uuid.UUID{}, lc.(*components.ItemIDListComponent).ItemIDs...)
+	body.AddComponent(components.NewItemIDListComponent(append(bag, antidoteID)))
+	systems.Poison(body, 60)
+
+	a.inbox.awaitFrame(t, world.ID, "the antidote is carried", func(frame *types.ClientGameState) bool {
+		return carries(frame.CurrentPlayer, antidoteID)
+	})
+
+	return antidoteID
 }
 
 // A message on Wren's connection naming Kaelen in its player_id never acts for
@@ -255,6 +291,9 @@ func TestInWorldAction_RefusalAnswersTheConnectionsPlayer(t *testing.T) {
 		{constants.ActionMove, map[string]interface{}{"vx": "fast"}},
 		{constants.ActionInteract, map[string]interface{}{"entity_id": "not-an-entity"}},
 		{constants.ActionAttack, map[string]interface{}{"enemy_entity_id": "not-an-entity"}},
+		{constants.ActionUseItem, map[string]interface{}{"item_entity_id": "not-an-entity"}},
+		// FS-9JV5K §B R5-R6: routed to the run, refused out_of_reach
+		{constants.ActionBuy, map[string]interface{}{"merchant_id": "not-an-entity", "ware": "antidote"}},
 	}
 
 	for _, tc := range tests {

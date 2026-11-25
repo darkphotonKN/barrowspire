@@ -120,6 +120,28 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
     expect(live("4")).toBe(true);
   });
 
+  // FS-5FZ4J §J R55 (I-5FZ4J-11): the Blessing mark, beside the run's own health bar
+  it("should draw the status marks the run hands, and take them down as the run leaves", () => {
+    const { scene, bridge, report, standing } = onScene();
+    mountHud(scene, bridge, hudPieces(scene));
+    report("run");
+    bridge.hud({ world: "run", kind: "statusMarks", marks: ["blessed"] });
+    expect(standing().filter((m) => m.kind === "zone")).toHaveLength(1);
+    bridge.left("run");
+    expect(standing()).toEqual([]);
+  });
+
+  // FS-7P736 R16 (I-7P736-2): the roll pip beside the ability bar, labelled from RUN_ACTIONS
+  it("should draw the roll pip the run hands, labelled Space, and take it down as the run leaves", () => {
+    const { scene, bridge, report, live } = onScene();
+    mountHud(scene, bridge, hudPieces(scene));
+    report("run");
+    bridge.hud({ world: "run", kind: "roll", roll: { label: "Space", ready: true, cooldown: null } });
+    expect(live("Space")).toBe(true);
+    bridge.left("run");
+    expect(live("Space")).toBe(false);
+  });
+
   it("should take every piece down, and hear nothing more, with the scene", () => {
     const { scene, bridge, report, standing, events } = onScene();
     mountHud(scene, bridge, hudPieces(scene));
@@ -148,6 +170,10 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
       bar: () => ({ ...piece("bar")(), top: () => 612 }),
       bars: piece("bars"),
       progress: () => ({ ...piece("progress")(), cueOver: () => {} }),
+      window: piece("window"),
+      statusMarks: piece("statusMarks"),
+      contract: piece("contract"),
+      roll: piece("roll"),
     };
     mountHud(scene, bridge, build);
     report("run");

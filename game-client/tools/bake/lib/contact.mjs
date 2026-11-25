@@ -35,6 +35,13 @@
 //   contact-interior-2x.png    the town buildings' furniture and fittings at ×2 (FS-B0H2D §G R30)
 //   contact-building-2x.png    the building exteriors and stone cap at ×2 (FS-9PN7X §F)
 //   contact-hall-2x.png        the enlarged Inn's great hall and taproom at ×2
+//   contact-sealed-2x.png      the sealed floor's props, every state, at ×2 (FS-5FZ4J §K R57)
+//   contact-merchant-2x.png    the wandering merchant's idle in every facing and the icons of his
+//                              wares, the antidote beside the potions, at ×2 (FS-9JV5K §G R26)
+//   contact-encounter-2x.png   (a lineup) the dungeon encounters' cast beside a townsman, each
+//                              variant's idle and its own clip, the mark's looks, the cage and its
+//                              key (FS-4EC7Z §H R36); each cast sheet also has its own
+//                              contact-<sheet>-2x.png, every clip of every variant
 //   <LINEUPS file>             a family lineup per art slice at ×2 (FS-C8VM7 §H R48): one row per
 //                              sheet, each step beside the one below it, at key frames
 //   contact-looks-<class>.png  a class's baked spec looks beside the class (FS-1J1CB R12), at game
@@ -59,6 +66,13 @@ import { CLASS_STEMS, isLookSheet } from "./darkRoom.mjs";
 import { outlineFigures } from "./outline.mjs";
 
 export const REVIEW_DIR = join(CLIENT_ROOT, "tools", "bake", "review");
+
+/**
+ * The icons of the wandering merchant's wares (FS-9JV5K §G R26), drawn on his contact sheet: the
+ * antidote beside the health and mana potions and the tonic it must stand apart from, and the
+ * Restoring Draught's flask after them (FS-9JV5K §Change: The Restoring Draught, D6).
+ */
+export const WARE_ICONS = ["icon_potion_health", "icon_potion_mana", "icon_vial_tonic", "icon_antidote", "icon_restoring_draught"];
 
 const M = 16; // margin
 const LABEL_W = 44; // facing-name column
@@ -127,6 +141,13 @@ export const LINEUPS = [
     file: "contact-tome-altar-2x.png",
     sheets: ["chest", "tome", "altar"],
   },
+  {
+    // the dungeon encounters' cast beside a townsman of the same builds, each with its variants and
+    // its own clip (the pilgrim's cower, the captive bound), the mark's two looks, then the cage in
+    // every state and layer and its key (FS-4EC7Z §H R36)
+    file: "contact-encounter-2x.png",
+    sheets: ["folk_resident_trousers", "npc_pilgrim", "npc_captive", "npc_cutthroat", "npc_hooded_duelist", "npc_debtor_knight", "cage", "cage_key"],
+  },
 ];
 
 /** The sheets each lineup names, from `sheets`; a lineup missing one is left out. */
@@ -135,16 +156,22 @@ export function lineupSets(sheets) {
   return LINEUPS.filter((l) => l.sheets.every((n) => byName.has(n))).map((l) => ({ file: l.file, sheets: l.sheets.map((n) => byName.get(n)) }));
 }
 
+/** The clips every 8-way sheet may carry, which a lineup does not show beyond its own cells. */
+const LINEUP_SHARED = new Set(["idle", "walk", "attack", "death", "run", "parry", "attack_offhand"]);
+
 /**
  * A lineup's cells for a sheet: an 8-way sheet's idle in every facing, then its walk, its attack's
- * wind-up and strike and its death's last frame facing se; a one-facing sheet's every frame.
+ * wind-up and strike and its death's last frame facing se, then facing se the first frame of each
+ * variant's idle (`idle_<variant>`) and of each clip of its own (the pilgrim's `cower`); a
+ * one-facing sheet's every frame.
  */
 function lineupCells(s, facings) {
   if (s.directions === 1) return Object.values(s.animations).flatMap((a) => a.frames[0]);
   const se = facings.indexOf("se");
   const at = (anim, i) => s.animations[anim] && s.animations[anim].frames[se][Math.min(i, s.animations[anim].frames[se].length - 1)];
   const idle = s.animations.idle.frames.map((dir) => dir[0]);
-  return [...idle, at("walk", 2), at("attack", 1), at("attack", 3), at("death", Infinity)].filter(Boolean);
+  const own = Object.keys(s.animations).filter((a) => a.startsWith("idle_") || (!LINEUP_SHARED.has(a) && !a.includes("_")));
+  return [...idle, at("walk", 2), at("attack", 1), at("attack", 3), at("death", Infinity), ...own.map((a) => at(a, 0))].filter(Boolean);
 }
 
 /** One lineup image at zoom `z`: a row per sheet, its name over it, every frame stood on one anchor. */
@@ -605,13 +632,19 @@ export function writeReview({ sheets, facings, labels, manifest, theme, lineups 
     writeFileSync(join(dir, "contact-tower-2x.png"), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push("contact-tower-2x.png");
   }
-  for (const group of ["spire", "forest", "interior", "building", "hall"]) {
+  for (const group of ["spire", "forest", "interior", "building", "hall", "sealed"]) {
     const set = sheets.filter((s) => s.group === group);
     if (!set.length) continue;
     const two = composeContact(set, facings, labels, theme, 2);
     const file = `contact-${group}-2x.png`;
     writeFileSync(join(dir, file), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push(file);
+  }
+  const merchant = sheets.filter((s) => s.group === "merchant" || WARE_ICONS.includes(s.name));
+  if (merchant.some((s) => s.group === "merchant")) {
+    const two = composeContact(merchant, facings, labels, theme, 2);
+    writeFileSync(join(dir, "contact-merchant-2x.png"), encodePng(two.width, two.height, two.rgba, { fast: true }));
+    files.push("contact-merchant-2x.png");
   }
   for (const l of lineups) {
     const two = composeLineup(l.sheets, facings, labels, theme, 2);

@@ -123,8 +123,11 @@ const UI_SCENE_PIECES = [
   ["@/ui/AbilityBar", "The ability bar is the UI scene's (FS-TQZ5J § Change: Batch 5, R67; FS-Q18Q3 R41)."],
   ["@/ui/PassiveTreeOverlay", "The passive tree is the UI scene's: no world builds it or binds P (FS-8RZ51 §G)."],
   ["@/ui/uiSceneTree", "The passive tree is the UI scene's: no world builds it or binds P (FS-8RZ51 §G)."],
+  ["@/ui/ClassBookPanel", "The class book is the UI scene's: no world builds it or binds K (FS-X2CMM §G)."],
+  ["@/ui/uiSceneBook", "The class book is the UI scene's: no world builds it or binds K (FS-X2CMM §G)."],
   ["@/ui/ResourceHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
   ["@/ui/ProgressHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
+  ["@/ui/RollPip", "The roll pip is the UI scene's: the run hands its view as data (FS-7P736 R16)."],
   ["@/ui/HudCorner", "The corner row is the UI scene's (FS-TQZ5J R13, R15)."],
   ["@/ui/menuPanel", "The ESC menu is the UI scene's (FS-TQZ5J R16)."],
   ["@/ui/optionsPanel", "OPTIONS is the UI scene's (FS-TQZ5J R16)."],
@@ -141,6 +144,8 @@ const UI_SCENE_PIECES = [
   ["@/ui/mailboxHud", "The mailbox is the UI scene's (FS-TQZ5J § Change: Batch 4, R101)."],
   ["@/ui/MailboxEnvelope", "The mailbox is the UI scene's (FS-TQZ5J § Change: Batch 4, R101)."],
   ["@/ui/LetterPanel", "The letter panel is the UI scene's: a world reads its open state from the mailbox store (FS-TQZ5J § Change: Batch 4, R103)."],
+  ["@/ui/WaresPanel", "The wares panel is the UI scene's: the run hands its wares as data (FS-9JV5K §F R22)."],
+  ["@/ui/uiSceneWares", "The wares panel is the UI scene's: the run hands its wares as data (FS-9JV5K §F R22)."],
 ].map(([name, message]) => ({ name, message }));
 /** The UI scene's player of interface sounds: a world reaches it through the bridge (FS-TQZ5J R22). */
 const UI_SOUNDS = {

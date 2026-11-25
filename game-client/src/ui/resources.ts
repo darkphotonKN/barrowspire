@@ -25,6 +25,8 @@ export interface HudBar {
   fill: number;
   /** Set only for parry charges: one entry per pip, one pip per point of the max, lit for each charge held. */
   pips?: boolean[];
+  /** Set only on health while the player is poisoned: the fill takes the poison tint (FS-5FZ4J §J R55). */
+  poisoned?: true;
 }
 
 /**
@@ -90,6 +92,7 @@ export function barsOf(me: PlayerState): HudBar[] {
       channel: "health",
       label: "Health:",
       fill: fillOf(me.current_health, me.max_health),
+      ...(me.poisoned_for !== undefined && { poisoned: true as const }),
     });
 
   if (me.resource) bars.push(resourceBar(me.resource));

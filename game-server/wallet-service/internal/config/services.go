@@ -54,6 +54,7 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	getAccQuery := accountgrpc.NewAccountReaderWithTracing(accountquery.NewGetAccountQuery(db), queryTracer)
 	processedActivities := usecase.NewActivityMarkerWithTracing(accountrepo.NewProcessedActivityRepo(), repoTracer)
 	creditUC := usecase.NewCreditUC(db, usecase.NewCreditAccountsWithTracing(concreteAccountRepo, repoTracer), processedActivities)
+	debitUC := usecase.NewDebitUC(db, usecase.NewDebitAccountsWithTracing(concreteAccountRepo, repoTracer), processedActivities)
 
 	staleHoldsQuery := accountgrpc.NewStaleHoldsReaderWithTracing(accountquery.NewStaleReservedHoldsQuery(db), queryTracer)
 
@@ -64,6 +65,7 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 		DepositGoldUC:    depositGoldUC,
 		WithdrawGoldUC:   withdrawGoldUC,
 		CreditUC:         creditUC,
+		DebitUC:          debitUC,
 		AccountReader:    getAccQuery,
 		StaleHoldsReader: staleHoldsQuery,
 	})

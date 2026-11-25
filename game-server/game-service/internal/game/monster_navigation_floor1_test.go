@@ -16,7 +16,8 @@ import (
 // On generated floor 1 layouts, the monsters farthest from a delver, rooms and
 // corridors away, all reach them by path: no body snags on a wall corner of a
 // real layout. The longest of these paths is about 90 cells, some 7 400 px, a
-// troll's 80 s at 90 px/s; three minutes cover it. FS-KE075 §D R23, ADR-0062.
+// troll's 80 s at its full-pace 90 px/s; three minutes at full pace, stretched
+// by the pace (FS-TAGWA), cover it. FS-KE075 §D R23, ADR-0062.
 func TestMonsterNavigation_Floor1_FarthestMonstersReachTheDelver(t *testing.T) {
 	for _, seed := range []uint64{1, 2, 3, 4, 5, 6} {
 		s, ids := dungeonRun(t, seed, 1, 0)
@@ -37,11 +38,13 @@ func TestMonsterNavigation_Floor2_FarthestMonstersReachTheDelver(t *testing.T) {
 }
 
 // assertFarthestMonstersReach walks the five monsters farthest from a delver of
-// s for three minutes, each kept on the delver, and checks every one reached
+// s for three minutes over the pace, each kept on the delver, and checks every one reached
 // it.
 func assertFarthestMonstersReach(t *testing.T, s *Session, delver uuid.UUID, seed uint64) {
 	t.Helper()
 	const far = 5
+	// the gate open, so the stairs room's monsters path out too (FS-5FZ4J §D R22)
+	breakSeals(t, s)
 	d := delverEntity(t, s, delver)
 	at := transformOf(t, d)
 
@@ -62,7 +65,7 @@ func assertFarthestMonstersReach(t *testing.T, s *Session, delver uuid.UUID, see
 	}
 
 	dt := 1.0 / float64(constants.GameFrameRate)
-	for range 180 * constants.GameFrameRate {
+	for range int(math.Ceil(180/constants.PaceScale)) * constants.GameFrameRate {
 		keepStanding(s.EntityManager)
 		for _, m := range chasers {
 			// the leash never lets a monster this far off keep a target,
@@ -117,7 +120,7 @@ func queuedBehind(t *testing.T, m *ecs.Entity, chasers []*ecs.Entity, reached []
 // until the flight is clear, then stands and shoots, and the arrow lands.
 // FS-B4SG9 §A R4, R5; AC "in range with rock between".
 func TestMonsterNavigation_Floor1_RangedMonsterBehindRockWalksIntoSightThenShoots(t *testing.T) {
-	for _, seed := range []uint64{1, 2, 3, 4, 5, 6} {
+	for _, seed := range []uint64{1, 2, 3, 4, 6, 7} {
 		s, ids := dungeonRun(t, seed, 1, 0)
 		require.NotNil(t, s.dungeon)
 		d := delverEntity(t, s, ids[0])

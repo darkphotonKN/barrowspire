@@ -26,4 +26,6 @@ export const RUN_ACTIONS = {
    * (FS-Q18Q3 R31); the key is bound by FS-04EEA's cast.
    */
   treeAbility: { key: "THREE", label: "3" },
+  /** Roll (FS-7P736 R13): its pip on the HUD reads this label (R16), and the controls panel lists it (R17). */
+  roll: { key: "SPACE", label: "Space" },
 } as const satisfies Record<string, RunKeyBinding>;

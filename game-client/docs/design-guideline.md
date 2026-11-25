@@ -138,6 +138,8 @@ and the two are not required to agree (ADR-0025).
 | **Parchment / UI** | vellum `#cdbf9a`, darkened `#8a7d5c`, ink `#1c1712` |
 | **Brass** | `#9c7b3f`, `#c9a14e` |
 | **Passive tree hues** (a lit tree picture only) | copper `#d49274`, steelBlue `#5f82b8`, teal `#3aa0b0`, frost `#8ac2e6`, verdigris `#5fa88a`, amethyst `#a088cc`, silver `#c2c8d0` |
+| **Book pigments** (a class book page roundel and the book's own world effects only) | pigmentVerdigris `#5b9a80`, pigmentOchre `#a88b52`, pigmentMadder `#8f5048`, pigmentLapis `#52699a`, pigmentBone `#ddd3bb` |
+| **Open tome** (the class book's panel only) | tomeLeather `#3b2a1d`, tomeVellumEdge `#c9b98f`, tomeVellumMiddle `#d8caa3`, tomeGutter `#a89772`, tomeInk `#2c2118`, tomeInkMuted `#5e4c34`, tomeInkMadder `#74392a` |
 
 **Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
 and its aim arrow) and the Shadow Ranger's gloom (*Auras*), and nothing else. *(Amended at the
@@ -162,6 +164,20 @@ draws, so they are narrow on purpose:
 - **Frost** is a pale cold sky tone of modest chroma, never the neon cyan the rules below forbid.
 - **Amethyst** marks crit in the tree and is not umbra, which stays the Shadow Shot's and the Shadow
   Ranger's gloom.
+
+**The book pigments are for a class book page's roundel and the book's own world effects only**
+(`palette.bookPigment`, FS-X2CMM R45,
+[ADR-0094](../../docs/adr/0094-class-book-page-icons-are-muted-pigment-glyphs-in-bronze-rimmed-roundels.md),
+[ADR-0098](../../docs/adr/0098-the-class-book-pigments-are-read-by-the-page-roundels-and-the-books-own-world-effects.md)):
+a page's picture wears one main pigment by what the page does (light and finding ochre, movement and
+air lapis, binding and blood madder, growth, beasts and cures verdigris), never by its class, with bone
+for its highlights. Muted mineral tones, none more saturated than verdigris `#5fa88a`; ochre stays clear
+of amber and madder of oxblood. Two things read them: the page-icon renderer, and what a page leaves on
+the floor or on a body (the witchlight, the rune, tracker's eye, the hound and the hound's bay, a revealed
+trap's wash), each in the pigment of the page that made it and always through `palette.bookEffect`, never
+from the tokens. Nothing else reads them: no other HUD element, creature, fixture or effect, and a world
+effect of the book that is not a page's own colour (the draught, afloat, hardened, the Long Night) keeps
+the barrow ramp.
 
 **Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
 interactable, which stays amber, and never stands in for a light source's colour. It may also be
@@ -915,6 +931,32 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   bar stands over it, from 6 px over the bar's top.
   *(Added by [FS-77DVN](../../docs/specs/77DVN-xp-bar-along-the-bottom.md), 2026-11-14; the cue over
   the ability bar by [FS-Q18Q3](../../docs/specs/Q18Q3-ability-bar.md), 2026-11-21.)*
+- **Resource bars (the reliquary bars).** The player's own Health and class resource bars at the top
+  left of a run or a field (`src/ui/ResourceHud.ts`, the art in `src/ui/reliquaryBar.ts`), one 180 px
+  column with the party frames. A carved stone plate (`hudPlate`, a lit top edge, a dark foot, a brass
+  hairline and a brass stud at each corner) holds one row per bar. Each row is a **sunken channel** in a
+  brass bezel lit along its top, with a brass finial at its far end, run out of an **emblem socket** at
+  its left: a bevelled brass ring around a dark well holding the channel's glyph in its own colour, a
+  blood drop for Health, a waning moon cradling a mote for Mana, twin rising chevrons for Stamina, a
+  ribbed heater shield for Parry, a dot for a kind the client does not know. The bar's name is
+  **engraved on the plate above its channel**, never over the liquid (vellum on a mid-tone fill is
+  illegible under any outline): 11 px body-serif caps, letter-spaced, in `hudLabel` with a 1 px dark
+  drop, "HEALTH", not "Health:". Health's channel is 12 px, a resource's 10, both on the socket's line.
+  The channel fills like a vial, every tone from that channel's ramp (`palette.hudBarRamp`, built from
+  its HUD colour and a darker anchor in its own family, so the hue still reads): the empty run in the
+  channel's own dark, never black; the liquid lit at its top, darker at its foot, a bright meniscus at
+  its edge, engraved quarter marks over it. **It lives:** a soft sheen walks along it; a loss drops at
+  once and leaves the chip, the monster bars' `DamageChip` (held, then drained); a gain rises in over a
+  moment under a pale glow. Each channel has one texture: Health beats lub-dub, faint and slow when
+  hale, quicker and harder below a third, its socket glowing oxblood as it runs out; Mana carries
+  drifting motes; Stamina is corded sinew flowing toward the fill's end; a poisoned Health takes the
+  poison ramp and bubbles. Parry charges are faceted bright-brass **lozenge studs**, a spent one an
+  empty socket, a glint running across the held ones now and then and a charge just won flaring.
+  Fills only, never strokes. The still layers draw when the rows change; the liquid repaints at most
+  30 times a second. The party frames' compact bars keep their own plain look (`drawHudBar`). Every
+  state is on the dev gallery's Resource bars card. *(Added 2026-11-26, the owner's ask for health
+  and resource bars "custom to fit the lore"; the plate grew from 52 to 71 px for two rows, so the
+  party frames stand from y 111.)*
 - **Ability bar.** Three squares in one row directly above the Experience bar, centred on the canvas
   (`src/ui/AbilityBar.ts`, placed by `src/ui/abilityBarLayout.ts`): **1** the health potion,
   **right-click** the class ability, **3** the tree ability, each 44 px, 10 apart, the cost slots' foot
@@ -954,7 +996,29 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   `src/ui/openBar.ts`, never by hand. Bright brass because it is progress, never amber. Only the
   player's own is drawn, never another player's and never while spectating. It goes with no
   notice, sound or effect, whether the container opened or the timed open was cancelled.
-  *(Added by [FS-MQYEX](../../docs/specs/MQYEX-timed-container-opening.md), 2026-11-11.)*
+  *(Added by [FS-MQYEX](../../docs/specs/MQYEX-timed-container-opening.md), 2026-11-11.)* The
+  same bar shows a sealed floor's other timed interacts, over what they work, with a label just
+  over it in 11 px vellum body type on a dark stroke: **"Searching…"** over a secret door's cracks
+  and **"Praying…"** over the hallowed altar; a container's open carries no label, as it never
+  did. *(Added by [FS-5FZ4J](../../docs/specs/5FZ4J-sealed-floors.md) §J R54, 2026-11-25.)*
+- **Statuses.** A poisoned delver's health fill, on their own bar and on a teammate's overhead
+  bar, takes the **poison tint** (`palette.poisoned`): the gas vent's sour bile-olive, arcane green
+  warmed toward bright brass and dulled toward vellum, so it never reads as arcane green's safe
+  and friendly, nor as health's oxblood. A lasting boon shows as a **status mark** beside the own
+  health bar on the UI scene; the Blessing's is the hallowed altar's gold (`palette.blessed`,
+  bright brass paled toward vellum), never amber, since the mark is only hovered. Poison has no
+  mark: the tint says it. *(Added by [FS-5FZ4J](../../docs/specs/5FZ4J-sealed-floors.md) §J R55,
+  2026-11-25.)*
+- **Traps.** A detected trap waits drawn **faint**: its baked armed frame at alpha 0.45
+  (`TRAP_FAINT`), a thing spotted and not yet set off. Its spring (spikes up, darts, a fire jet, a
+  gas puff) plays at full strength, and a gas vent settles back to faint after its puff. Never on
+  the minimap. *(Added by [FS-5FZ4J](../../docs/specs/5FZ4J-sealed-floors.md) §J R51,
+  2026-11-25.)* A trap a book page **revealed** (Witchlight, Tracker's Eye) waits clearer, at
+  alpha 0.8 (`TRAP_REVEALED`), under a multiply wash of light-and-finding ochre lifted toward
+  vellum (`palette.bookEffect.revealedTrap`), kept through its spring, so the page's finding reads
+  apart from a careful step. The **hound's bay** at what it bays at is rings rippling out on the
+  floor in its verdigris (`palette.bookEffect.houndBay`), once per bay, never a light. *(Added by
+  [FS-X2CMM](../../docs/specs/X2CMM-class-books.md) §J R49, 2026-11-25.)*
 - **Health bars.** Every monster's HP bar, over its head or in the target frame, wears one look,
   drawn in code by the shared `paintHealthBar` (`src/render/markers/healthBar.ts`), never by hand:
   no rim; a deep-red trough (`markerHpTrough`, oxblood taken toward pitch), so the health missing
@@ -1121,6 +1185,36 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   bronze; a second icon wanting its own hue needs its own ADR. *(Added by
   [ADR-0089](../../docs/adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md),
   2026-11-23.)*
+  **A second exception: the class book's page roundels** (`src/ui/pageRoundel.ts`, pictures in
+  `src/ui/pageIcons.ts`). Each is a muted pigment glyph in a bronze-rimmed disc, built from four layers
+  of the same renderer:
+  - a ground disc in `ink`, the only layer with the drop shadow;
+  - the glyph's body, flat in its page's book pigment, its cuts through to the ground;
+  - bone laid on the body for highlights and detail;
+  - the row's bronze rim, lit from above.
+
+  The disc is 44 px in the book and 28 px on the cast bar. **Ready** lifts the rim and goes to alpha 1
+  under the pointer. **Recovering** keeps its pigment under a dark sweep (`ink` at 0.55), inside the
+  rim. **Dim** (short of cost) sinks the glyph toward the ground. **Locked** is the body flat in
+  `hudFaint` at 0.6, its bone in `ink` so the detail reads as cuts, and the rim unlit. Only a ready page
+  lifts. Where no texture can be made, the glyph is drawn as 2.25 px lines in its pigment. Every other
+  HUD icon stays bronze, the book's own corner icon included. The contact sheet is the dev gallery's
+  Page roundels card. *(Added by
+  [ADR-0094](../../docs/adr/0094-class-book-page-icons-are-muted-pigment-glyphs-in-bronze-rimmed-roundels.md),
+  2026-11-25.)*
+- **The class book is an open tome** (`src/ui/ClassBookPanel.ts`; look in `classBookStyle.ts`, geometry
+  in `classBookLayout.ts`): a two-page vellum spread in a dark leather binding with a blind-tooled line
+  and brass corner studs, at the view's right side under the top-right column, clear of the ability bar,
+  the chat and the corner row. The vellum falls from `tomeVellumMiddle` near the spine to
+  `tomeVellumEdge` outside, worn toward `tomeGutter` at its outer edges, with the gutter's shadow at the
+  fold. The left page: the book's title in madder-brown (`tomeInkMadder`, 17 px body serif) over a
+  hairline rule with a lozenge, and one row per page: a 28 px roundel, the name in `tomeInk`, the cost
+  right-aligned in `tomeInkMuted`; a locked row at 0.55 with "Lv N", a spent one "spent", the shown row
+  a soft `vellumDark` wash. The right page is the shown page in full (the hovered one, else the first
+  ready one): a 64 px roundel, the name in madder-brown, its line, "cost · cooldown" and an italic hint
+  in madder-brown. Body serif throughout (the blackletter bound). It replaces the windows' frame and the
+  item tip for the book. The dev gallery's Open tome card shows it on a sample book. *(Added by
+  FS-X2CMM §Change: Illuminated pages and the open tome, 2026-11-25.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

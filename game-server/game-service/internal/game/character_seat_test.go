@@ -193,9 +193,9 @@ func TestAddPlayer_SeatsEachClassWithItsOwnResource(t *testing.T) {
 		ability     components.AttackKind
 		abilityCost int
 	}{
-		{"warrior", components.ResourceStamina, 100, 20, components.AttackDash, 25},
-		{"archer", components.ResourceStamina, 100, 20, components.AttackShadowShot, 90},
-		{"mage", components.ResourceMana, 150, 4, components.AttackTripleFireball, 15},
+		{"warrior", components.ResourceStamina, 100, 7, components.AttackDash, 40},
+		{"archer", components.ResourceStamina, 100, 7, components.AttackShadowShot, 100},
+		{"mage", components.ResourceMana, 150, 2, components.AttackTripleFireball, 25},
 	}
 
 	for _, tt := range tests {
@@ -294,7 +294,7 @@ func TestClassResource_OnDelversOnly(t *testing.T) {
 }
 
 // A delver in play regenerates on the world's tick: a warrior drained to 0
-// reads 20 after exactly one second of ticks. FS-8AY7S §Requirements 5.
+// reads 7 after exactly one second of ticks. FS-8AY7S §Requirements 5.
 func TestStep_RegeneratesTheClassResource(t *testing.T) {
 	s := unstartedRun(t)
 	_, warrior := placeDelver(t, s, "warrior", 500, 500)
@@ -306,7 +306,7 @@ func TestStep_RegeneratesTheClassResource(t *testing.T) {
 		s.step(1.0/30, s.EntityManager.GetAllEntities())
 	}
 
-	assert.Equal(t, 20, pool.Current)
+	assert.Equal(t, 7, pool.Current)
 }
 
 // A stamina pool never grows with level, whatever the class growth says; only a

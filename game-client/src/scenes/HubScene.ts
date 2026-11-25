@@ -187,7 +187,7 @@ import {
   type WallSheets,
 } from "@/render/world/walls";
 import { buildingWallShadows, shadowsWithin, type GroundShadows } from "@/render/world/wallShadows";
-import { afterFrameSetUp, boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { afterFrameSetUp, boundCamera, crispen, followWith, relayoutOn, viewport, zoomWorldView } from "@/render/viewport";
 import type { MinimapStage } from "@/ui/minimap";
 import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
 import type { ModeIconStage } from "@/ui/minimapModeIcon";
@@ -854,6 +854,10 @@ export class HubScene extends Phaser.Scene {
   }
 
   create(): void {
+    // the world stands closer than the logical view, its HUD on a camera of its own at the logical
+    // view; first, so whatever is laid out for the world camera sees its zoom (FS-ZAJMH § Change:
+    // Closer world camera)
+    zoomWorldView(this);
     // an arrival is dark before anything of the town is made: the world's fade-in opens on the
     // dark, and the town's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.play(placeCard({ world: "hub" }), { built: false });

@@ -199,10 +199,15 @@ export function minimapProjection(
   return fit(floorSize(grid), panel).project;
 }
 
-/** A fixture the minimap marks once found (§E.22): where it stands. */
+/**
+ * A fixture the minimap marks once found (§E.22): where it stands, and whether the party was told
+ * of it: a revealed secret door (FS-4EC7Z §G R35, §D R14) is marked wherever it stands, explored or
+ * not, as the Cutthroats' tip says where to look.
+ */
 export interface MinimapFixture {
-  kind: "switch" | "escape-door" | "stairs";
+  kind: "switch" | "escape-door" | "stairs" | "secret-door";
   at: Point;
+  told?: boolean;
 }
 
 /**
@@ -265,10 +270,33 @@ export function minimapContent(
     if (s !== "unexplored") regions.push({ id: r.id, state: s, cells: r.cells });
   }
   const found = fixtures.filter((f) => {
+    if (f.told) return true;
     const id = regionAt(grid, f.at);
     return id !== 0 && state(id) !== "unexplored";
   });
   return { regions, fixtures: found };
+}
+
+/**
+ * A shut gate's wall stroke (FS-5FZ4J §J R56): a cell of it, world px, which names the region it
+ * stands in, and its run through its cells' middle, in cell units. The gate's corridor is walkable
+ * ground on the floor map, so the outline leaves it open; the stroke shuts it while the gate is shut.
+ */
+export interface MinimapStroke {
+  at: Point;
+  points: readonly Point[];
+}
+
+/** The strokes standing in a seen region (§E.22's rule for fixtures): none in an unexplored one, nor off the floor. */
+export function shownStrokes(
+  grid: RegionGrid,
+  state: (region: number) => ExplorationState,
+  strokes: readonly MinimapStroke[],
+): MinimapStroke[] {
+  return strokes.filter((s) => {
+    const id = regionAt(grid, s.at);
+    return id !== 0 && state(id) !== "unexplored";
+  });
 }
 
 /** A run of the walls' outline (FS-56CKV §A.5), in cell units: its corner points, and whether its last point joins back to its first. */
@@ -436,6 +464,8 @@ const GLYPH_ART: Record<MapMarkKind, readonly string[]> = {
   "escape-door": ["..###..", ".#####.", "##ooo##", "##ooo##", "##ooo##", "##ooo##", "##ooo##"],
   // a flight of three steps rising to the right
   stairs: [".....##", ".....##", "...####", "...####", ".######", ".######", "#######"],
+  // a revealed secret door (FS-4EC7Z §G R35): a shut, planked door, its boards' seams dark
+  "secret-door": ["#######", "#o#o#o#", "#o#o#o#", "#######", "#o#o#o#", "#o#o#o#", "#######"],
   // the town's and the fields' (FS-P0HSP §C.17), a starting draft for the owner's eye:
   // a battlemented tower with a dark door
   tower: ["#.#.#.#", "#######", ".#####.", ".##o##.", ".##o##.", ".#####.", "#######"],
@@ -595,15 +625,19 @@ const contentKey = (c: MinimapContent) =>
     c.fixtures.map((f) => `${f.kind}@${f.at.x},${f.at.y}`).join(","),
   ].join("|");
 
+/** The floor picture's key: its content, and the shut gates' strokes where there are any. */
+const floorKey = (c: MinimapContent, strokes: readonly MinimapStroke[]) =>
+  strokes.length === 0 ? contentKey(c) : `${contentKey(c)}|${strokes.map((s) => s.points.map((p) => `${p.x},${p.y}`).join(";")).join("/")}`;
+
 /**
  * A dungeon floor's picture (§E.22, FS-56CKV §A.4, §A.5): each seen region's cell rects as the
  * ground, the walls' outline round them, and the fixtures found, all in world px.
  */
-function floorPicture(grid: RegionGrid, content: MinimapContent): MinimapPicture {
+function floorPicture(grid: RegionGrid, content: MinimapContent, strokes: readonly MinimapStroke[] = []): MinimapPicture {
   const c = grid.cell;
   const world = (p: Point): Point => ({ x: p.x * c, y: p.y * c });
   return {
-    key: contentKey(content),
+    key: floorKey(content, strokes),
     // each cell rect's footprint: projected, a parallelogram, as the floor lies on screen
     ground: content.regions.flatMap((r) =>
       r.cells.map(({ x, y, w, h }) => [
@@ -613,7 +647,11 @@ function floorPicture(grid: RegionGrid, content: MinimapContent): MinimapPicture
         world({ x, y: y + h }),
       ]),
     ),
-    lines: regionOutline(grid, content.regions).map(({ points, closed }) => ({ closed, points: points.map(world) })),
+    lines: [
+      ...regionOutline(grid, content.regions).map(({ points, closed }) => ({ closed, points: points.map(world) })),
+      // a shut gate in the walls' line (FS-5FZ4J §J R56)
+      ...strokes.map(({ points }) => ({ closed: false, points: points.map(world) })),
+    ],
     marks: content.fixtures,
   };
 }
@@ -968,11 +1006,16 @@ export class Minimap extends MinimapView {
   }
 
   /** The party's exploration and the floor's fixtures now; the map is redrawn only if what it shows changed. */
-  show(state: (region: number) => ExplorationState, fixtures: readonly MinimapFixture[]): void {
+  show(
+    state: (region: number) => ExplorationState,
+    fixtures: readonly MinimapFixture[],
+    strokes: readonly MinimapStroke[] = [],
+  ): void {
     const content = minimapContent(this.grid, state, fixtures);
     this.shownContent = content;
-    if (contentKey(content) === this.drawnKey) return;
-    this.showPicture(floorPicture(this.grid, content));
+    const shown = shownStrokes(this.grid, state, strokes);
+    if (floorKey(content, shown) === this.drawnKey) return;
+    this.showPicture(floorPicture(this.grid, content, shown));
   }
 }
 

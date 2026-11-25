@@ -26,9 +26,10 @@ func NewKillExperience(em *ecs.EntityManager, tally *RunExperience) *KillExperie
 
 // ConsumeKill gives every delver still in play, alive and un-escaped, the kill's
 // experience in full. The killer gets no extra share; a death with no player
-// killer awards nothing. FS-BDA7X §Requirements 9, 12.
+// killer awards nothing, nor does a hired ally's kill (FS-4EC7Z §C R11).
+// FS-BDA7X §Requirements 9, 12.
 func (k *KillExperience) ConsumeKill(record systems.KillRecord) {
-	if record.KillerMemberID == uuid.Nil {
+	if record.KillerMemberID == uuid.Nil || record.ByAlly {
 		return
 	}
 	amount := killExperience(record)
@@ -84,7 +85,9 @@ func gainExperience(entity *ecs.Entity, class ClassConfig, amount int) {
 
 // killExperience is what one kill is worth to each member it is awarded to:
 // round(base × (1 + growth × (level − 1)) × multiplier). FS-BDA7X §Requirements 10.
-// A champion's base is the Demon's, not its variant's (FS-C8VM7 §D R31).
+// A champion's base is the Demon's, not its variant's (FS-C8VM7 §D R31); a
+// contract's mark, champion-scaled, pays it at an elite's multiplier
+// (FS-4EC7Z §E R19).
 func killExperience(record systems.KillRecord) int {
 	archetype := record.Archetype
 	if record.Champion {
@@ -97,6 +100,10 @@ func killExperience(record systems.KillRecord) int {
 
 	multiplier := 1.0
 	switch {
+	// a contract's mark wears the boss plate but pays an elite's (FS-4EC7Z
+	// §E R19)
+	case record.Archetype == components.MonsterArchetypeContractMark:
+		multiplier = EliteExperienceMultiplier
 	case record.Boss:
 		multiplier = BossExperienceMultiplier
 	case record.Elite:

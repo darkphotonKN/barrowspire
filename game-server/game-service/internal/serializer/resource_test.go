@@ -64,8 +64,8 @@ func TestFormatStateToClientState_TellsEachDelverTheirOwnResourceOnly(t *testing
 		recipient uuid.UUID
 		want      map[string]any
 	}{
-		{"the warrior", warrior, map[string]any{"kind": "stamina", "current": float64(100), "max": float64(100), "ability_cost": float64(25)}},
-		{"the mage", mage, map[string]any{"kind": "mana", "current": float64(150), "max": float64(150), "ability_cost": float64(15)}},
+		{"the warrior", warrior, map[string]any{"kind": "stamina", "current": float64(100), "max": float64(100), "ability_cost": float64(40)}},
+		{"the mage", mage, map[string]any{"kind": "mana", "current": float64(150), "max": float64(150), "ability_cost": float64(25)}},
 	}
 
 	for _, tt := range tests {
@@ -104,10 +104,10 @@ func TestFormatStateToClientState_RoundsAFractionalPoolDown(t *testing.T) {
 
 	resource := frame["current_player"].(map[string]any)["resource"].(map[string]any)
 	assert.Equal(t, float64(24), resource["current"])
-	assert.Equal(t, float64(25), resource["ability_cost"])
+	assert.Equal(t, float64(40), resource["ability_cost"])
 }
 
-// The archer's ability is Shadow Shot at 90 stamina. FS-8AY7S §Requirements
+// The archer's ability is Shadow Shot at 100 stamina. FS-8AY7S §Requirements
 // 12, 17; FS-JTNPR §Requirements 5.
 func TestFormatStateToClientState_PricesTheArchersAbility(t *testing.T) {
 	em := ecs.NewEntityManager()
@@ -117,7 +117,7 @@ func TestFormatStateToClientState_PricesTheArchersAbility(t *testing.T) {
 	_, frame := wireFor(t, em, types.WorldTypeRun, archer)
 
 	resource := frame["current_player"].(map[string]any)["resource"].(map[string]any)
-	assert.Equal(t, float64(90), resource["ability_cost"])
+	assert.Equal(t, float64(100), resource["ability_cost"])
 }
 
 // The resource is sent in the hub too, and to a delver left behind on an
@@ -145,7 +145,7 @@ func TestFormatStateToClientState_SendsTheResourceInTheHubAndWhenLeftBehind(t *t
 		_, other := wireFor(t, em, types.WorldTypeRun, standing)
 
 		me := own["current_player"].(map[string]any)
-		assert.Equal(t, map[string]any{"kind": "stamina", "current": float64(40), "max": float64(100), "ability_cost": float64(25)}, me["resource"])
+		assert.Equal(t, map[string]any{"kind": "stamina", "current": float64(40), "max": float64(100), "ability_cost": float64(40)}, me["resource"])
 		assert.Empty(t, other["other_players"], "the body is not on this floor")
 		assert.Equal(t, "mana", other["current_player"].(map[string]any)["resource"].(map[string]any)["kind"])
 	})

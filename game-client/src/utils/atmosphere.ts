@@ -7,7 +7,7 @@ import {
   VIGNETTE_OUTER,
   VIGNETTE_STOPS,
 } from "@/render/lighting/vignette";
-import { relayoutOn, viewport } from "@/render/viewport";
+import { relayoutOn, viewport, worldZoomOf } from "@/render/viewport";
 
 /**
  * The static layers every world keeps above its light-map: darkness pressing in
@@ -39,9 +39,13 @@ export function createAtmosphere(scene: Phaser.Scene): void {
 }
 
 function build(scene: Phaser.Scene): Phaser.GameObjects.GameObject[] {
+  // camera-fixed under the HUD, so drawn by the world's camera, which stands closer than the
+  // logical view (FS-ZAJMH § Change: Closer world camera): laid out at 1/zoom of the view, they
+  // cover the screen as they did, the vignette centred on it
+  const fit = 1 / worldZoomOf(scene.cameras.main);
   return [
-    addVignette(scene, viewport.width, viewport.height),
-    ...addDust(scene, viewport.width, viewport.height),
+    addVignette(scene, viewport.width, viewport.height, fit),
+    ...addDust(scene, viewport.width, viewport.height, fit),
   ];
 }
 
@@ -59,6 +63,7 @@ function addVignette(
   scene: Phaser.Scene,
   w: number,
   h: number,
+  fit: number,
 ): Phaser.GameObjects.Image {
   const key = VIGNETTE_TEXTURE;
 
@@ -83,7 +88,7 @@ function addVignette(
     scene.textures.addCanvas(key, canvas);
   }
 
-  const vignette = scene.add.image(w / 2, h / 2, key);
+  const vignette = scene.add.image((w / 2) * fit, (h / 2) * fit, key).setScale(fit);
   vignette.setScrollFactor(0);
   vignette.setDepth(VIGNETTE_DEPTH);
   return vignette;
@@ -93,23 +98,24 @@ function addDust(
   scene: Phaser.Scene,
   w: number,
   h: number,
+  fit: number,
 ): Phaser.GameObjects.Arc[] {
   const motes: Phaser.GameObjects.Arc[] = [];
   for (let i = 0; i < DUST_MOTES; i++) {
     const mote = scene.add.circle(
-      Phaser.Math.Between(0, w),
-      Phaser.Math.Between(0, h),
+      Phaser.Math.Between(0, w) * fit,
+      Phaser.Math.Between(0, h) * fit,
       Math.random() < 0.2 ? 2 : 1,
       palette.hudLabel,
       Phaser.Math.FloatBetween(0.05, 0.16),
     );
-    mote.setScrollFactor(0);
+    mote.setScrollFactor(0).setScale(fit);
     mote.setDepth(DUST_DEPTH);
 
     scene.tweens.add({
       targets: mote,
-      y: mote.y - Phaser.Math.Between(20, 60),
-      x: mote.x + Phaser.Math.Between(-15, 15),
+      y: mote.y - Phaser.Math.Between(20, 60) * fit,
+      x: mote.x + Phaser.Math.Between(-15, 15) * fit,
       alpha: 0,
       duration: Phaser.Math.Between(4000, 9000),
       repeat: -1,

@@ -22,6 +22,8 @@ export interface UiWindows {
   character(): boolean;
   /** Whether the passive tree is open now (FS-8RZ51 R36). */
   tree(): boolean;
+  /** Whether the class book is open now (FS-X2CMM R36); none, never. */
+  book?(): boolean;
 }
 
 /** None of the UI scene's own windows: none open. */
@@ -48,6 +50,7 @@ export function mountInterfaceSounds(
     inventory: own.inventory(),
     character: own.character(),
     tree: own.tree(),
+    book: own.book?.() ?? false,
     menu: bridge.ui.menuOpen,
   });
   const sounds = new UiSounds(stage, store, windows, now);

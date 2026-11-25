@@ -116,7 +116,7 @@ func TestTimedOpen_AShutRunContainerOpensOnThe45thTickAfterTheReach(t *testing.T
 			require.NoError(t, reachErr)
 			open := timedOpenOf(delver)
 			require.NotNil(t, open, "the reach starts a timed open")
-			assert.Equal(t, container.ID, open.ContainerID)
+			assert.Equal(t, container.ID, open.TargetID)
 			assert.Equal(t, TimedOpenDuration, open.Duration)
 			assert.Equal(t, [2]float64{500, 500}, [2]float64{open.FromX, open.FromY}, "where the body stood")
 			assert.False(t, openable(t, container).IsOpen, "the reach leaves it shut")
@@ -242,8 +242,9 @@ func TestTimedOpen_RidesTheOwnersStateAlone(t *testing.T) {
 
 		timedOpen, ok := me()["timed_open"].(map[string]any)
 		require.True(t, ok, "tick %d: the owner is told their timed open", n)
-		assert.Len(t, timedOpen, 3)
+		assert.Len(t, timedOpen, 4)
 		assert.Equal(t, chest.ID.String(), timedOpen["entity_id"])
+		assert.Equal(t, "open", timedOpen["target_kind"], "a container's timed open (FS-5FZ4J §I R49)")
 		assert.InDelta(t, float64(n)*dt, timedOpen["elapsed"], 1e-9, "tick %d: elapsed rises with the tick", n)
 		assert.Equal(t, 1.5, timedOpen["duration"])
 	}
@@ -295,6 +296,11 @@ func TestTimedOpen_MovingCancels(t *testing.T) {
 			require.NoError(t, s.handleCastSkill(player, "dash", 500, 900))
 			// the cast lands on one tick and carries the body from the next
 			ticks(s, 2)
+		},
+		// FS-7P736 §A R10; AC 5
+		"a roll": func(t *testing.T, s *Session, player uuid.UUID) {
+			s.queueIntent(func() { s.roll(player, 0, 1) })
+			tick(s)
 		},
 	}
 	for name, move := range moves {
@@ -457,10 +463,10 @@ func TestTimedOpen_AHitCancelsThoughAKillsHealOutweighsIt(t *testing.T) {
 	wearing(t, s, delver, inHeadSlot, hollowCrown())
 	tick(s) // the gear seats
 	hurt(t, delver, 500, 1000)
-	ghoul := frailGhoul(s, 500, 545)
-
-	// the fireball flies 350 px/s from the mage and lands within 32 px of the
-	// ghoul: on the second tick after the cast's, the one after the reach's
+	// the fireball flies its paced 350 px/s from the mage and lands within 32 px
+	// of the ghoul: on the second tick after the cast's, the one after the
+	// reach's, with the ghoul a tick and a half of flight past that reach
+	ghoul := frailGhoul(s, 500, 500+32+1.5*350*constants.PaceScale/float64(constants.GameFrameRate))
 	require.NoError(t, s.handleCastSkill(player, "fireball", 500, 545))
 	tick(s)
 	reach(t, s, player, chest.ID)
@@ -603,7 +609,7 @@ func TestTimedOpen_AReachForAnotherContainerReplacesIt(t *testing.T) {
 
 	open := timedOpenOf(delver)
 	require.NotNil(t, open)
-	assert.Equal(t, second.ID, open.ContainerID)
+	assert.Equal(t, second.ID, open.TargetID)
 	assert.InDelta(t, dt, open.Elapsed, 1e-9, "from zero")
 
 	ticks(s, timedOpenTicks()-1)
@@ -1056,7 +1062,7 @@ func TestTimedOpen_AnEarlierCastStillAtWorkCancelsNothing(t *testing.T) {
 		skill    string
 		targetY  float64
 	}{
-		{"a fireball in flight", "mage", false, "fireball", 800},
+		{"a fireball in flight", "mage", false, "fireball", 500 + 300*constants.PaceScale},
 		{"an arrow rain falling", "archer", true, "arrow_rain", 700},
 	}
 	for _, tt := range tests {

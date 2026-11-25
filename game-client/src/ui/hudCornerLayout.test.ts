@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CORNER_LABEL,
   CORNER_LABEL_GREYED_MAIL,
+  CORNER_LABEL_GREYED_BOOK,
   CORNER_ROW_CLEARANCE,
   CORNER_ICONS,
   cornerIconFrame,
@@ -22,6 +23,8 @@ describe("cornerIconFrame (FS-3EBCA R1, R2: the row from the right edge leftward
     ["mail", 786],
     // FS-8RZ51 R32: the passive tree's sixth at the row's left end, none of the five moved
     ["tree", 730],
+    // FS-X2CMM R36: the class book's seventh at the row's left end, after Tree, none of the six moved
+    ["book", 674],
   ] as const)("should put %s at x %i, y 658, 54 x 46, in a 1080 x 720 view, 56 px from the next (FS-QHN87 round 2)", (icon, x) => {
     expect(cornerIconFrame(icon, { width: 1080, height: 720 })).toEqual({
       x,
@@ -54,11 +57,11 @@ describe("cornerRowLeft (FS-3EBCA R1, R2; FS-77DVN §A.2)", () => {
     expect(cornerRowLeft(view)).toBe(Math.min(...plates));
   });
 
-  // FS-8RZ51 R43: the sixth icon moves the row's left edge with it
-  it("should stand at 730 in a 1080-wide view and 930 in a 1280-wide one, the tree's plate", () => {
-    expect(cornerRowLeft({ width: 1080, height: 720 })).toBe(730);
-    expect(cornerRowLeft({ width: 1280, height: 720 })).toBe(930);
-    expect(cornerRowLeft({ width: 1080, height: 720 })).toBe(cornerIconFrame("tree", { width: 1080, height: 720 }).x);
+  // FS-8RZ51 R43: the sixth icon moved the row's left edge with it; FS-X2CMM R36: the seventh, the book, does too
+  it("should stand at 674 in a 1080-wide view and 874 in a 1280-wide one, the book's plate", () => {
+    expect(cornerRowLeft({ width: 1080, height: 720 })).toBe(674);
+    expect(cornerRowLeft({ width: 1280, height: 720 })).toBe(874);
+    expect(cornerRowLeft({ width: 1080, height: 720 })).toBe(cornerIconFrame("book", { width: 1080, height: 720 }).x);
   });
 });
 
@@ -71,8 +74,10 @@ describe("corner labels (FS-3EBCA R5)", () => {
       party: "Party (T)",
       mail: "Mailbox",
       tree: "Tree (P)",
+      book: "Book (K)",
     });
     expect(CORNER_LABEL_GREYED_MAIL).toBe("Mailbox · town only");
+    expect(CORNER_LABEL_GREYED_BOOK).toBe("Book · runs only");
   });
 
   it("should centre a label 6 px over its icon, kept 8 px inside the right edge", () => {

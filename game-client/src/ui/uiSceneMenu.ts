@@ -67,10 +67,20 @@ export interface MenuSlotDeps {
    */
   tree?: { isOpen(): boolean; close(): void };
   /**
+   * The UI scene's class book (FS-X2CMM R36): Esc's book step, the menu opening over it and the Menu
+   * icon after the run's end shut it. None, and there is none to shut.
+   */
+  book?: { isOpen(): boolean; close(): void };
+  /**
    * The UI scene's controls panel (FS-84N1G R17): Esc's first step, closed as the player's close (its
    * `dialog_cancel`). None, and there is none to close.
    */
   controls?: { isOpen(): boolean; dismiss(): void };
+  /**
+   * The run's wares panel (FS-9JV5K §F R22): Esc's wares step, the player's close (the run takes it
+   * down). The menu opening over it is the run's to hear. None, and there is none to shut.
+   */
+  wares?: { isOpen(): boolean; close(): void };
 }
 
 /** A menu's look in a world: its tokens and its rows' pressable area (ADR-0013). */
@@ -180,7 +190,7 @@ export class UiMenuSlot {
 
   /**
    * One Esc press (R17; FS-R82NV § Change C2, FS-HRH2J R5, FS-1GZGD R40): an open dialogue is
-   * dismissed first, then `escapeStep`'s order: the run's controls panel (FS-84N1G R17), the letter panel, this slot (its Back; OPTIONS's
+   * dismissed first, then `escapeStep`'s order: an armed page's disarm (FS-X2CMM R44a), the run's controls panel (FS-84N1G R17), the letter panel, this slot (its Back; OPTIONS's
    * reopens the menu), the party panel, the gear overlay (the UI scene's own, § Change: Phase 3, R55);
    * with nothing open the menu opens.
    */
@@ -194,16 +204,23 @@ export class UiMenuSlot {
     }
     const open = report.windows();
     const step = escapeStep({
+      armed: report.facts().armed ?? false,
       controls: this.deps.controls?.isOpen() ?? false,
       letter: open.letter,
       menu: this.isOpen(),
       gear: this.deps.gear?.isOpen() ?? false,
       party: this.deps.party?.isOpen() ?? false,
       tree: this.deps.tree?.isOpen() ?? false,
+      book: this.deps.book?.isOpen() ?? false,
+      wares: this.deps.wares?.isOpen() ?? false,
     });
-    if (step === "controls") this.deps.controls?.dismiss();
+    // an armed page disarms, silently, and nothing else happens (FS-X2CMM R41, R44a)
+    if (step === "disarm") this.ask({ kind: "disarm" });
+    else if (step === "controls") this.deps.controls?.dismiss();
     else if (step === "letter") this.ask({ kind: "close", window: "letter" });
+    else if (step === "wares") this.deps.wares?.close();
     else if (step === "close-menu") this.filled?.panel.keys.dismiss();
+    else if (step === "book") this.closeBook();
     else if (step === "party") this.closeParty();
     else if (step === "tree") this.closeTree();
     else if (step === "gear") this.closeGear();
@@ -221,6 +238,7 @@ export class UiMenuSlot {
     const report = this.deps.bridge.world;
     if (!report || report.blockers().dialogue) return;
     if (report.facts().ended) {
+      this.closeBook();
       this.closeParty();
       this.closeTree();
       this.closeGear();
@@ -420,13 +438,21 @@ export class UiMenuSlot {
     // here, the world's windows as the world hears the UI's state
     this.deps.party?.close();
     this.deps.tree?.close();
+    this.deps.book?.close();
     this.deps.gear?.close();
+    // the run's wares panel is the run's: it takes it down as it hears the menu open, silently
     this.deps.bridge.reportUi({ menuOpen: true });
   }
 
   /** The UI scene's party panel shut (§ Change: Phase 2: the party, R39); the rows read the world again. */
   private closeParty(): void {
     this.deps.party?.close();
+    this.sync();
+  }
+
+  /** The UI scene's class book shut (FS-X2CMM R36); the rows read the world again. */
+  private closeBook(): void {
+    this.deps.book?.close();
     this.sync();
   }
 

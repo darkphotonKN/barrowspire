@@ -28,8 +28,8 @@ func delverPoints(t *testing.T, s *Session, ids []uuid.UUID) []point {
 	return at
 }
 
-// Floor 1 holds 30–45 monsters besides a demon, none in the start room and
-// none within 350 px of a delver. FS-KE075 §C R18–19.
+// Floor 1 holds 15–25 monsters besides a demon, none in the start room and
+// none within 350 px of a delver. FS-KE075 §C R18–19, FS-5FZ4J §D R21.
 func TestDungeonPopulation_TotalAndStartRoom(t *testing.T) {
 	for seed := uint64(1); seed <= floor1Builds; seed++ {
 		s, ids := dungeonRun(t, seed, 4, 0)
@@ -80,19 +80,23 @@ func floor1Monsters(t *testing.T, s *Session) []floor1Monster {
 // eligibleHall is whether room holds a hall pack: a hall that is neither the
 // start nor a treasure room.
 func eligibleHall(d *dungeonFloor, room int) bool {
-	return d.isHall(room) && room != d.layout.Roles.Start && !slices.Contains(d.layout.Roles.Treasure, room)
+	// only a hall that rolled monsters holds a pack (FS-KE075 §Change: Room
+	// variety R79)
+	return d.isHall(room) && room != d.layout.Roles.Start && !slices.Contains(d.layout.Roles.Treasure, room) &&
+		d.content(room) == contentMonsters
 }
 
 // Every hall that is not the start or a treasure room holds one troll, floor
-// 1's only brute, and 1–3 of its fodder, each within 160 px of the troll. On
-// floor 1 the first of them is a Bone Archer, its ranged member, rolled for
-// level and elite as the fodder it replaces.
-// FS-KE075 §C R18; FS-B4SG9 §B R16, §Edge States "Elite hall archer";
-// FS-C8VM7 §C R22-R23.
+// 1's only brute, and up to 3 of its fodder, each within 160 px of the troll:
+// 1-3 as rolled, fewer where the floor total trimmed the pack, never its troll
+// (FS-5FZ4J §D R21). On floor 1 the first of them is a Bone Archer, its ranged
+// member, rolled for level and elite as the fodder it replaces, and the last a
+// trim takes. FS-KE075 §C R18; FS-B4SG9 §B R16, §Edge States "Elite hall
+// archer"; FS-C8VM7 §C R22-R23.
 func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
-	halls, eliteArchers := 0, 0
+	halls, eliteArchers, whole := 0, 0, 0
 	for seed := uint64(1); seed <= floor1Builds; seed++ {
-		s, _ := dungeonRun(t, seed, 4, 0)
+		s, _ := dungeonRun(t, seed, 4, 0, forcedSeal(components.SealLeverOrder))
 		d := s.dungeon
 		monsters := floor1Monsters(t, s)
 
@@ -122,9 +126,13 @@ func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
 				}
 			}
 			require.Len(t, trolls, 1, "seed %d room %d: a hall holds one troll", seed, room)
-			assert.Len(t, archers, HallPackBoneArchers, "seed %d room %d: a floor-1 hall pack holds one Bone Archer", seed, room)
+			if len(ghouls)+len(archers) > 0 {
+				assert.Len(t, archers, HallPackBoneArchers, "seed %d room %d: a floor-1 hall pack holds one Bone Archer", seed, room)
+			}
 			// the archer takes a ghoul's place: the pack's size is unchanged
-			assert.GreaterOrEqual(t, len(ghouls)+len(archers), HallPackFodderMin, "seed %d room %d", seed, room)
+			if len(ghouls)+len(archers) >= HallPackFodderMin {
+				whole++
+			}
 			assert.LessOrEqual(t, len(ghouls)+len(archers), HallPackFodderMax, "seed %d room %d", seed, room)
 			for _, g := range append(ghouls, archers...) {
 				assert.LessOrEqual(t, dist(g.x, g.y, trolls[0].x, trolls[0].y), HallPackRadius,
@@ -133,6 +141,7 @@ func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
 		}
 	}
 	require.NotZero(t, halls, "the builds hold halls to check")
+	assert.NotZero(t, whole, "packs the total leaves alone keep their rolled size")
 	assert.NotZero(t, eliteArchers, "a hall's archer is promoted at the floor's elite chance")
 }
 
@@ -217,11 +226,13 @@ func ordinaryRoom(d *dungeonFloor, room int) bool {
 // On floor 1, about 1 in 4 of the ordinary rooms' fodder rolls, top-ups
 // included, are Bone Archers, the pool's ranged member; the brute share
 // stands and the three fodder share the rest evenly. FS-B4SG9 §B R15;
-// FS-C8VM7 §C R21-R22.
+// FS-C8VM7 §C R21-R22. Twice the usual builds: with 15-25 monsters a floor
+// (FS-5FZ4J §D R21) one thousand hold too few ordinary-room rolls for a 0.02
+// band on a third.
 func TestDungeonPopulation_Floor1RoomGhoulsAreBoneArchersAtTheirShare(t *testing.T) {
 	counts := map[components.MonsterArchetype]int{}
 	all := 0
-	for seed := uint64(1); seed <= floor1Builds; seed++ {
+	for seed := uint64(1); seed <= 2*floor1Builds; seed++ {
 		s, _ := dungeonRun(t, seed, 4, 0)
 		for _, m := range floor1Monsters(t, s) {
 			if m.monster.Boss || !ordinaryRoom(s.dungeon, m.room) {
@@ -295,7 +306,9 @@ func roleOf(archetype components.MonsterArchetype) monsterRole {
 // pool has no ranged member; the floor's brute share stands, and every
 // monster is of the floor's pool. FS-B4SG9 §B R14–R17; FS-C8VM7 §C R21-R23.
 func TestBuildFloor_BoneArchersOnEveryDungeonFloorAsOnFloor1(t *testing.T) {
-	const seeds = 120
+	// a sealed floor's ordinary rooms hold few monsters (FS-5FZ4J §D R21):
+	// enough seeds that the brute share is measured to its tolerance
+	const seeds = 600
 	fodderRolls, rangedRolls, packs, unranged := 0, 0, 0, 0
 	for depth := firstFloor + 1; depth <= MasterSpireHeight; depth++ {
 		brutes, rolled := 0, 0
@@ -413,7 +426,7 @@ func TestDungeonPopulation_TreasureGuardsAreElite(t *testing.T) {
 		}
 	}
 	share := float64(packs) / float64(alone+packs)
-	assert.InDelta(t, TreasureGuardPackShare, share, 0.05, "a treasure room holds a pack about half the time")
+	assert.InDelta(t, TreasureGuardPackShare, share, 0.05, "a treasure room holds a pack at its share")
 }
 
 // A treasure guard draws through the same roll as any rolled monster, so on
@@ -462,10 +475,18 @@ func TestDungeonPopulation_CorridorsHoldTheirCountOnePerSegment(t *testing.T) {
 		assert.LessOrEqual(t, total, CorridorMonstersMax, "seed %d", seed)
 		if total < CorridorMonstersMin {
 			assert.Len(t, standardMonstersIn(s), DungeonMonstersMax, "seed %d: corridors short of their count only when the total is trimmed", seed)
+			// an ordinary room gives up its second before a corridor gives up
+			// any, and keeps its one (FS-KE075 §Change: Room variety R79, R83)
+			held := map[int]int{}
 			for _, m := range floor1Monsters(t, s) {
 				ordinary := m.room >= 0 && m.room != d.layout.Roles.Start &&
 					!slices.Contains(d.layout.Roles.Treasure, m.room) && !eligibleHall(d, m.room)
-				assert.False(t, ordinary && !m.monster.Boss, "seed %d: corridors trimmed before an ordinary room", seed)
+				if ordinary && !m.monster.Boss {
+					held[m.room]++
+				}
+			}
+			for room, n := range held {
+				assert.Equal(t, 1, n, "seed %d room %d: corridors trimmed before an ordinary room's second", seed, room)
 			}
 		}
 	}
@@ -620,7 +641,7 @@ func populationArea(t *testing.T, s *Session) spawnArea {
 func TestPlaceDungeonBloodDemon_NeverSharesTheDemonsRoom(t *testing.T) {
 	forceBloodDemon(t, 0) // the built floor brings none of its own
 	for seed := uint64(1); seed <= 100; seed++ {
-		s, ids := dungeonRun(t, seed, 4, 0)
+		s, ids := dungeonRun(t, seed, 4, 0, forcedSeal(components.SealLeverOrder))
 		d := s.dungeon
 		area := populationArea(t, s)
 
@@ -707,16 +728,16 @@ func TestPopulateMonsters_DungeonFloorPlacesARolledBloodDemon(t *testing.T) {
 	}
 }
 
-// The floor's population is FS-C8VM7 §I R49's tune of FS-KE075 §C: 30-45 a
-// floor, hall packs of 1-3, ordinary rooms 0-2 topped up to 3, corridors 3-5;
-// the treasure guards as they were.
+// The floor's population is FS-KE075 §Change: Room variety R82-R83's tune of
+// FS-C8VM7 §I R49 and FS-5FZ4J §D R21: 8-18 a floor, hall packs of a brute and
+// 0-1, top-ups to 2, corridors 1-3, treasure rooms one elite or two at 25%.
 func TestDungeonPopulation_ThinnerFloorsTune(t *testing.T) {
-	assert.Equal(t, []int{30, 45}, []int{DungeonMonstersMin, DungeonMonstersMax})
-	assert.Equal(t, []int{1, 3}, []int{HallPackFodderMin, HallPackFodderMax})
-	assert.Equal(t, []int{0, 2, 3}, []int{RoomMonstersMin, RoomMonstersMax, RoomMonstersTopUpMax})
-	assert.Equal(t, []int{3, 5}, []int{CorridorMonstersMin, CorridorMonstersMax})
-	assert.Equal(t, 0.5, TreasureGuardPackShare)
-	assert.Equal(t, []int{2, 3}, []int{TreasureGuardPackMin, TreasureGuardPackMax})
+	assert.Equal(t, []int{8, 18}, []int{DungeonMonstersMin, DungeonMonstersMax})
+	assert.Equal(t, []int{0, 1}, []int{HallPackFodderMin, HallPackFodderMax})
+	assert.Equal(t, []int{1, 2, 2}, []int{RoomMonstersMin, RoomMonstersMax, RoomMonstersTopUpMax})
+	assert.Equal(t, []int{1, 3}, []int{CorridorMonstersMin, CorridorMonstersMax})
+	assert.Equal(t, 0.25, TreasureGuardPackShare)
+	assert.Equal(t, []int{2, 2}, []int{TreasureGuardPackMin, TreasureGuardPackMax})
 }
 
 // No ordinary room holds more than a top-up allows. FS-KE075 §C R18.
@@ -736,4 +757,41 @@ func TestDungeonPopulation_OrdinaryRoomsHoldAtMostTheTopUpCap(t *testing.T) {
 			assert.LessOrEqual(t, n, RoomMonstersTopUpMax, "seed %d room %d", seed, room)
 		}
 	}
+}
+
+// Past the ordinary rooms and corridors, the floor total trims hall packs'
+// fodder, then treasure-guard packs, room by room from the farthest from the
+// start, the last placed first, down to one a room: a pack keeps its leader
+// and a treasure room a guard. FS-5FZ4J §D R21.
+func TestTrimPack_FarthestRoomFirstDownToOneEach(t *testing.T) {
+	d := &dungeonFloor{layout: levelgen.DungeonLayout{Rooms: []levelgen.Room{{Distance: 5}, {Distance: 20}, {Distance: 10}}}}
+	spawn := func(name string, role spawnRole, room int) dungeonSpawn {
+		return dungeonSpawn{monster: MonsterConfig{Name: name}, role: role, room: room}
+	}
+	p := &dungeonPopulation{floor: d, spawns: []dungeonSpawn{
+		spawn("near leader", spawnHallPack, 0), spawn("near archer", spawnHallPack, 0), spawn("near ghoul", spawnHallPack, 0),
+		spawn("far leader", spawnHallPack, 1), spawn("far archer", spawnHallPack, 1),
+		spawn("far guard", spawnTreasureGuard, 1),
+		spawn("mid guard 1", spawnTreasureGuard, 2), spawn("mid guard 2", spawnTreasureGuard, 2), spawn("mid guard 3", spawnTreasureGuard, 2),
+	}}
+	names := func() []string {
+		var out []string
+		for _, s := range p.spawns {
+			out = append(out, s.monster.Name)
+		}
+		return out
+	}
+
+	require.True(t, p.trimPack(spawnHallPack))
+	assert.NotContains(t, names(), "far archer", "the farthest room's pack goes first")
+	require.True(t, p.trimPack(spawnHallPack))
+	assert.Contains(t, names(), "near archer", "the archer slot is the last a pack loses")
+	require.True(t, p.trimPack(spawnHallPack))
+	assert.False(t, p.trimPack(spawnHallPack), "every hall is down to its leader")
+	for range 2 {
+		require.True(t, p.trimPack(spawnTreasureGuard))
+	}
+	assert.False(t, p.trimPack(spawnTreasureGuard), "every treasure room is down to one guard")
+
+	assert.Equal(t, []string{"near leader", "far leader", "far guard", "mid guard 1"}, names())
 }

@@ -350,8 +350,9 @@ func inPlayPositions(roster []*ecs.Entity) []point {
 /**
 * mapKeepOut is every area of the floor a monster's body may not overlap: each
 * building's whole footprint (its walls, door and the floor they enclose), every
-* door, container, switch, escape door, the stairs, and a tome run's tome and
-* altar (FS-3103M §C R8). A wall of no building, a
+* door, container, switch, escape door, the stairs, a tome run's tome and
+* altar (FS-3103M §C R8), and a sealed floor's gate, a door, and seal pieces
+* (FS-5FZ4J §H R45). A wall of no building, a
 * dungeon floor's shell, is kept out by its own rect: grouped under the nil
 * house, a dungeon's walls would cover its whole floor.
 **/
@@ -386,18 +387,31 @@ func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 			continue
 		}
 
+		// the Captives' cage, its own size (FS-4EC7Z §D R13)
+		if entity.HasComponent(ecs.ComponentTypeCage) {
+			keepOut = append(keepOut, centredArea(at.X, at.Y, CageHalfSize, CageHalfSize))
+			continue
+		}
+
 		if entity.HasComponent(ecs.ComponentTypeStairs) {
 			keepOut = append(keepOut, centredArea(at.X, at.Y, constants.StairsWidthRadius, constants.StairsHeightRadius))
 			continue
 		}
 
-		// containers, switches, escape doors, the tome and the altar stand
-		// centred on their position, a container's size
+		// containers, switches, escape doors, the tome, both altars, the
+		// fountain, the merchant, seal pieces, lore pieces and the cage key
+		// stand centred on their position, a container's size
 		if entity.HasComponent(ecs.ComponentTypeContainer) ||
 			entity.HasComponent(ecs.ComponentTypeSwitch) ||
 			entity.HasComponent(ecs.ComponentTypeEscapeDoor) ||
 			entity.HasComponent(ecs.ComponentTypeTome) ||
-			entity.HasComponent(ecs.ComponentTypeAltar) {
+			entity.HasComponent(ecs.ComponentTypeAltar) ||
+			entity.HasComponent(ecs.ComponentTypeHallowedAltar) ||
+			entity.HasComponent(ecs.ComponentTypeFountain) ||
+			entity.HasComponent(ecs.ComponentTypeMerchant) ||
+			entity.HasComponent(ecs.ComponentTypeSealPiece) ||
+			entity.HasComponent(ecs.ComponentTypeLorePiece) ||
+			entity.HasComponent(ecs.ComponentTypeCageKey) {
 			keepOut = append(keepOut, PlaceArea{
 				X: at.X - constants.ContainerWidthRadius,
 				Y: at.Y - constants.ContainerHeightRadius,

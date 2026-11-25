@@ -18,3 +18,4 @@ export {
 } from "./healthBar";
 export { NPC_NAME_PX, isFunctionNPC, sigilPoints } from "./npc";
 export { NameplateTitle, TITLE_LINE_PX } from "./titleLine";
+export { TEAMMATE_BAR, paintTeammateBar, teammateBarTop, type TeammateBarPainter } from "./teammateBar";

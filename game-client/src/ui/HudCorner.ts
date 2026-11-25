@@ -3,7 +3,8 @@
  * right Menu (a riveted gear: one Esc press), Inventory (a round rucksack: the inventory), Character
  * (a strapped bust with pauldrons: the character panel), Party (three busts: the party panel), the
  * Mailbox and, at the row's left end, the Tree (an oak: the passive tree, FS-8RZ51 R32), which carries
- * a small ember marker while points are unspent, set on the standing row (`mark`, R33).
+ * a small ember marker while points are unspent, set on the standing row (`mark`, R33), and after it the
+ * Book (a clasped book with a ribbon: the class book, FS-X2CMM R36), greyed outside a run.
  * In the town the Mailbox is the mailbox's own envelope (`MailboxEnvelope`, FS-1GZGD § Change),
  * which this row leaves its slot to; elsewhere it is drawn here, greyed (R9).
  *
@@ -32,8 +33,10 @@ import { GLYPH_LINE_W, drawEnvelopeLines, envelopeKnockout } from "./MailboxEnve
 import { BRONZE, CUT_W, GREYED, GREYED_ALPHA, Knockout, bend, oval, type KnockoutCut, type KnockoutPicture, type Pt } from "./knockout";
 import { RUCKSACK, drawRucksackLines } from "./knockoutRucksack";
 import { MARKER_AT, MARKER_BOX, MARKER_INK, MARKER_KNOCKOUT, TREE_KNOCKOUT, drawMarkerLines, drawTreeLines } from "./knockoutTree";
+import { CLASPED_BOOK, drawClaspedBookLines } from "./knockoutClaspedBook";
 import {
   CORNER_LABEL,
+  CORNER_LABEL_GREYED_BOOK,
   CORNER_LABEL_GREYED_MAIL,
   cornerIconFrame,
   type CornerIcon,
@@ -44,14 +47,16 @@ const HUD_DEPTH = 1000;
 /** Every glyph's line, the envelope's (FS-QHN87 R1); the cover margins follow it. */
 const LINE_W = GLYPH_LINE_W;
 
-const labelOf = (spec: CornerIconSpec) =>
-  spec.greyed && spec.icon === "mail" ? CORNER_LABEL_GREYED_MAIL : CORNER_LABEL[spec.icon];
+/** Each greyed icon's name: the Mailbox outside the town (R9), the Book outside a run (FS-X2CMM R36). */
+const GREYED_LABEL: Partial<Record<CornerIcon, string>> = { mail: CORNER_LABEL_GREYED_MAIL, book: CORNER_LABEL_GREYED_BOOK };
+
+const labelOf = (spec: CornerIconSpec) => (spec.greyed && GREYED_LABEL[spec.icon]) || CORNER_LABEL[spec.icon];
 
 export interface CornerIconSpec {
   icon: CornerIcon;
   /** What a press does; the scene's own key path (Esc, I, T). */
   press?: () => void;
-  /** Shown but not pressable (the Mailbox outside the town, R9): faint, no hand, no press. */
+  /** Shown but not pressable (the Mailbox outside the town, R9; the Book outside a run, FS-X2CMM R36): faint, no hand, no press. */
   greyed?: boolean;
   /** Told as the pointer comes onto a pressable icon (FS-WDM0X § Change M5); never for a greyed one. */
   hovered?: () => void;
@@ -91,13 +96,18 @@ interface DrawnIcon {
   marker?: Knockout;
 }
 
-/** What each icon is as a knockout, about its slot's centre (FS-7TQN4 R3–R7). */
-function pictureOf(spec: CornerIconSpec, frame: Rect): KnockoutPicture {
-  if (spec.greyed || spec.icon === "mail") return envelopeKnockout(frame);
+/**
+ * What each icon is as a knockout, about its slot's centre (FS-7TQN4 R3–R7): its own picture, greyed or
+ * not (a greyed icon is its picture in the faint ink, never another's: FS-X2CMM R36's Book greyed is
+ * still the book).
+ */
+export function cornerPicture(spec: Pick<CornerIconSpec, "icon" | "greyed">, frame: Rect): KnockoutPicture {
+  if (spec.icon === "mail") return envelopeKnockout(frame);
   if (spec.icon === "menu") return GEAR_KNOCKOUT;
   if (spec.icon === "inventory") return RUCKSACK;
   if (spec.icon === "character") return CHARACTER_KNOCKOUT;
   if (spec.icon === "tree") return TREE_KNOCKOUT;
+  if (spec.icon === "book") return CLASPED_BOOK;
   return PARTY_KNOCKOUT;
 }
 
@@ -125,7 +135,7 @@ export class HudCorner {
       const knockout = new Knockout({
         scene,
         depth: HUD_DEPTH,
-        picture: pictureOf(spec, frame),
+        picture: cornerPicture(spec, frame),
         ink: spec.greyed ? GREYED : BRONZE,
         name: `the ${spec.icon} icon`,
         lost: () => this.draw(drawn),
@@ -232,21 +242,21 @@ export class HudCorner {
     const f = icon.frame;
     // a knockout where the scene can draw one; today's line glyph where it cannot (FS-7TQN4 R15)
     if (icon.knockout.show(f, icon.hovered)) return;
-    if (icon.spec.greyed) {
-      // never amber: an amber thing the player cannot act on is a defect (R9); bare, with no seal
-      // and no count, since nothing of the mailbox is fetched outside the town (FS-J1672 R7, R8)
-      drawEnvelopeLines(g, f, palette.hudFaint, GREYED_ALPHA);
-      return;
-    }
-    const ink = icon.hovered ? palette.interactableBright : palette.interactable;
-    const alpha = icon.hovered ? 1 : 0.85;
+    // greyed, never amber: an amber thing the player cannot act on is a defect (R9), and never brighter
+    const greyed = !!icon.spec.greyed;
+    const ink = greyed ? palette.hudFaint : icon.hovered ? palette.interactableBright : palette.interactable;
+    const alpha = greyed ? GREYED_ALPHA : icon.hovered ? 1 : 0.85;
     const cx = f.x + f.width / 2;
     const cy = f.y + f.height / 2;
-    if (icon.spec.icon === "menu") drawGear(g, cx, cy, ink, alpha);
+    // the Mailbox bare, with no seal and no count, since nothing of the mailbox is fetched outside the
+    // town (FS-J1672 R7, R8)
+    if (icon.spec.icon === "mail") drawEnvelopeLines(g, f, ink, alpha);
+    else if (icon.spec.icon === "menu") drawGear(g, cx, cy, ink, alpha);
     else if (icon.spec.icon === "inventory") drawRucksackLines(g, cx, cy, ink, alpha);
     else if (icon.spec.icon === "character") drawCharacter(g, cx, cy + 1, ink, alpha);
     else if (icon.spec.icon === "party") drawParty(g, cx, cy, ink, alpha);
     else if (icon.spec.icon === "tree") drawTreeLines(g, cx, cy, ink, alpha);
+    else if (icon.spec.icon === "book") drawClaspedBookLines(g, cx, cy, ink, alpha);
   }
 }
 

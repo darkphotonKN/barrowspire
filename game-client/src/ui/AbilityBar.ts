@@ -38,13 +38,14 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { AbilityBarView } from "./abilityBarView";
 import { ABILITY_BAR_SQUARES, abilityBarFrame, type AbilityBarFrame, type AbilityBarSquare, type AbilitySquareFrame } from "./abilityBarLayout";
 import { ABILITY_TIP_MAX_W, abilityTip, abilityTipPlace } from "./abilityBarTip";
-import { cooldownSwept, sweepPolygon } from "./abilityCooldown";
+import { cooldownSwept, sweepPolygon, type SweepGraphics } from "./abilityCooldown";
 import { TREE_ABILITY_LEVEL } from "./abilityCopy";
 import { ABILITY_ICONS, drawAbilityIconLines, type AbilityIconKey } from "./abilityIcons";
+import { drawWellGround, drawWellRim, RIM_ALPHA, SWEEP_ALPHA, WELL_ALPHA } from "./hudWell";
 import { BRONZE, GREYED, GREYED_ALPHA, Knockout } from "./knockout";
 import type { HudChannel } from "./resources";
 import type { AbilityBarPiece } from "./uiSceneHud";
-import type { Point, XpBarView } from "./xpBarLayout";
+import type { XpBarView } from "./xpBarLayout";
 
 /** The corner row's band on the UI scene (R11; ADR-0086 Decision 4). */
 const BAR_DEPTH = 1000;
@@ -55,14 +56,6 @@ const TIP_PAD = 10;
 const TIP_LINE_GAP = 4;
 /** What the locked 3 square reads in its cost slot (R25). */
 const LOCKED_LINE = `Lv ${TREE_ABILITY_LEVEL}`;
-/** The well's fill and rim (R13), the carved line inside it, and the lit rim of the active state (R17). */
-const WELL_ALPHA = 0.85;
-const RIM_ALPHA = 0.6;
-const CARVE_INSET = 3;
-const CARVE_ALPHA = 0.5;
-const ACTIVE_RIM_W = 2;
-/** The sweep's wedge over a cooling square (R18). */
-const SWEEP_ALPHA = 0.55;
 /** The right-mouse glyph, drawn small enough to sit in its plaque (R14): the card's mouse, scaled down. */
 const MOUSE_W = 8;
 const MOUSE_H = 10;
@@ -111,14 +104,6 @@ const SWEPT: Partial<Record<AbilityBarSquare, (view: AbilityBarView) => Cooldown
   ability: (view) => view.cooldowns.ability,
   tree: (view) => (view.tree.locked ? null : view.cooldowns.tree),
 };
-
-/** What of a Phaser Graphics the sweep draws with: its wedge's points are plain ones, as Phaser reads them. */
-interface SweepGraphics {
-  clear(): SweepGraphics;
-  fillStyle(color: number, alpha?: number): unknown;
-  fillPoints(points: Point[], closeShape?: boolean): unknown;
-  destroy(): void;
-}
 
 /** A square's cooldown as last heard, and when on the UI scene's clock. */
 interface HeardCooldown {
@@ -251,13 +236,8 @@ export class AbilityBar implements AbilityBarPiece {
   ): void {
     const look = drawn.look!;
     const { well, plaque } = f;
-    wells.fillStyle(palette.hudPanel, WELL_ALPHA);
-    wells.fillRect(well.x, well.y, well.width, well.height);
-    wells.lineStyle(1, palette.hudPanelDeep, CARVE_ALPHA);
-    wells.strokeRect(well.x + CARVE_INSET, well.y + CARVE_INSET, well.width - CARVE_INSET * 2, well.height - CARVE_INSET * 2);
-    if (look.active) g.lineStyle(ACTIVE_RIM_W, palette.frameBright, 1);
-    else g.lineStyle(1, palette.frame, RIM_ALPHA);
-    g.strokeRect(well.x, well.y, well.width, well.height);
+    drawWellGround(wells, well);
+    drawWellRim(g, well, look.active);
 
     // the plaque, set into the top edge over the rim (R14)
     g.fillStyle(palette.hudPanel, 1);

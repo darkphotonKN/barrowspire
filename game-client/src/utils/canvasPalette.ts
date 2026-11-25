@@ -57,10 +57,51 @@ export function rgba(color: number, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/** One reliquary bar's liquid ramp (`palette.hudBarRamp`): every tone from its channel's colour and a darker anchor in its family. */
+export interface BarRamp {
+  light: number;
+  lit: number;
+  body: number;
+  deep: number;
+  foot: number;
+  trough: number;
+  chip: number;
+  spark: number;
+}
+
+function barRamp(lit: number, anchor: number): BarRamp {
+  return {
+    light: tint(lit, 0.38),
+    lit,
+    body: mix(lit, anchor, 0.32),
+    deep: mix(lit, anchor, 0.68),
+    foot: shade(anchor, 0.35),
+    trough: shade(anchor, 0.68),
+    chip: tint(lit, 0.5),
+    spark: tint(lit, 0.62),
+  };
+}
+
 // ── The canvas palette ────────────────────────────────────────────────────
 
 /** Slate warmed a little toward barrow earth: grey stone, neither cold nor brown. */
 const FALLBACK_STONE = mix(BARROW_HEX.slate, BARROW_HEX.barrowDeep, 0.3);
+
+/**
+ * The class book's pigments, `palette.bookPigment` (below): one table, so the book's world effects
+ * (`palette.bookEffect`) read their pigments through it and never from the tokens (ADR-0094, ADR-0098).
+ */
+const BOOK_PIGMENT = {
+  verdigris: BARROW_HEX.pigmentVerdigris,
+  ochre: BARROW_HEX.pigmentOchre,
+  madder: BARROW_HEX.pigmentMadder,
+  lapis: BARROW_HEX.pigmentLapis,
+  bone: BARROW_HEX.pigmentBone,
+  /** A locked page's ground (ADR-0095): flat warm near-ink, what a dim page sinks toward. */
+  lockedGround: BARROW_HEX.pigmentLockedGround,
+  /** The rim under the pointer (ADR-0095): the HUD's bright brass. */
+  rimLit: BARROW_HEX.brassBright,
+} as const;
 
 export const palette = {
   // -- Ground and structure. Barrow earth and cold stone; the world is
@@ -195,7 +236,8 @@ export const palette = {
   minimapEdge: tint(BARROW_HEX.slateLight, 0.3),
   levelUp: BARROW_HEX.brassBright,
   /**
-   * The resource bars (FS-8AY7S req 23), on a dark track in a brass rim. Health is the oxblood
+   * The resource bars' channel colours (FS-8AY7S req 23): the party frames' compact bars fill in them,
+   * and each is the `lit` tone of its reliquary ramp (`hudBarRamp`) on the player's own bars. Health is the oxblood
    * channel, lifted as the marker HP bar is, since raw oxblood vanishes on the dark track. Mana
    * keeps the necrotic blue-green the old MP bar had. Stamina is worn parchment-gold: the neutral
    * HUD family, apart from health, mana and the bright-brass XP bar, never amber (not actionable)
@@ -208,6 +250,53 @@ export const palette = {
   hudStamina: mix(BARROW_HEX.vellum, BARROW_HEX.brass, 0.35),
   hudParry: BARROW_HEX.brassBright,
   hudResourceOther: BARROW_HEX.vellumDark,
+  /**
+   * The poison tint (FS-5FZ4J §J R55): the health fill of a poisoned player's own bar and of a
+   * teammate's overhead bar while `poisoned_for` is set, in the gas vent's sour bile-olive (the
+   * bake's BILE, I-5FZ4J-8): arcane green warmed toward bright brass and dulled toward vellum, so it
+   * never reads as arcane green's safe and friendly, nor as health's oxblood.
+   */
+  poisoned: mix(mix(BARROW_HEX.arcane, BARROW_HEX.brassBright, 0.45), BARROW_HEX.vellumDark, 0.35),
+  /**
+   * The Blessing's status mark (FS-5FZ4J §J R55): the hallowed altar's gold (I-5FZ4J-8), bright brass
+   * paled toward vellum, so it reads as a boon held, never as amber's "act on this" (the mark is only
+   * hovered) nor as arcane green's ally.
+   */
+  blessed: mix(BARROW_HEX.brassBright, BARROW_HEX.vellum, 0.35),
+  /**
+   * The reliquary bars: the player's own Health and resource bars as a carved plate with a sunken,
+   * brass-bezelled channel per bar, each filled like a vial and set into an emblem socket. One ramp
+   * per channel, every tone from that channel's own colour (`lit`, the colour the HUD has always
+   * filled in) and a darker anchor in its family, so the channel's hue still reads: `light` the
+   * liquid's specular top and leading edge, `body` its middle, `deep` and `foot` its underside,
+   * `trough` the channel's empty run (the missing reads in the channel's own dark, never black),
+   * `chip` what a loss just took, `spark` motes, bubbles and glints.
+   */
+  hudBarRamp: {
+    health: barRamp(BARROW_HEX.oxbloodText, BARROW_HEX.oxblood),
+    mana: barRamp(BARROW_HEX.necrotic, shade(BARROW_HEX.necrotic, 0.5)),
+    stamina: barRamp(mix(BARROW_HEX.vellum, BARROW_HEX.brass, 0.35), BARROW_HEX.brass),
+    parry: barRamp(BARROW_HEX.brassBright, BARROW_HEX.brass),
+    unknown: barRamp(BARROW_HEX.vellumDark, BARROW_HEX.barrowDeep),
+    poisoned: barRamp(
+      mix(mix(BARROW_HEX.arcane, BARROW_HEX.brassBright, 0.45), BARROW_HEX.vellumDark, 0.35),
+      shade(BARROW_HEX.arcaneDeep, 0.2),
+    ),
+  },
+  /** The reliquary plate and its brass: the stone, its lit and shadowed edges, the bezel's three tones and a socket's well. */
+  hudPlate: BARROW_HEX.umber,
+  hudPlateLit: tint(BARROW_HEX.umber, 0.1),
+  hudPlateDeep: BARROW_HEX.pitch,
+  hudBezel: BARROW_HEX.brass,
+  hudBezelLit: BARROW_HEX.brassBright,
+  hudBezelShade: shade(BARROW_HEX.brass, 0.55),
+  hudSocket: BARROW_HEX.pitch,
+  /**
+   * Contract Settled's status mark (FS-4EC7Z §G R34): the mercenary's blood-price, an ember steel
+   * paled toward vellum, so the two crossed blades read as a damage boon held, apart from the
+   * Blessing's gold, never as amber's "act on this" nor as oxblood's harm done.
+   */
+  contractSettled: mix(BARROW_HEX.ember, BARROW_HEX.vellum, 0.4),
 
   /**
    * The chat window (FS-WJGFJ R30): one stream, told apart by colour. The user's hues mapped
@@ -268,6 +357,37 @@ export const palette = {
     steel: BARROW_HEX.silver,
   },
 
+  /**
+   * The class book's pigments (FS-X2CMM R45, ADR-0094, inked by ADR-0095): a page roundel's ground wears
+   * one main pigment by what the page does (light and finding ochre, movement and air lapis, binding and
+   * blood madder, growth, beasts and cures verdigris), never by its class, and its picture is bone.
+   * ADR-0098: two readers and nothing else. The page roundels (`src/ui/pageRoundel.ts`) read this table;
+   * the book's own world effects read their pigments only through `bookEffect`, below, each in the
+   * pigment of the page that made it. No other HUD element, creature, fixture or effect reads them.
+   */
+  bookPigment: BOOK_PIGMENT,
+  /**
+   * The class book's open tome (FS-X2CMM §Change: Illuminated pages and the open tome, C3–C5): a
+   * two-page vellum spread in a dark leather binding, the vellum falling from its middle tone near the
+   * spine to its edge tone at the outer edges, a gutter shadow at the fold, and its inks: dark ink for a
+   * page's name, a muted brown for costs and hints, madder-brown for the title and the shown page's
+   * name. A row under the pointer takes a soft wash of the dark vellum. Read by `classBookStyle.ts`.
+   */
+  bookTome: {
+    leather: BARROW_HEX.tomeLeather,
+    /** The binding's edge and the pages' outline: the leather deepened. */
+    leatherEdge: shade(BARROW_HEX.tomeLeather, 0.45),
+    /** The binding's top-lit rim. */
+    leatherLit: mix(BARROW_HEX.tomeLeather, BARROW_HEX.tomeVellumEdge, 0.18),
+    vellumEdge: BARROW_HEX.tomeVellumEdge,
+    vellumMiddle: BARROW_HEX.tomeVellumMiddle,
+    gutter: BARROW_HEX.tomeGutter,
+    ink: BARROW_HEX.tomeInk,
+    inkMuted: BARROW_HEX.tomeInkMuted,
+    title: BARROW_HEX.tomeInkMadder,
+    wash: BARROW_HEX.vellumDark,
+  },
+
   // -- Light. The only warmth in the barrow.
   torch: BARROW_HEX.amber,
   torchCore: BARROW_HEX.amberBright,
@@ -302,6 +422,11 @@ export const palette = {
   /** Another player (FS-77AB6 req 40): co-op, so the ally channel, arcane green. */
   markerAlly: BARROW_HEX.arcane,
   markerHub: BARROW_HEX.vellum,
+  /**
+   * An encounter NPC's name plate while it is no ally (FS-4EC7Z §G R29): someone met, neither friend
+   * nor foe, so the neutral vellum the town's residents wear.
+   */
+  markerEncounter: BARROW_HEX.vellum,
   /**
    * A function NPC's name and sigil (FS-MRZH7 req 2): someone the player deals with for real, so
    * the interactable channel, amber. Apart from the player's own bright-brass name.
@@ -353,6 +478,51 @@ export const palette = {
    */
   rainAimRing: BARROW_HEX.vellum,
   rainAimFill: BARROW_HEX.vellumDark,
+  /**
+   * The armed page's reticle (FS-X2CMM R41; `src/render/effects/pageReticle.ts`), by its target kind: a
+   * ground page's ring in plain vellum over the darker vellum's wash, as the Arrow Rain's; an ally page's in
+   * the ally channel, arcane green; an interactable page's in the interactable channel, amber.
+   */
+  reticleGround: BARROW_HEX.vellum,
+  reticleFill: BARROW_HEX.vellumDark,
+  reticleAlly: BARROW_HEX.arcane,
+  reticleInteractable: BARROW_HEX.amber,
+  /**
+   * The book's world effects and delver states (FS-X2CMM §I R47), drawn for every viewer, each look in its
+   * own file. The one door to the book pigments outside the page roundels (ADR-0098): an effect a page
+   * leaves in the world reads its page's pigment here, and one that is not a page's own colour (the
+   * draught, afloat, hardened, the long night) keeps the barrow ramp. The witchlight a warm globe of light-and-finding ochre lifted toward bone, its pool the same
+   * warmth (never amber: nothing to act on); the rune binding madder; the draught a flask of the health
+   * potion's oxblood, its pool the interactable channel's own amber; afloat's shadow pitch; hardened a dull
+   * bronze; the long night a pitch ring edged in umbra; tracker's eye a faint ochre ring; the draught's
+   * heal rising in the health channel's lifted oxblood (guideline "Healing is not green").
+   */
+  bookEffect: {
+    witchlight: tint(BOOK_PIGMENT.ochre, 0.35),
+    witchlightCore: BOOK_PIGMENT.bone,
+    witchlightLight: tint(BOOK_PIGMENT.ochre, 0.5),
+    rune: BOOK_PIGMENT.madder,
+    runeFlash: tint(BOOK_PIGMENT.madder, 0.45),
+    draughtGlass: BARROW_HEX.slateLight,
+    draughtLiquid: BARROW_HEX.oxblood,
+    draughtShine: BARROW_HEX.oxbloodText,
+    draughtStopper: BARROW_HEX.brass,
+    afloatShadow: BARROW_HEX.pitch,
+    hardened: BARROW_HEX.brass,
+    longNight: BARROW_HEX.pitch,
+    longNightEdge: BARROW_HEX.umbra,
+    trackersEye: BOOK_PIGMENT.ochre,
+    draughtHeal: BARROW_HEX.oxbloodText,
+    /**
+     * A trap a page revealed (FS-X2CMM §J R49): a multiply wash of light-and-finding ochre over its baked
+     * frame, lifted toward vellum so it warms the trap rather than recolours it.
+     */
+    revealedTrap: tint(BOOK_PIGMENT.ochre, 0.4),
+    /** The faint ring on the floor under a hound, whose it is at a glance (R47): Call the Wolf's verdigris. */
+    houndRing: BOOK_PIGMENT.verdigris,
+    /** The hound's bay, rings at what the hound bays at (R49): the hound's own verdigris. */
+    houndBay: BOOK_PIGMENT.verdigris,
+  },
 
   // -- Hostile wash (FS-77AB6 req 38): a multiply tint over a creature's
   //    baked sprite, from the oxblood family. Lifted toward vellum so they
@@ -375,6 +545,29 @@ export const palette = {
   goblinStandIn: tint(BARROW_HEX.arcane, 0.35),
   ogreStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.brass, 0.4), 0.4),
   darkWarriorStandIn: tint(BARROW_HEX.umbra, 0.3),
+  /**
+   * FS-9JV5K §G R26: the wandering merchant's stand-in until his own art lands, the mercenary's
+   * resident base sheet under a road-dust wash (the barrow's brown paled toward vellum), so his
+   * madder coat reads as a drab traveller's and not as a player's.
+   */
+  merchantStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.vellumDark, 0.5), 0.45),
+  /**
+   * FS-4EC7Z §H R36: the dungeon encounters' stand-in until their group lands (ADR-0071), the
+   * mercenary's resident base sheet under the merchant's road-dust wash, so a pilgrim, captive,
+   * cutthroat or mark reads as a drab stranger and not as a player.
+   */
+  encounterStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.vellumDark, 0.5), 0.45),
+  /**
+   * FS-9JV5K §F R21: the wandering merchant's soft lantern light, in the interactable's amber (design
+   * guideline "Gameplay accent"): the player can act on him.
+   */
+  merchantLantern: BARROW_HEX.amberBright,
+  /**
+   * FS-9JV5K §F R22, R23: the wares panel's price in gold (the purse's brass, as gold reads in the
+   * gear overlay) and its refusal line (error copy's lifted oxblood: money clarity, never lore).
+   */
+  waresPrice: BARROW_HEX.brassBright,
+  waresRefused: BARROW_HEX.oxbloodText,
 
   // -- A monster ability's telegraph and impact (FS-C8VM7 §F R36): the hostile channel, drawn
   //    above the light-map. The edge in the HP bar's lifted oxblood, so the ring reads on a dark
@@ -437,6 +630,12 @@ export const palette = {
 
 /** One of the passive tree's hues (L4), by what a node gives: the key a node's copy names. */
 export type TreeHue = keyof typeof palette.treeHue;
+
+/**
+ * A page's main pigment (R45): bone is every page's picture, never a main one (ADR-0094, ADR-0095), and the
+ * locked ground and the lit rim are the roundel's, not a page's.
+ */
+export type BookPigment = Exclude<keyof typeof palette.bookPigment, "bone" | "lockedGround" | "rimLit">;
 
 // ── Typography ────────────────────────────────────────────────────────────
 

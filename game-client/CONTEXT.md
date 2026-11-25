@@ -477,6 +477,9 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   On a **dungeon floor** (one whose floor map carries regions, FS-KE075) a room is instead a
   **region** of kind `room` from the floor map: no `house_id`, no building exterior, no roof or
   stone cap, no indoor blackout. Say *dungeon room* where either could be meant.
+- **Quiet room**: a dungeon room the floor map names in `quiet_rooms`: it holds nothing but
+  dressing, so the client dresses it more heavily and gives it a brazier where one fits (FS-KE075
+  §Change: Room variety). Its walls and floor are drawn like any room's.
 - **Floor map**: the static layout of the current run floor, sent once by the server
   (`floor_map`, FS-KE075, ADR-0060): size, cell size, regions and walls. The scene builds the floor
   from it; per-tick snapshots no longer carry walls in a run.
@@ -676,6 +679,32 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   square goes **active** during a Shadow Shot hold or an open parry stance. The 3 square is
   **locked** (padlock, "Lv 10") while `tree_ability_cooldown` is absent. Not a **cell** (a
   level's grid square, or a bag slot).
+- **Class book** (FS-X2CMM): the per-class panel of **pages**, opened and closed by `K` or the
+  corner row's **book icon**, in a run only. Its title is the class's book: **Spellbook** (mage),
+  **Hunter's Journal** (archer), **The Ledger** (mercenary), **Scars** (warrior). A UI-scene
+  piece (ADR-0084–0086); the game never pauses and walking stays free while it is open. The book
+  and its pages are game-service's terms
+  ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities":
+  *class book*, *page*, *book ability*, *cast time*). Not the run's **controls badge** (also drawn
+  as a book) and not the **inventory**.
+- **Page roundel** (FS-X2CMM, ADR-0094): how a page is drawn in the book: a muted **pigment**
+  glyph (verdigris, ochre, madder, lapis, with bone highlights) in a bronze-rimmed disc. The one
+  coloured family on the canvas HUD; every other HUD icon stays a **knockout**. **Locked** (greyed,
+  "Lv N"), **ready**, or **recovering** (a cooldown sweep). Not a **line glyph**, which is only an
+  icon's fallback.
+- **Armed page** (FS-X2CMM): a ready page the player has clicked, waiting for its target: the
+  cursor is a **reticle** shaped by the page's **target kind** (ground, ally, interactable, self,
+  none). A click on a valid target sends the cast; right-click or Esc **disarms**. A page of
+  kind *none* is never armed: the click casts it. Client presentation only (ADR-0030).
+- **Cast bar** (FS-X2CMM): the small bar under the player that fills while the server counts a
+  page's **cast time**, from the owner's state; it clears when the cast completes or breaks.
+- **Hound's bay** (FS-X2CMM R49): the archer's hound calling at a shut secret door or a waiting
+  ambush within 6 cells of it, drawn as verdigris rings at what it bays at; the wire's `bay` point on
+  the hound's `book_effects` entry. A call, never a place: not a chapel **bay** (a window's stretch of
+  wall). In code, the hound's call is always "hound bay" or "the bay a hound calls", never a bare `bay`.
+- **Revealed** (FS-X2CMM R49): a trap or secret door a page found (Witchlight, Tracker's Eye), drawn
+  apart from one only detected: a revealed trap stands stronger under an ochre wash; a revealed
+  secret door is marked on the minimap.
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the
   top left of a run or a field world, under the level bar in a run, each labelled with its own
   name ("Health:", "Mana:",
@@ -801,6 +830,54 @@ What the client draws of the Spire's roster and its bosses. The server owns the 
   party carrying the tome is `tome_carried`, not a bag item.
 - **Summon**: burning the tome at the altar after the client's "Burn tome?" confirm, which brings
   Vorsk. The screen's lines for it are the client's own copy.
+
+## Spire floor terms (FS-5FZ4J, FS-9JV5K, FS-4EC7Z)
+
+What the client draws and says of a sealed floor, its respites, the merchant and the encounters.
+The server owns every rule ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md)
+"Sealed floors", "The wandering merchant", "Encounters"); these are the words for the screen.
+
+- **Seal**: what keeps the stairs shut. The screen names the floor's seal by its kind (Lever
+  Order, Weighted Plates, The Hidden Key, The Chasm, Braziers) and says when it **breaks** ("The
+  seal breaks."). Sealed stairs refuse with a line, never silently. *Avoid*: "locked stairs".
+- **Seal piece**: a lever, pressure plate, stair key, bridge lever or brazier, drawn as a run
+  fixture. A lever shows up or down; a plate shows pressed; a brazier lit or cold.
+- **Stone block**: the pushable block drawn on the cell grid; it slides a cell when pushed.
+- **Trap**: a hazard drawn only once the server sends it (that is, once the party has detected
+  it): faint when first detected, then its **spring** (spikes up, darts, a fire jet, a gas puff)
+  when it fires. Never drawn from a guess. Kinds keep the server's names: spike plate, dart wall,
+  fire jet, tripwire, gas vent.
+- **Poison**: the delver status, shown as the **poison tint** (a sour bile-olive, `palette.poisoned`)
+  on the poisoned delver's own health bar and on a teammate's overhead bar; it has no status mark.
+  Never "venom" or "toxic" in copy.
+- **Status mark**: a small mark on the UI scene beside the delver's own health bar, one per lasting
+  status, with a hover line. The Blessing is the first and, for now, the only one. *Avoid*: "mark"
+  bare, which is the contract's target (**Mark**).
+- **Secret door**: a wall cell drawn as plain wall until detected, then with **faint cracks**;
+  **Search** is the hold-interact on it ("Searching…", the same bar as a timed open). Opened, it
+  draws as a doorway into the **hidden room**, which joins the minimap only then.
+- **Healing fountain**: a stone basin with clear water; **dry** once its pool is spent (still
+  drawn, no water, no prompt).
+- **Hallowed altar**: the Altar of Consecration's model in warm gold, pale stone and candlelight;
+  **Pray** is its 2 s hold-interact. Never "the altar" bare where the Altar of Consecration could
+  be meant.
+- **Blessing**: the delve-long buff a prayer grants the party, shown as a status mark with its
+  line ("Blessed: better finds, quicker resource"). Gone on death.
+- **Wandering merchant**: the run NPC with a pack and lantern; talking to him opens the **wares
+  panel**: each ware's icon, name, price in gold and count left, and the buyer's purse line. A
+  buy waits on the server ("Paying…") and then lands in the bag or says why it did not.
+- **Antidote**: the bag item that ends poison, drunk from the bag (**Drink**).
+- **Restoring Draught**: the bag item that refills half the class resource, drunk from the bag (**Drink**), sold by the merchant.
+- **Wolf**: the player-facing name of the archer's summon (*Call the Wolf*); code, sheets and the wire keep *hound* (FS-X2CMM §Change: The archer's wolf).
+- **Roll** (FS-7P736): Space's dodge, predicted like walking; **rolling** while it runs; the **roll pip** on the HUD shows its cooldown.
+- **Encounter NPC**: a pilgrim, captive or cutthroat drawn from the town cast's looks with a
+  variant tint, gear and face; speaks with a short **over-head line**. *Avoid*: "monster" for one
+  until it turns hostile, and "mob" in copy.
+- **Hired ally**: an encounter NPC on the party's side, drawn with an ally plate (a party-coloured
+  name and health bar over the head).
+- **Mark**: the contract's target, drawn as a humanoid in its own variant look; never on the
+  minimap. The mercenary sees its **heading** ("last seen to the east") and the contract's end:
+  **Contract Settled** (the buff) or **Contract lost**.
 
 ## Dev gallery terms (FS-1819Q)
 

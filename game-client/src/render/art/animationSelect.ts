@@ -22,19 +22,22 @@ export const CHARACTER_ANIMATIONS = ["idle", "walk", "attack", "death"] as const
  * (FS-1J1CB §D R28), the attack swung with the left hand, which only his sheet carries. No sheet's
  * standalone `backpedal` is ever chosen (FS-JS7C8 R45), and no class attacks on the move: the
  * `walk_attack` and `backpedal_attack` clips were retired (FS-JS7C8 § Change: The knight's
- * sprint, and the attack-on-the-move clips retired, R155).
+ * sprint, and the attack-on-the-move clips retired, R155). A class's `roll` (FS-7P736 R15) plays
+ * once while the body rolls, on a sheet whose bake carries it.
  */
 export type CharacterAnimation =
   | (typeof CHARACTER_ANIMATIONS)[number]
   | "parry"
   | "claw"
   | "run"
-  | "attack_offhand";
+  | "attack_offhand"
+  | "roll";
 
 /**
  * World px per second the walk clip covers at 1x: the stride the bake keyed, over one cycle at
- * its authored fps. The server moves a player at `DefaultSpeed` (200 world px/s), so a walk
- * plays at about 2.7x to keep planted feet planted.
+ * its authored fps. A fact of the baked clip, not a speed: the walk plays at the speed drawn over
+ * it, so planted feet stay planted at any pace. At the server's paced `DefaultSpeed`
+ * (`BASE_MOVE_SPEED`, 105 world px/s at the pace's 0.525, FS-TAGWA R11) a walk plays at about 1.4x.
  */
 export const WALK_PACE = 74;
 /**
@@ -42,7 +45,8 @@ export const WALK_PACE = 74;
  * the speed the planted foot slides back under the body, averaged over the time a foot is down,
  * with the clip at its authored 14 fps on the archer's legs (tools/bake/page/characters/pace.js,
  * which reads the walk at about 80 against WALK_PACE's 74). 193.7 measured; clips.test.mjs holds
- * this to it. At the server's 200 px/s the run plays at about 1.03x.
+ * this to it. At the paced base walk (105 px/s at the pace's 0.525) the run plays at about 0.54x,
+ * its feet planted (FS-TAGWA R11).
  */
 export const RUN_PACE = 194;
 /** Below this drawn speed (world px/s) a player is standing, not walking: easing residue. */
@@ -84,6 +88,16 @@ export interface CharacterState {
    * (only the Berserker's) and this swing is the left's: the attack plays `attack_offhand`.
    */
   offhand?: boolean;
+  /**
+   * The body is rolling (FS-7P736 R15), this world way: it plays its roll turned to the roll, over
+   * an attack, a guard, a held aim and its movement; death over it.
+   */
+  rolling?: { x: number; y: number };
+  /**
+   * The sheet carries `roll`: a rolling body plays it. Without it the body strides its `walk` turned
+   * to the roll at its authored rate, under the in-code tumble the scene draws over the sprite.
+   */
+  roll?: boolean;
 }
 
 export interface AnimationChoice {
@@ -96,7 +110,7 @@ export interface AnimationChoice {
 }
 
 /**
- * Dead over attacking over guarding over holding an aim over moving over idle. A character faces
+ * Dead over rolling over attacking over guarding over holding an aim over moving over idle. A character faces
  * its drawn movement (FS-JS7C8 §D R22); an attack faces its aim, death the facing it fell in, a
  * held aim the hold.
  *
@@ -106,7 +120,7 @@ export interface AnimationChoice {
  * backward step (R4, R45).
  */
 export function selectAnimation(state: CharacterState): AnimationChoice {
-  const { velocity, facing, attacking, dead, aim, holding, guarding, run, offhand } = state;
+  const { velocity, facing, attacking, dead, aim, holding, guarding, run, offhand, rolling, roll } = state;
   const speed = Math.hypot(velocity.vx, velocity.vy);
   const moving = speed >= MOVING_SPEED;
 
@@ -118,6 +132,9 @@ export function selectAnimation(state: CharacterState): AnimationChoice {
   });
 
   if (dead) return choose("death", facing);
+
+  // a roll faces its own way, whatever the eased motion or an aim says (FS-7P736 R15)
+  if (rolling) return choose(roll ? "roll" : "walk", facingFrom(rolling.x, rolling.y, facing));
 
   const walking = moving ? facingFrom(velocity.vx, velocity.vy, facing) : facing;
   if (attacking) {

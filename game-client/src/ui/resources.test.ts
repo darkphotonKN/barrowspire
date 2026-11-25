@@ -5,6 +5,8 @@ import type {
   ResourceState,
 } from "@/types/gameState";
 import { abilityAffordable, hudBars, teammateHealthFill } from "./resources";
+import { HUD_BAR_FILL, hudBarFill } from "./ResourceHud";
+import { palette } from "@/utils/canvasPalette";
 
 const resource = (kind: string, current: number, max: number): ResourceState =>
   ({ kind, current, max, ability_cost: 10 }) as ResourceState;
@@ -241,5 +243,27 @@ describe("abilityAffordable (FS-8AY7S req 31; FS-JTNPR req 18)", () => {
 
   it("should call an ability that costs nothing affordable from an empty pool", () => {
     expect(abilityAffordable({ kind: "parry_charges", current: 0, max: 3, ability_cost: 0 })).toBe(true);
+  });
+});
+
+// FS-5FZ4J §J R55 (I-5FZ4J-10): the own health bar takes the poison tint while poisoned_for is set.
+describe("the poison tint on the own health bar (FS-5FZ4J §J R55)", () => {
+  it("should mark the health bar poisoned while poisoned_for is set, and draw its fill in the poison tint", () => {
+    const [health, mana] = hudBars(run(player({ poisoned_for: 3, resource: resource("mana", 30, 120) })));
+    expect(health).toMatchObject({ channel: "health", poisoned: true });
+    expect(mana.poisoned).toBeUndefined();
+    expect(hudBarFill(health)).toBe(palette.poisoned);
+    expect(hudBarFill(mana)).toBe(HUD_BAR_FILL.mana);
+  });
+
+  it("should draw the health fill in health's own colour once the poison has run out", () => {
+    const [health] = hudBars(run(player()));
+    expect(health.poisoned).toBeUndefined();
+    expect(hudBarFill(health)).toBe(HUD_BAR_FILL.health);
+  });
+
+  it("should keep the poison tint apart from health's oxblood and arcane green's safe", () => {
+    expect(palette.poisoned).not.toBe(palette.hudHealth);
+    expect(palette.poisoned).not.toBe(palette.safe);
   });
 });

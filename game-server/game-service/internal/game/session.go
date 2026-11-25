@@ -21,6 +21,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/navigation"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/utils"
@@ -198,10 +199,23 @@ type Session struct {
 	// monsters come from (FS-C8VM7 §C R19). Set by each floor's population
 	// under mu; the floor map reads it under mu (§G R40).
 	floorPool floorPool
+	// navGrid is the current dungeon floor's cell grid, the one its monster AI
+	// paths over and its movement system's straight moves read, nil on a floor
+	// of buildings and in every other world. Its cells change as a barrier
+	// shuts or opens (FS-5FZ4J §D R22). The tick's alone, and the floor
+	// build's, which holds buildMu as a tick does.
+	navGrid *navigation.Grid
+	// trapHits are hits a trap or a seal piece dealt this tick, waiting for
+	// the combat: they land through the one damage path (FS-5FZ4J §C R16, §D
+	// R26). The tick's alone.
+	trapHits []systems.Impact
 	// generateDungeon builds a dungeon floor's layout from its parameters and
 	// seed: levelgen.GenerateDungeon, injected so a test can make it fail
 	// (FS-KE075 §B R17).
 	generateDungeon dungeonGenerator
+	// tuning is this world's own floor-build tunables, defaultFloorTuning
+	// unless a test overrides them (withTuning): never shared between worlds.
+	tuning floorTuning
 
 	// players waiting to connect via handoff
 	// playerID - Player struct
@@ -212,6 +226,24 @@ type Session struct {
 	// the release so it happens once, and is the tick's alone.
 	seatDeadline  time.Time
 	seatsReleased bool
+
+	// wallet is what a run's purchases are paid from, set by the host as it
+	// builds the run; nil in every other world and in a run built without
+	// one. Guarded by mu. FS-9JV5K §B R7, ADR-0093.
+	wallet WalletDebiter
+	// walletCtx is what each debit's context is built on: the host's
+	// lifetime context without its cancellation, so its values (tracing's)
+	// carry and a shutdown never cuts a debit in flight. Guarded by mu.
+	walletCtx context.Context
+	// tokens are each seated member's latest bearer token, the one a
+	// purchase's debit is made with (FS-9JV5K §B R8)
+	tokens *memberTokens
+	// purchases are the run's purchase counts and the purchases in flight
+	// (FS-9JV5K §B R7)
+	purchases *purchaseBook
+	// purchaseRetry is how a purchase's debit is retried (R9); a test
+	// shortens it
+	purchaseRetry purchaseRetry
 }
 
 // SeatReleaseAfter is how long a run keeps a seat for a matched player still
@@ -340,6 +372,13 @@ func withSpecializationGained(gained func(entity *ecs.Entity, spec string)) sess
 	return func(s *Session) { s.specializationGained = gained }
 }
 
+// withTuning has the world's floor build read its tunables as tune leaves
+// them, from defaultFloorTuning: a test forces a seal kind or a respite on
+// its own world, never on every world.
+func withTuning(tune func(*floorTuning)) sessionOption {
+	return func(s *Session) { tune(&s.tuning) }
+}
+
 // newSession builds a world without starting its loops, so a test can step its
 // tick by hand. opts replace its default dependencies.
 func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds, opts ...sessionOption) *Session {
@@ -398,11 +437,16 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		// the same goroutine-safe global source loot rolls with
 		spawnRand:         sharedLootRand{},
 		generateDungeon:   levelgen.GenerateDungeon,
+		tuning:            defaultFloorTuning(),
 		chestRand:         sharedLootRand{},
 		containerKindRand: sharedLootRand{},
 
 		playersPendingConnection: make(map[uuid.UUID]*types.Player),
 		seatDeadline:             time.Now().Add(SeatReleaseAfter),
+
+		tokens:        newMemberTokens(),
+		purchases:     newPurchaseBook(),
+		purchaseRetry: defaultPurchaseRetry,
 	}
 	// a nil sender leaves the interface nil, so a send can tell there is none
 	if sender != nil {
@@ -570,12 +614,11 @@ func (s *Session) manageClientMessages() {
 
 				s.queueIntent(func() {
 					if err := s.handleInteract(playerID, entityIDUUID); err != nil {
-						// the client pre-checks the bag; a stale one is refused quietly (FS-HRH2J R37);
-						// a guarded chest is play, not a fault (FS-KE075 §J R60)
-						if errors.Is(err, ErrBagFull) || errors.Is(err, ErrContainerGuarded) {
-							slog.Debug("Pickup refused into a full bag.",
+						if interactRefusedQuietly(err) {
+							slog.Debug("Interact refused.",
 								"player_id", playerID,
 								"entity_id", entityIDUUID,
+								"error", err,
 							)
 						} else {
 							slog.Error("handleInteract failed to process on entity.",
@@ -632,10 +675,65 @@ func (s *Session) manageClientMessages() {
 				skillPayload := parsedPayload.(types.PlayerCastSkillPayload)
 
 				s.queueIntent(func() {
-					if err := s.handleCastSkill(playerID, skillPayload.SkillID, skillPayload.TargetX, skillPayload.TargetY); err != nil {
+					if err := s.castSkill(playerID, skillPayload); err != nil {
 						slog.Error("Failed to handle cast_skill", "error", err)
 					}
 				})
+
+			case constants.ActionRoll:
+				// A roll, judged on the tick and never answered. FS-7P736 §A R1–R2, R6.
+				parsedPayload, err := msg.Message.ParsePayload()
+				if err != nil {
+					slog.Debug("Failed to parse roll payload", "player_id", playerID, "error", err)
+					continue
+				}
+				rollPayload := parsedPayload.(types.PlayerRollPayload)
+
+				s.queueIntent(func() { s.roll(playerID, rollPayload.DirX, rollPayload.DirY) })
+
+			case constants.ActionUseItem:
+				// A bag item used on the tick (an antidote). FS-9JV5K §D R17.
+				parsedPayload, err := msg.Message.ParsePayload()
+				if err != nil {
+					slog.Debug("Failed to parse use_item payload", "player_id", playerID, "error", err)
+					s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse use_item request")
+					continue
+				}
+				usePayload := parsedPayload.(types.PlayerUseItemPayload)
+
+				// an id that is not an entity id is judged on the tick as
+				// the nil id, in no one's bag: refused there as a valid id
+				// is, or ignored quietly outside a run or out of play
+				itemEntityID, err := uuid.Parse(usePayload.ItemEntityID)
+				if err != nil {
+					slog.Debug("use_item names no entity id", "player_id", playerID, "item_entity_id", usePayload.ItemEntityID)
+					itemEntityID = uuid.Nil
+				}
+
+				s.queueIntent(func() { s.useItem(playerID, itemEntityID) })
+
+			case constants.ActionBuy:
+				// A buy from the wandering merchant, judged on the tick.
+				// FS-9JV5K §B R5.
+				parsedPayload, err := msg.Message.ParsePayload()
+				if err != nil {
+					slog.Debug("Failed to parse buy payload", "player_id", playerID, "error", err)
+					s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse buy request")
+					continue
+				}
+				buyPayload := parsedPayload.(types.PlayerBuyPayload)
+
+				// an id that is not an entity id is judged on the tick as
+				// the nil id, no merchant in reach: refused there as a valid
+				// id is, or ignored quietly outside a run
+				merchantID, err := uuid.Parse(buyPayload.MerchantID)
+				if err != nil {
+					slog.Debug("buy names no entity id", "player_id", playerID, "merchant_id", buyPayload.MerchantID)
+					merchantID = uuid.Nil
+				}
+				ware := components.WareKind(buyPayload.Ware)
+
+				s.queueIntent(func() { s.buy(playerID, merchantID, ware) })
 
 			case constants.ActionEquip, constants.ActionUnequip:
 				slog.Debug("Before parsing action equip / unequip message payload",
@@ -752,15 +850,7 @@ func (s *Session) manageGameLoop() {
 			// loop runs: the build and a tick hold this in turn, never together
 			s.buildMu.Lock()
 
-			// between ticks: a floor change lands before the tick reads the world
-			s.applyRequestedFloorChange()
-
-			entities := s.EntityManager.GetAllEntities()
-
-			s.step(1.0/float64(constants.GameFrameRate), entities)
-
-			// broadcast state update to all players
-			err := s.broadcastFullState(entities)
+			entities, err := s.advanceTick(1.0 / float64(constants.GameFrameRate))
 			s.buildMu.Unlock()
 			if err != nil {
 				slog.Error("Error broadcasting state", "error", err)
@@ -782,26 +872,66 @@ func (s *Session) manageGameLoop() {
 	}
 }
 
+/**
+* advanceTick is one tick of the loop, deltaTime seconds long, under buildMu:
+* a requested floor change lands, the tick steps the world, and every member
+* is sent the world as the step left it. The broadcast reads the world again
+* rather than reuse the step's list, so what the step removed (a stair key
+* taken, a block's seal laid over) is not sent once more and what it created
+* (an ambush, a chained seal's pieces) is sent on its own tick. It returns
+* the entities it sent.
+**/
+func (s *Session) advanceTick(deltaTime float64) ([]*ecs.Entity, error) {
+	// between ticks: a floor change lands before the tick reads the world
+	s.applyRequestedFloorChange()
+
+	s.step(deltaTime, s.EntityManager.GetAllEntities())
+
+	// broadcast state update to all players
+	entities := s.EntityManager.GetAllEntities()
+	return entities, s.broadcastFullState(entities)
+}
+
+// worldMoveBonus is this world's own move bonus for its delvers, percent: the
+// town bonus in the hub, none in a run or a field (FS-TAGWA R16).
+func (s *Session) worldMoveBonus() int {
+	if s.worldType == types.WorldTypeHub {
+		return constants.HubMoveSpeedBonusPercent
+	}
+	return 0
+}
+
 // step advances the simulation one tick. Damage happens in exactly one place on
 // it: the CombatSystem, fed by the projectile impacts detected just before it.
 //
 // It must not be called holding s.mu: the client actions it applies first, and
 // the end rule, take the lock themselves.
 func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
+	// a roll the last tick spent or stopped is over, and the roll cooldowns
+	// count the tick down, before this tick's requests are judged: a delver
+	// is untouchable on a roll's last tick, and may act, be hit and walk on
+	// the next (FS-7P736 §A R5, R7–R8)
+	systems.NewRollSystem().Update(deltaTime, entities)
+
 	// what clients asked for since the last tick lands before anything reads
 	// the world, on this goroutine alone
 	s.applyIntents()
 
-	// gear: what each delver wears counts from this tick, in every world
-	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).Update(deltaTime, entities)
+	// gear: what each delver wears counts from this tick, in every world, and
+	// the hub walks its delvers the town bonus faster (FS-TAGWA R16)
+	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).WithWorldMoveBonus(s.worldMoveBonus()).Update(deltaTime, entities)
 
 	// drink cooldowns count down, the tick's drinks just applied included
 	// (FS-P9G8R §Requirements 9)
 	systems.NewPotionSystem(s.EntityManager).Update(deltaTime, entities)
 
+	// book cooldowns and book states count down, the tick's casts included,
+	// and a delver whose afloat ends over a pit is set down (FS-X2CMM §A R8, §J R51)
+	systems.NewBookSystem(s.EntityManager).Update(deltaTime, entities, s.bookGround())
+
 	// class resources regenerate toward this tick's maxima, before any cast
 	// this tick is judged against them (FS-8AY7S §Requirements 5)
-	systems.NewResourceSystem().Update(deltaTime, entities)
+	systems.NewResourceSystem(BlessingRegenPercent).Update(deltaTime, entities)
 
 	// residents amble; a run has none, so this is the hub's alone
 	if s.worldType == types.WorldTypeHub {
@@ -815,6 +945,14 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.monsterAISystem.Update(deltaTime, entities)
 	}
 
+	// a run floor's hired allies follow and fight, steered as the monsters
+	// are, before anything moves (FS-4EC7Z §C R9)
+	if s.worldType == types.WorldTypeRun {
+		if allies, ok := s.allyAI(); ok {
+			allies.Update(deltaTime, entities)
+		}
+	}
+
 	// movement, by the world's own rules, fixed as it was built, bounded to
 	// the floor the world stands on now (FS-KE075 §B R11)
 	s.mu.RLock()
@@ -822,9 +960,30 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	s.mu.RUnlock()
 	s.movementSystem.Update(deltaTime, entities)
 
+	// a dungeon floor's stone blocks take the walk's pushes, the ones left
+	// alone drift home, and they slide, over its grid; its plates weigh what
+	// then stands on them (FS-5FZ4J §C R17-R19, §D R22)
+	if s.worldType == types.WorldTypeRun && s.navGrid != nil {
+		drift := systems.BlockDrift{After: BlockDriftAfter, ClearCells: BlockDriftClearCells}
+		systems.NewStoneBlockSystem(s.navGrid, drift).Update(deltaTime, entities)
+		s.watchSeals(deltaTime, entities)
+		// a trap a delver stepped onto fires, its hit queued for this tick's
+		// combat (FS-5FZ4J §D R25-R28)
+		s.springTraps(deltaTime, entities)
+		// what a delver now stands near, a secret door or a trap, is seen by
+		// the party from this tick (FS-5FZ4J §F R38, §D R30)
+		systems.NewDetectionSystem(DetectionRadius).Update(entities)
+		// and what a witchlight or tracker's eye reaches is revealed, and a
+		// hound bays at a shut secret door or a waiting ambush (FS-X2CMM §J R49)
+		systems.NewBookRevealSystem(s.bookCellSize()).Update(deltaTime, entities)
+	}
+
 	// projectile
 	projectileSys := systems.NewProjectileSystem(s.EntityManager, s.playerDamage)
 	impacts := projectileSys.Update(deltaTime, entities)
+	// a trap's or a seal piece's hits land beside the projectiles', through the
+	// one damage path (FS-5FZ4J §C R16, §D R26)
+	impacts = append(impacts, s.takeTrapHits()...)
 
 	// only a run has timed opens (FS-MQYEX §Requirements 1). They note the
 	// health their delvers take into the combat, so a hit that costs any is
@@ -833,6 +992,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	if timedOpens {
 		systems.NewTimedOpenSystem(s.EntityManager).MarkHealth(entities)
 	}
+
+	// a book cast notes its caster's health too (FS-X2CMM §D R18)
+	s.markCasts(entities)
 
 	// combat
 	kills := s.combatSystem.Update(deltaTime, entities, impacts)
@@ -843,6 +1005,20 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// container (FS-MQYEX §Requirements 4–10, 28)
 	if timedOpens {
 		s.advanceTimedOpens(deltaTime, entities, s.combatSystem.Attackers())
+	}
+	// and book casts, by the same causes, or complete (FS-X2CMM §D R16–R18)
+	s.advanceCasts(deltaTime, entities, s.combatSystem.Attackers())
+
+	// a fountain heals, then poison takes its tick's health, both after the
+	// timed opens have judged the tick's hits, so a heal hides none and
+	// poison, being none, breaks no timed open; a delver poison brings to 0
+	// is eliminated below as by any hit (FS-5FZ4J §G R41, §D R29)
+	if s.worldType == types.WorldTypeRun {
+		systems.NewFountainSystem(FountainRadius, FountainPercentPerSecond).Update(deltaTime, entities)
+		systems.NewPoisonSystem(PoisonPercentPerSecond).Update(deltaTime, entities)
+		// a floor's encounter: its NPCs' clocks and dead, and its kind's
+		// plea, wave and reward, after the tick's hits (FS-4EC7Z §A-§B)
+		s.advanceEncounters(deltaTime, entities)
 	}
 
 	// monster death: the slain lie dead from this tick; the hub holds no monsters
@@ -871,6 +1047,13 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.settleFieldDeaths(deltaTime, entities, fallen)
 	} else {
 		s.recordEliminations(fallen)
+	}
+
+	// the delve's contract: settled by its mark's kill, lost with its floor
+	// or its taker, else its mark's call, flight and heal and the taker's
+	// heading, after the tick's hits and deaths (FS-4EC7Z §E R18-R21)
+	if s.worldType == types.WorldTypeRun {
+		s.advanceContract(deltaTime, kills)
 	}
 
 	// rules
@@ -983,9 +1166,10 @@ var Classes = map[string]ClassConfig{
 		Stats:       components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
 		Combat:      components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
 		Health:      components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
-		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 7},
 		Ability:     components.AttackDash,
 		TreeAbility: components.AttackEarthbreaker,
+		Book:        warriorBook,
 		Skills:      []components.SkillComponent{{SkillName: "slash", Level: 1}},
 		Growth:      ClassGrowth{Strength: 2, Vitality: 2, MaxHealth: 12},
 	},
@@ -993,9 +1177,10 @@ var Classes = map[string]ClassConfig{
 		Stats:       components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
 		Combat:      components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
 		Health:      components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Resource:    components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 4},
+		Resource:    components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 2},
 		Ability:     components.AttackTripleFireball,
 		TreeAbility: components.AttackBlink,
+		Book:        mageBook,
 		Skills:      []components.SkillComponent{{SkillName: "fireball", Level: 1}},
 		Growth:      ClassGrowth{Intelligence: 3, MaxHealth: 6, MaxMana: 10},
 	},
@@ -1003,9 +1188,10 @@ var Classes = map[string]ClassConfig{
 		Stats:       components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
 		Combat:      components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
 		Health:      components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 7},
 		Ability:     components.AttackShadowShot,
 		TreeAbility: components.AttackArrowRain,
+		Book:        archerBook,
 		Skills:      []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
 		Growth:      ClassGrowth{Agility: 3, MaxHealth: 8},
 	},
@@ -1017,6 +1203,7 @@ var Classes = map[string]ClassConfig{
 		Resource:    components.ResourceComponent{Kind: components.ResourceParryCharges, Max: 3},
 		Ability:     components.AttackParry,
 		TreeAbility: components.AttackSettleTheDebt,
+		Book:        mercenaryBook,
 		Skills:      []components.SkillComponent{{SkillName: "cut", Level: 1}},
 		Growth:      ClassGrowth{Strength: 1, Agility: 2, MaxHealth: 10},
 	},
@@ -1050,6 +1237,7 @@ func (s *Session) AddPlayerAt(playerID uuid.UUID, character types.CharacterInPla
 	}
 
 	loadout, bag := s.seatGearLocked(playerID, character, token)
+	s.holdToken(playerID, token)
 	return s.buildBodyLocked(playerID, character, x, y, loadout, bag)
 }
 
@@ -1070,6 +1258,7 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 	spawnX, spawnY := s.spawnPoint()
 
 	loadout, bag := s.seatGearLocked(playerID, character, token)
+	s.holdToken(playerID, token)
 	return s.buildBodyLocked(playerID, character, spawnX, spawnY, loadout, bag)
 }
 
@@ -1302,6 +1491,7 @@ func (s *Session) seatPlayerLocked(player *types.Player, gear *pbitems.CheckOutR
 		slog.Warn("No loadout for handoff arrival, player spawns with no equipment.", "player_id", player.ID)
 	}
 	s.buildBodyLocked(player.ID, character, spawnX, spawnY, gear.GetLoadout(), gear.GetBag())
+	s.holdToken(player.ID, player.Token)
 
 	// remove them from the pending list
 	delete(s.playersPendingConnection, player.ID)
@@ -1421,6 +1611,7 @@ func (s *Session) removePlayerLocked(playerID uuid.UUID) {
 
 	delete(s.playerIDToEntitiesID, playerID)
 	delete(s.playerEntityIDToPlayerID, entityID)
+	s.tokens.forget(playerID)
 	slog.Info("Removed player from session", "playerID", playerID, "sessionID", s.ID)
 }
 
@@ -1763,6 +1954,10 @@ func (s *Session) Shutdown() {
 	close(s.endSessionCh)
 
 	s.mu.Unlock()
+
+	// a paid purchase no tick will now apply is logged for support
+	// (FS-9JV5K §B R11)
+	s.purchases.close(s.ID)
 }
 
 /**
@@ -1876,10 +2071,36 @@ func unitIntent(vx, vy float64) (float64, float64) {
 	return vx / length, vy / length
 }
 
+// interactRefusedQuietly is whether an interact's error is play, not a fault,
+// and is logged quietly: a stale bag check refused into a full bag (FS-HRH2J
+// R37), a guarded chest (FS-KE075 §J R60), a secret door the party has not
+// detected (FS-5FZ4J §F R38), a talk to a dead encounter NPC (FS-4EC7Z §A
+// R4).
+func interactRefusedQuietly(err error) bool {
+	return errors.Is(err, ErrBagFull) || errors.Is(err, ErrContainerGuarded) || errors.Is(err, ErrUndetected) ||
+		errors.Is(err, ErrEncounterNPCDead)
+}
+
 /**
 * handles player interacting with x object with target entity id.
 **/
 func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) error {
+	// a rolling delver's interact is dropped, unanswered (FS-7P736 §A R8)
+	if s.rolling(playerID) {
+		return nil
+	}
+	return s.interactFrom(playerID, targetEntityID, nil)
+}
+
+/**
+* interactFrom is the delver's interact on the target with its reach measured
+* from `from` in place of their body: Far Hand's, from a point beside the
+* target (FS-X2CMM §J R50, class_book_far_hand.go). With from nil it is the
+* delver's own interact, reached from where they stand. Everything else (the
+* holds, the branch the target takes, a timed open's staying put) is the
+* delver's as ever.
+**/
+func (s *Session) interactFrom(playerID uuid.UUID, targetEntityID uuid.UUID, from *components.TransformComponent) error {
 	if err := s.delverInPlay(playerID); err != nil {
 		return fmt.Errorf("interact: %w", err)
 	}
@@ -1893,6 +2114,11 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	if !hasEntity {
 		slog.Error("Failed to retrieve target entity", "targetEntityID", targetEntityID)
 		return ErrEntityNotFound
+	}
+
+	// an archer's draught is drunk, and gone (FS-X2CMM §E R27)
+	if systems.IsDraught(targetEntity) {
+		return s.drinkDraught(playerID, targetEntity)
 	}
 
 	// a reach for a run's shut chest or sack starts a timed open, and several
@@ -1946,8 +2172,21 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// a tome run's tome and altar (FS-3103M §D, §F)
 	isTome := targetEntity.HasComponent(ecs.ComponentTypeTome)
 	isAltar := targetEntity.HasComponent(ecs.ComponentTypeAltar)
+	// the hallowed altar, never the Altar of Consecration (FS-5FZ4J §G R43)
+	isHallowedAltar := targetEntity.HasComponent(ecs.ComponentTypeHallowedAltar)
+	// a sealed floor's barriers and seal pieces (FS-5FZ4J §B, §C); a barrier
+	// is a door to the walk, never one a delver toggles
+	isBarrier := targetEntity.HasComponent(ecs.ComponentTypeBarrier)
+	isSealPiece := targetEntity.HasComponent(ecs.ComponentTypeSealPiece)
+	// a mural or a lore shrine, read, part of no seal (FS-5FZ4J §C R15, §F R39)
+	isLorePiece := targetEntity.HasComponent(ecs.ComponentTypeLorePiece)
+	// an encounter NPC, talked to (FS-4EC7Z §A R4)
+	isEncounterNPC := targetEntity.HasComponent(ecs.ComponentTypeEncounterNPC)
+	// the Captives' cage and its key (FS-4EC7Z §D R13)
+	isCage := targetEntity.HasComponent(ecs.ComponentTypeCage)
+	isCageKey := targetEntity.HasComponent(ecs.ComponentTypeCageKey)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isBarrier && !isSealPiece && !isLorePiece && !isEncounterNPC && !isCage && !isCageKey {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -1982,20 +2221,55 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	}
 
 	playerTransform := playerTransformComponent.(*components.TransformComponent)
+	// where the reach is measured from: the body, or Far Hand's point
+	reach := playerTransform
+	if from != nil {
+		reach = from
+	}
 
 	// --- stairs entity ---
 
 	if isStairs {
-		return s.climbStairs(playerID, playerTransform, targetEntity)
+		return s.climbStairs(playerID, reach, targetEntity)
 	}
 
 	// --- the tome and the altar (FS-3103M §D, §F) ---
 
 	if isTome {
-		return s.takeTome(playerID, playerTransform, targetEntity)
+		return s.takeTome(playerID, reach, targetEntity)
 	}
 	if isAltar {
-		return s.reachAltar(playerID, playerTransform, targetEntity)
+		return s.reachAltar(playerID, reach, targetEntity)
+	}
+	if isHallowedAltar {
+		return s.reachHallowedAltar(playerID, playerEntity, reach, targetEntity)
+	}
+
+	// --- a sealed floor's barriers and seal pieces (FS-5FZ4J §B-C) ---
+
+	if isBarrier {
+		return s.reachBarrier(playerID, playerEntity, reach, targetEntity)
+	}
+	if isSealPiece {
+		return s.workSealPiece(playerID, playerEntity, reach, targetEntity)
+	}
+	if isLorePiece {
+		return s.readLore(playerID, reach, targetEntity)
+	}
+
+	// --- an encounter NPC (FS-4EC7Z §A R4) ---
+
+	if isEncounterNPC {
+		return s.talkToEncounterNPC(playerID, reach, targetEntity)
+	}
+
+	// --- the Captives' cage and its key (FS-4EC7Z §D R13) ---
+
+	if isCageKey {
+		return s.takeCageKey(playerID, reach, targetEntity)
+	}
+	if isCage {
+		return s.reachCage(playerID, reach, targetEntity)
 	}
 
 	// --- door entity ---
@@ -2021,7 +2295,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		}
 
 		// validate is within distance from player
-		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, doorX, doorY)
+		isWithinDistance := s.calcWithinDistance(reach.X, reach.Y, doorX, doorY)
 
 		if !isWithinDistance {
 			slog.Debug("Door entity out of range for interaction", "targetID", targetEntityID, "playerID", playerID)
@@ -2089,7 +2363,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		)
 
 		// validate is within distance from player
-		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, containerTransform.X, containerTransform.Y)
+		isWithinDistance := s.calcWithinDistance(reach.X, reach.Y, containerTransform.X, containerTransform.Y)
 		if !isWithinDistance {
 			slog.Debug("Container entity out of range for interaction", "targetID", targetEntityID, "playerID", playerID)
 			s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
@@ -2118,7 +2392,12 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 			// has passed. The container is not held (FS-MQYEX §Requirements 2, 15).
 			// A reach for the one they are already opening changes nothing; for
 			// another, it takes the first one's place (§Requirements 12)
-			systems.NewTimedOpenSystem(s.EntityManager).Start(playerEntity, targetEntityID, TimedOpenDuration)
+			// worked from afar, it is reached from beside the container
+			if timed := systems.NewTimedOpenSystem(s.EntityManager); from != nil {
+				timed.StartAfar(playerEntity, targetEntityID, components.TimedTargetOpen, TimedOpenDuration, from.X, from.Y)
+			} else {
+				timed.Start(playerEntity, targetEntityID, components.TimedTargetOpen, TimedOpenDuration)
+			}
 		} else {
 			if err := s.openContainer(targetEntity, containerOpenable); err != nil {
 				return err
@@ -2153,7 +2432,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	if isItemEntity {
 		// pickUpItem releases a refused item itself and keeps a taken one held
 		releaseHandedOff = true
-		err := s.pickUpItem(playerEntity, playerTransform, targetEntityID)
+		err := s.pickUpItem(playerEntity, reach, targetEntityID)
 		if errors.Is(err, ErrOutOfRange) {
 			s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
 		}
@@ -2176,7 +2455,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 
 		switchTransform := switchTransformComponent.(*components.TransformComponent)
 		// validate is within distance from player
-		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, switchTransform.X, switchTransform.Y)
+		isWithinDistance := s.calcWithinDistance(reach.X, reach.Y, switchTransform.X, switchTransform.Y)
 
 		if !isWithinDistance {
 			slog.Debug("Switch entity out of range for interaction", "targetID", targetEntityID, "playerID", playerID)
@@ -2239,7 +2518,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 
 		escapeDoorTransform := escapeDoorTransformComponent.(*components.TransformComponent)
 		// validate is within distance from player
-		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, escapeDoorTransform.X, escapeDoorTransform.Y)
+		isWithinDistance := s.calcWithinDistance(reach.X, reach.Y, escapeDoorTransform.X, escapeDoorTransform.Y)
 
 		if !isWithinDistance {
 			slog.Debug("Escape door entity out of range for interaction", "targetID", targetEntityID, "playerID", playerID)
@@ -2321,6 +2600,13 @@ func (s *Session) climbStairs(playerID uuid.UUID, playerTransform *components.Tr
 		slog.Debug("Stairs out of range for interaction", "targetID", stairs.ID, "playerID", playerID)
 		s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
 		return ErrOutOfRange
+	}
+
+	// a sealed floor's stairs refuse, and nothing else happens (FS-5FZ4J §B R12)
+	if s.sealHolds() {
+		s.sendRefusalToPlayer(playerID, string(constants.ActionInteract), "the stairs are sealed",
+			RefusalStairsSealed, nil)
+		return nil
 	}
 
 	missing := s.delversAwayFrom(at.X, at.Y)
@@ -2706,6 +2992,10 @@ func (s *Session) handlePlayerEscape(playerID uuid.UUID) {
 func (s *Session) handleAttack(playerID uuid.UUID, enemyEntityID uuid.UUID) error {
 	if err := s.combatAllowed(); err != nil {
 		return err
+	}
+	// a rolling delver's attack is dropped, unanswered (FS-7P736 §A R8)
+	if s.rolling(playerID) {
+		return nil
 	}
 	if err := s.delverInPlay(playerID); err != nil {
 		return fmt.Errorf("attack: %w", err)
@@ -3262,6 +3552,10 @@ func (s *Session) InitialSystems() {
 	if tomeFloor, altarFloor, ok := rollTomePlan(s.spawnRand, height, TomeRunChance); ok {
 		s.setTomePlan(tomeFloor, altarFloor)
 	}
+	// and the hallowed altar's beside it (FS-5FZ4J §G R42)
+	if floor, hidden, ok := rollHallowedAltarPlan(s.spawnRand, height, s.tuning.hallowedAltarRunChance, s.tuning.hallowedAltarHiddenShare); ok {
+		s.setHallowedAltarPlan(floor, hidden)
+	}
 }
 
 type PlaceArea struct {
@@ -3340,7 +3634,7 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 
 	// a dungeon floor's layout and where its fixtures stand, or nil for a
 	// floor of buildings, a generation that failed included (FS-KE075 §B R17)
-	dungeon, fixtures := s.generateDungeonFloor(depth)
+	dungeon, fixtures := s.generateDungeonFloor(depth, len(expected))
 
 	// the map is the floor's own size, before anything is placed on it
 	s.setFloorLayout(depth, dungeon)
@@ -3349,6 +3643,7 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 		s.layDungeon(depth, dungeon, fixtures)
 	} else {
 		s.warnTomeRunFallback(depth)
+		s.warnHallowedAltarFallback(depth)
 		s.layBuildings(depth)
 	}
 
@@ -3360,6 +3655,9 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	// FS-K2HKP R18: monsters are levelled to the whole matched party, the
 	// expected included, not only who is seated now
 	s.populateMonsters(depth, s.isTopFloor(depth), expected)
+	// the Captives' key, when an elite carries it, goes to one once they
+	// stand (FS-4EC7Z §D R13)
+	s.handCageKey()
 
 	// the floor's layout stands: its map is what anyone entering is sent
 	s.publishFloorMap(depth)
@@ -3386,12 +3684,18 @@ func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
 	s.dungeon = dungeon
 	s.mu.Unlock()
 
-	// only the tick reads the AI, and a floor build holds buildMu as a tick does
-	s.monsterAISystem = newMonsterAI(s.monsterRoll, dungeon)
-	// a straight move reads the floor's cells; a floor of buildings has none
-	s.movementSystem.Grid = nil
+	// only the tick reads the AI, and a floor build holds buildMu as a tick
+	// does. The AI and a straight move read one grid, so a barrier opening
+	// opens it to both on the same tick (FS-5FZ4J §D R22); a floor of
+	// buildings has none
+	s.navGrid = nil
 	if dungeon != nil {
-		s.movementSystem.Grid = dungeon.navGrid()
+		s.navGrid = dungeon.navGrid()
+	}
+	s.monsterAISystem = newMonsterAI(s.monsterRoll, s.navGrid)
+	s.movementSystem.Grid = nil
+	if s.navGrid != nil {
+		s.movementSystem.Grid = s.navGrid
 	}
 
 	if floor, ok := systems.CurrentFloor(s.EntityManager.GetAllEntities()); ok {
@@ -3400,14 +3704,14 @@ func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
 }
 
 // newMonsterAI is the monster AI for a floor, rolling from roll: on a dungeon
-// floor it paths over the floor's cells; on any other (nil) it steers
+// floor it paths over the floor's grid; on any other (nil) it steers
 // straight, as a fallback floor of buildings and the fields do (FS-M8CSE §C
 // R14-15, ADR-0062).
-func newMonsterAI(roll func() float64, dungeon *dungeonFloor) *systems.MonsterAISystem {
-	if dungeon == nil {
+func newMonsterAI(roll func() float64, grid *navigation.Grid) *systems.MonsterAISystem {
+	if grid == nil {
 		return systems.NewMonsterAISystem(roll, nil)
 	}
-	return systems.NewMonsterAISystem(roll, dungeon.navGrid())
+	return systems.NewMonsterAISystem(roll, grid)
 }
 
 /**
@@ -3580,8 +3884,10 @@ func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 		if ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent); ok {
 			ic.(*components.AttackIntentComponent).Pending = nil
 		}
-		// nor a charge running on from the old floor
+		// nor a charge or a roll running on from the old floor; the roll's
+		// cooldown runs on (FS-7P736 §A R11)
 		entity.RemoveComponent(ecs.ComponentTypeDash)
+		entity.RemoveComponent(ecs.ComponentTypeRoll)
 
 		if player.Escape {
 			continue
@@ -3589,6 +3895,8 @@ func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 
 		// a Guardian's Last Stand is ready again on every new floor (FS-E1ZDG R12)
 		entity.RemoveComponent(ecs.ComponentTypeLastStandSpent)
+		// and a once-per-floor page (FS-X2CMM §A R8)
+		systems.ReadyBookForNewFloor(entity)
 
 		if vc, ok := entity.GetComponent(ecs.ComponentTypeVelocity); ok {
 			velocity := vc.(*components.VelocityComponent)

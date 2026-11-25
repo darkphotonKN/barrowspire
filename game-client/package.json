@@ -16,7 +16,9 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "lint:fence": "./lint-fence.sh",
-    "bake": "node tools/bake/bake.mjs"
+    "bake": "node tools/bake/bake.mjs",
+    "contact:pages": "node tools/contact/pageRoundels.mjs",
+    "contact:tome": "node tools/contact/openTome.mjs"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

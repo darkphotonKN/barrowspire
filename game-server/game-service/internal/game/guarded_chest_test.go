@@ -265,8 +265,9 @@ func TestGuardedChests_NoneOnAFallbackFloor(t *testing.T) {
 }
 
 // Across the climb, only a chest in a treasure room whose guards were placed
-// rolls as a guarded treasure chest. A chest in a hall waits on its pack just
-// the same but rolls as a chest, and a sack and an unguarded chest roll as
+// rolls as a guarded treasure chest. A chest in a hall would wait on its pack
+// just the same but roll as a chest; a built hall with a pack holds none now
+// (FS-KE075 §Change: Room variety R81). A sack and an unguarded chest roll as
 // themselves. The stored kind never changes. FS-M8CSE §G R35; FS-KE075 §J.
 func TestGuardChests_OnlyATreasureRoomChestWithGuardsRollsAsOne(t *testing.T) {
 	treasure, hall := 0, 0
@@ -294,6 +295,10 @@ func TestGuardChests_OnlyATreasureRoomChestWithGuardsRollsAsOne(t *testing.T) {
 					hall++
 					assert.True(t, eligibleHall(d, room), "seed %d room %d", seed, room)
 					assert.Equal(t, components.ContainerKindChest, containerKindOf(c), "seed %d room %d: a hall chest rolls as a chest", seed, room)
+				case d.isHidden(room):
+					// a hidden room's better chest rolls a step up (FS-5FZ4J §F R39)
+					assert.Equal(t, containerKindBetterChest, containerKindOf(c), "seed %d room %d", seed, room)
+					assert.Equal(t, components.ContainerKindChest, stored)
 				default:
 					assert.Equal(t, stored, containerKindOf(c), "seed %d room %d: an unguarded container rolls as itself", seed, room)
 				}
@@ -301,7 +306,9 @@ func TestGuardChests_OnlyATreasureRoomChestWithGuardsRollsAsOne(t *testing.T) {
 		}
 	}
 	require.NotZero(t, treasure, "the builds hold guarded treasure chests")
-	require.NotZero(t, hall, "the builds hold guarded hall chests")
+	// a hall that holds a pack draws no chest (FS-KE075 §Change: Room variety
+	// R81): a guarded hall chest is TestHallChest_WaitsOnTheHallsBoneArcher's
+	assert.Zero(t, hall, "the builds hold no guarded hall chest")
 }
 
 // A treasure-room chest whose guards all failed to place waits on nobody and is

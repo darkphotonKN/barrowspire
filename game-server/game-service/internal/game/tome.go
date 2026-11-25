@@ -81,23 +81,28 @@ func (s *Session) layTomeAndAltar(depth int, d *dungeonFloor) {
 	if !ok {
 		return
 	}
-	if depth == plan.TomeFloor {
-		s.placeTomeRunObject(d, "tome", CreateTomeEntity)
+	anyRoom := func(int) bool { return true }
+	// a tome the merchant sells lies nowhere (FS-9JV5K §E R19)
+	if depth == plan.TomeFloor && !plan.Sold {
+		s.placeRunObject(d, "tome", anyRoom, CreateTomeEntity)
 	}
 	if depth == plan.AltarFloor {
-		s.placeTomeRunObject(d, "altar", CreateAltarEntity)
+		s.placeRunObject(d, "altar", anyRoom, CreateAltarEntity)
 	}
 }
 
-// placeTomeRunObject stands one tome-run object, made by create, in the first
-// room drawn from those that are not the start room with a free spot for it.
-func (s *Session) placeTomeRunObject(d *dungeonFloor, what string, create func(*ecs.EntityManager, float64, float64) *ecs.Entity) {
+// placeRunObject stands one run object, a tome run's or the hallowed altar,
+// made by create, in the first room drawn from those allowed that are neither
+// the start room, a hidden room nor a respite room with a free spot for it.
+func (s *Session) placeRunObject(d *dungeonFloor, what string, allowed func(room int) bool, create func(*ecs.EntityManager, float64, float64) *ecs.Entity) {
 	rw := commonconstants.ContainerWidthRadius + containerPadding
 	rh := commonconstants.ContainerHeightRadius + containerPadding
 
 	rooms := make([]int, 0, len(d.layout.Rooms))
 	for room := range d.layout.Rooms {
-		if room != d.layout.Roles.Start {
+		// a hidden room holds only its own contents (FS-5FZ4J §F R39), and a
+		// respite room only its respite (§G R40)
+		if room != d.layout.Roles.Start && !d.isHidden(room) && !d.isRespite(room) && allowed(room) {
 			rooms = append(rooms, room)
 		}
 	}
@@ -112,7 +117,7 @@ func (s *Session) placeTomeRunObject(d *dungeonFloor, what string, create func(*
 		s.objectOccupiedPlaceAreas = append(s.objectOccupiedPlaceAreas, centredArea(x, y, rw, rh))
 		return
 	}
-	slog.Warn("Tome run object skipped: no room on its floor has a free spot", "sessionID", s.ID, "object", what)
+	slog.Warn("Run object skipped: no room on its floor has a free spot", "sessionID", s.ID, "object", what)
 }
 
 // warnTomeRunFallback logs that the floor at depth, fallen back to a floor of
@@ -293,7 +298,16 @@ func (s *Session) besideAltar(d *dungeonFloor, area *spawnArea, altar *ecs.Entit
 		return 0, 0, false
 	}
 	at := tc.(*components.TransformComponent)
-	region := d.regionAt(at.X, at.Y)
+	return s.besidePoint(d, area, point{at.X, at.Y})
+}
+
+// besidePoint is the spot in at's region nearest at where a body stands off
+// the doorways, on open ground and clear of every delver's body, among
+// DemonPlacementSamples draws; false when none of them fits or at is on no
+// region. A summoned boss beside its altar, a mark's called cutthroats
+// beside it (FS-4EC7Z §E R18).
+func (s *Session) besidePoint(d *dungeonFloor, area *spawnArea, at point) (x, y float64, ok bool) {
+	region := d.regionAt(at.x, at.y)
 	if region == 0 {
 		return 0, 0, false
 	}
@@ -305,7 +319,7 @@ func (s *Session) besideAltar(d *dungeonFloor, area *spawnArea, altar *ecs.Entit
 		if !d.stands(centredArea(cx, cy, r, r), region, offDoorways) || !area.open(cx, cy) || onADelver(area, cx, cy) {
 			continue
 		}
-		if dist := math.Hypot(cx-at.X, cy-at.Y); dist < best {
+		if dist := math.Hypot(cx-at.x, cy-at.y); dist < best {
 			best, x, y, ok = dist, cx, cy, true
 		}
 	}

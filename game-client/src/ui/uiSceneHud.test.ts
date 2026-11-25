@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AbilityBarView } from "./abilityBarView";
 import { RESOURCE_HUD_AT } from "./ResourceHud";
+import { STATUS_MARKS_AT } from "./statusMarks";
 import { GameUiBridge, NO_FACTS, type World, type WorldReport } from "./uiBridge";
 import { HUD_PLACES, UiHudSlot, type HudBuild, type HudKind, type HudMessage } from "./uiSceneHud";
 
@@ -39,6 +40,10 @@ function onHud() {
     bar: piece("bar"),
     bars: piece("bars"),
     progress: piece("progress"),
+    window: piece("window"),
+    statusMarks: piece("statusMarks"),
+    contract: piece("contract"),
+    roll: piece("roll"),
   };
   const slot = new UiHudSlot(bridge, build);
   const report = (world: World): WorldReport => {
@@ -86,7 +91,9 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     expect(HUD_PLACES.hub).toEqual({ progress: true });
     expect(HUD_PLACES.field).toEqual({ progress: true, bars: RESOURCE_HUD_AT.field, bar: true });
     expect(RESOURCE_HUD_AT.run).toEqual(RESOURCE_HUD_AT.field);
-    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true });
+    // FS-5FZ4J §J R53: a sealed floor's Braziers window counts down in a run alone
+    // FS-5FZ4J §J R55: the status marks beside the run's own health bar, a run's alone
+    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, statusMarks: STATUS_MARKS_AT, contract: true, roll: true });
   });
 
   it.each([
@@ -126,6 +133,75 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     report(world);
     slot.hear(from(world, message));
     expect(built).toEqual([]);
+  });
+
+  // FS-5FZ4J §J R53: the Braziers window's countdown, a run's alone, built on the first window
+  it("should build the window's countdown in a run on its first window, hand it none between, and never in a field", () => {
+    const { slot, built, report } = onHud();
+    report("run");
+    slot.hear({ world: "run", kind: "window", window: null });
+    expect(built).toEqual([]);
+    slot.hear({ world: "run", kind: "window", window: { seconds: 12, fraction: 0.6 } });
+    slot.hear({ world: "run", kind: "window", window: null });
+    expect(built).toHaveLength(1);
+    expect(built[0].shown).toEqual([{ seconds: 12, fraction: 0.6 }, null]);
+    const field = onHud();
+    field.report("field");
+    field.slot.hear({ world: "field", kind: "window", window: { seconds: 3, fraction: 0.1 } });
+    expect(field.built).toEqual([]);
+  });
+
+  // FS-5FZ4J §J R55 (I-5FZ4J-11): the status marks, a run's alone, beside its own health bar
+  it("should build the status marks in a run, at their place, on the first marks, hand them none after, and never in a field", () => {
+    const { slot, built, report } = onHud();
+    report("run");
+    slot.hear({ world: "run", kind: "statusMarks", marks: [] });
+    expect(built).toEqual([]);
+    slot.hear({ world: "run", kind: "statusMarks", marks: ["blessed"] });
+    slot.hear({ world: "run", kind: "statusMarks", marks: [] });
+    expect(built).toHaveLength(1);
+    expect(built[0].at).toEqual(STATUS_MARKS_AT);
+    expect(built[0].shown).toEqual([["blessed"], []]);
+    const field = onHud();
+    field.report("field");
+    field.slot.hear({ world: "field", kind: "statusMarks", marks: ["blessed"] });
+    expect(field.built).toEqual([]);
+  });
+
+  // FS-4EC7Z §G R34 (I-4EC7Z-6): the contract's heading line under the notices, a run's alone
+  it("should build the contract's line in a run on its first line, hand it none after, and never in a field", () => {
+    const { slot, built, report } = onHud();
+    report("run");
+    slot.hear({ world: "run", kind: "contract", line: null });
+    expect(built).toEqual([]);
+    slot.hear({ world: "run", kind: "contract", line: "Mark: last seen to the east" });
+    slot.hear({ world: "run", kind: "contract", line: null });
+    expect(built).toHaveLength(1);
+    expect(built[0].shown).toEqual(["Mark: last seen to the east", null]);
+    const field = onHud();
+    field.report("field");
+    field.slot.hear({ world: "field", kind: "contract", line: "Mark: last seen to the east" });
+    expect(field.built).toEqual([]);
+  });
+
+  // FS-7P736 R16 (I-7P736-2): the roll pip beside the ability bar, a run's alone
+  it("should build the roll pip in a run on its first pip, hand it each one after, and never in a field or the hub", () => {
+    const { slot, built, report } = onHud();
+    report("run");
+    slot.hear({ world: "run", kind: "roll", roll: null });
+    expect(built).toEqual([]);
+    const ready = { label: "Space", ready: true, cooldown: null };
+    const cooling = { label: "Space", ready: false, cooldown: { remaining: 2, total: 3 } };
+    slot.hear({ world: "run", kind: "roll", roll: ready });
+    slot.hear({ world: "run", kind: "roll", roll: cooling });
+    expect(built).toHaveLength(1);
+    expect(built[0]).toMatchObject({ kind: "roll", shown: [ready, cooling] });
+    for (const world of ["field", "hub"] as const) {
+      const other = onHud();
+      other.report(world);
+      other.slot.hear({ world, kind: "roll", roll: ready });
+      expect(other.built).toEqual([]);
+    }
   });
 
   it("should draw nothing with no world reported", () => {

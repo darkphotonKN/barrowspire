@@ -8,6 +8,7 @@
  */
 
 import type Phaser from "phaser";
+import { PAGE_COPY } from "@/data/classBooks";
 import { itemView } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { artSprite } from "@/render/art/phaser";
@@ -27,6 +28,7 @@ import { CHARGE_MS, playCharge } from "@/render/effects/charge";
 import { CutFx } from "@/render/effects/cut";
 import { playDemonClaw } from "@/render/effects/demonClaw";
 import { playDeathDust } from "@/render/effects/death";
+import { playRollDust } from "@/render/effects/rollDust";
 import { EntranceMarker } from "@/render/effects/entrance";
 import { playEscape } from "@/render/effects/escape";
 import { playFireballCast } from "@/render/effects/fireball";
@@ -34,6 +36,8 @@ import { HitFeedback } from "@/render/effects/hit";
 import { LoreDust } from "@/render/effects/loreDust";
 import { addMist, prefersReducedMotion } from "@/render/effects/mist";
 import { AbilityTelegraphs, IMPACT_MS } from "@/render/effects/monsterAbility";
+import { HOUND_BAY, paintHoundBay } from "@/render/effects/houndBay";
+import { PageReticle } from "@/render/effects/pageReticle";
 import { ParryFx } from "@/render/effects/parry";
 import { RiposteFx } from "@/render/effects/riposte";
 import type {
@@ -43,11 +47,17 @@ import type {
 } from "@/render/effects/runtime";
 import { playHeavyShotRelease } from "@/render/effects/heavyShot";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
-import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
+import { ANTIDOTE_LOOK, HEAL_LOOK, restoreLook, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { StunTells } from "@/render/effects/stun";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
+import { worldDepth } from "@/render/iso/shapes";
+import { HALO_DEPTH } from "@/render/lighting/lighting";
+import { BookEffectSet } from "@/render/world/bookEffects";
+import { BookStateMarks } from "@/render/world/bookStates";
+import type { LayerKind } from "@/render/world/bookLook";
+import { TRAIL_BED_DEPTH } from "@/render/world/trails";
 import type { ItemState, MonsterAbilityKind } from "@/types/gameState";
 import { ArrivalCard, cardLeaves, type CardLeave } from "@/ui/arrivalCard";
 import { CONTAINER_VIEW_DEPTH, satchelIcon } from "@/ui/ContainerView";
@@ -125,6 +135,56 @@ const STUN_LIFT_FALLBACK = 80;
 
 /** A frame's step, in ms, for a demo that drives its own frames. */
 const FRAME_MS = 33;
+
+/** How long a class book card holds its effect or state: long enough to see it bob, pulse or rise. */
+const BOOK_HOLD_MS = 4800;
+
+/** A book layer's graphics, at its depth and blend as the run makes it (FS-X2CMM R47). */
+function bookLayer(s: Stage, kind: LayerKind | "front", at: Point): Phaser.GameObjects.Graphics {
+  const g = s.scene.add.graphics();
+  if (kind === "ground") return g.setDepth(TRAIL_BED_DEPTH);
+  if (kind === "halo") return g.setDepth(HALO_DEPTH).setBlendMode("ADD");
+  return g.setDepth(worldDepth(at.x, at.y, 1));
+}
+
+/**
+ * A book effect laid at the figure's aim as a run lays it from the state (FS-X2CMM R47), its look driven by
+ * its own clock; `caughtAt` are the ms a rune's catch count climbs at.
+ */
+function playBookEffect(s: Stage, kind: string, caughtAt: readonly number[] = []): void {
+  const set = new BookEffectSet<Phaser.GameObjects.Graphics>({
+    layer: (_id, layer, at) => bookLayer(s, layer, at),
+    light: (spec) => s.lights.addTransient(spec),
+    cell: () => 80,
+    reducedMotion: prefersReducedMotion(),
+  });
+  const effect = { id: s.owner, kind, x: s.aim.x, y: s.aim.y, remaining: 20 };
+  set.sync([effect], s.now());
+  caughtAt.forEach((ms, i) => s.later(ms, () => set.sync([{ ...effect, caught: i + 1 }], s.now())));
+  for (let t = 0; t <= BOOK_HOLD_MS; t += FRAME_MS) s.later(t, () => set.frame(s.now()));
+  s.later(BOOK_HOLD_MS + FRAME_MS, () => set.clear());
+}
+
+/** A book state on the figure as a run draws it on a body from the state (FS-X2CMM R47); afloat lifts it. */
+function playBookState(s: Stage, name: string, who = "mage"): void {
+  const crown = s.wear(who);
+  const marks = new BookStateMarks<Phaser.GameObjects.Graphics>({
+    layer: (_body, _state, kind) => bookLayer(s, kind, s.at),
+    reducedMotion: prefersReducedMotion(),
+  });
+  marks.sync([[s.owner, [{ name, remaining: 10 }]]], s.now());
+  const feetY = worldToScreen(s.at.x, s.at.y).y;
+  for (let t = 0; t <= BOOK_HOLD_MS; t += FRAME_MS)
+    s.later(t, () => {
+      s.figure.setY(Math.round(feetY - marks.lift(s.owner, s.now(), crown)));
+      marks.follow(s.owner, s.at, crown, s.now());
+    });
+  s.later(BOOK_HOLD_MS + FRAME_MS, () => {
+    marks.clear();
+    s.figure.setY(Math.round(feetY));
+    s.wear("mage");
+  });
+}
 
 /**
  * The creature the stun tell is shown over, as a run draws it over a stunned monster (FS-04EEA R49): the
@@ -251,6 +311,25 @@ export const EFFECT_CARDS: EffectCard[] = [
       const circle = new AimCircle(() => s.scene.add.graphics());
       circle.draw(s.aim);
       s.later(HOLD_MS / 2, () => circle.clear());
+    },
+  },
+  {
+    module: "pageReticle",
+    name: "Armed page reticle: Witchlight's ring, then faint, then Far Hand's interactable ring, then Call the Wolf's paw",
+    demo: (s) => {
+      // at the point the figure aims, as an armed page draws it each frame (FS-X2CMM R41): plain on a valid
+      // target, faint where a click would do nothing, Far Hand's ring under the interactable it snapped to in
+      // the interactable channel's amber, and Call the Wolf's paw mark
+      const reticle = new PageReticle(() => s.scene.add.graphics());
+      const ring = { page: "witchlight", kind: "ground", at: s.aim, radius: 3 * 80, valid: true } as const;
+      const step = HOLD_MS / 4;
+      reticle.draw(ring);
+      s.later(step, () => reticle.draw({ ...ring, valid: false }));
+      s.later(step * 2, () =>
+        reticle.draw({ ...ring, page: "far_hand", kind: "interactable", radius: (PAGE_COPY.far_hand.reticleCells ?? 0) * 80 }),
+      );
+      s.later(step * 3, () => reticle.draw({ ...ring, page: "call_the_hound", radius: 40 }));
+      s.later(HOLD_MS, () => reticle.clear());
     },
   },
   {
@@ -407,6 +486,17 @@ export const EFFECT_CARDS: EffectCard[] = [
     demo: (s) => playDeathDust(s.fx, s.owner, s.at),
   },
   {
+    module: "rollDust",
+    name: "Roll dust scuff",
+    // where a roll starts, thrown back from the push-off against the roll's way (FS-7P736 R15)
+    demo: (s) => {
+      const dx = s.aim.x - s.at.x;
+      const dy = s.aim.y - s.at.y;
+      const len = Math.hypot(dx, dy) || 1;
+      playRollDust(s.fx, s.owner, s.at, { x: dx / len, y: dy / len });
+    },
+  },
+  {
     module: "entrance",
     name: "Entrance glow",
     demo: (s) => {
@@ -558,6 +648,33 @@ export const EFFECT_CARDS: EffectCard[] = [
   },
   {
     module: "shimmer",
+    name: "Antidote shimmer (granted base)",
+    demo: (s) => {
+      // as an antidote drunk from the bag plays it, in the poison tint's colours (FS-9JV5K §F R24)
+      const shimmers = new ShimmerFx(s.scene, s.art, s.lights);
+      shimmers.follow(s.at);
+      shimmers.playGranted(ANTIDOTE_LOOK, s.crown);
+    },
+  },
+  // as a Restoring Draught drunk from the bag plays it, in the drinker's own bar's colours (FS-9JV5K
+  // §Change: The Restoring Draught D6), one card per pool so the three are judged side by side
+  ...(
+    [
+      ["mana", "mana"],
+      ["stamina", "stamina"],
+      ["parry charges", "parry_charges"],
+    ] as const
+  ).map(([label, kind]): EffectCard => ({
+    module: "shimmer",
+    name: `Restoring Draught shimmer (${label})`,
+    demo: (s) => {
+      const shimmers = new ShimmerFx(s.scene, s.art, s.lights);
+      shimmers.follow(s.at);
+      shimmers.playGranted(restoreLook(kind), s.crown);
+    },
+  })),
+  {
+    module: "shimmer",
     name: "Invoked shimmer base (heal look as a stand-in)",
     demo: (s) => {
       // nothing in the game plays it yet and it has no look of its own, so the heal look stands
@@ -601,4 +718,63 @@ export const EFFECT_CARDS: EffectCard[] = [
     // the flight only: the throw is the goblin's attack clip (FS-C8VM7 §F R38)
     demo: (s) => s.fly("thrown_dagger"),
   },
+  // the class book's world effects and delver states (FS-X2CMM §I R47), each its own look
+  {
+    module: "witchlight",
+    name: "Witchlight: a warm globe bobbing over its point, with its pool",
+    demo: (s) => playBookEffect(s, "witchlight"),
+  },
+  {
+    module: "rune",
+    name: "Binding Glyph's rune: a madder ring, pulsing, flashing on each of three catches",
+    demo: (s) => playBookEffect(s, "rune", [BOOK_HOLD_MS / 4, BOOK_HOLD_MS / 2, (BOOK_HOLD_MS * 3) / 4]),
+  },
+  {
+    module: "draught",
+    name: "Brew's draught: a stoppered flask in the interactable's pool",
+    demo: (s) => playBookEffect(s, "draught"),
+  },
+  {
+    module: "afloat",
+    name: "Afloat (Levitate): lifted a little, a soft shadow below",
+    demo: (s) => playBookState(s, "afloat"),
+  },
+  {
+    module: "hardened",
+    name: "Hardened (on the warrior): a dull bronze sheen",
+    demo: (s) => playBookState(s, "hardened", "warrior"),
+  },
+  {
+    module: "longNight",
+    name: "The Long Night (on the warrior): a dark ring at the feet",
+    demo: (s) => playBookState(s, "long_night", "warrior"),
+  },
+  {
+    module: "trackersEye",
+    name: "Tracker's Eye (on the archer): a faint ochre ring",
+    demo: (s) => playBookState(s, "trackers_eye", "archer"),
+  },
+  {
+    module: "draughtHeal",
+    name: "A draught's heal: a faint rise of health's own colour",
+    demo: (s) => playBookState(s, "draught"),
+  },
+  {
+    module: "houndBay",
+    name: "The wolf's bay: verdigris rings rippling out at what it bays at",
+    // at the aim, as a run lays it at the point the hound's `bay` names (FS-X2CMM §J R49), bayed three times
+    demo: (s) => playHoundBay(s),
+  },
 ];
+
+/** The hound's bay at the figure's aim, played as a run plays it on each bay, three bays a hold apart. */
+function playHoundBay(s: Stage): void {
+  const g = bookLayer(s, "ground", s.aim);
+  const at = worldToScreen(s.aim.x, s.aim.y);
+  g.setPosition(at.x, at.y);
+  const reduced = prefersReducedMotion();
+  const every = HOUND_BAY.ms + 500;
+  for (let bay = 0; bay < 3; bay++)
+    for (let t = 0; t <= HOUND_BAY.ms; t += FRAME_MS) s.later(bay * every + t, () => paintHoundBay(g, t, reduced));
+  s.later(3 * every, () => g.destroy());
+}

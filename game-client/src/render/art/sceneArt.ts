@@ -8,8 +8,10 @@
  * scene-scoped groups each scene holds; every group it does not name is resident, so a group the
  * bake adds later costs memory, never draws as a placeholder by omission (§A R3). A scene-scoped
  * group may instead be **on demand** ({@link ON_DEMAND_ART}): in no scene's set, fetched while a
- * scene runs (FS-VHGE7 §F, ADR-0071), or a spec look's ({@link SPEC_LOOK_ART}, FS-1J1CB §C,
- * ADR-0088), fetched when the world state carries a player who wears it.
+ * scene runs (FS-VHGE7 §F, ADR-0071), a spec look's ({@link SPEC_LOOK_ART}, FS-1J1CB §C,
+ * ADR-0088), fetched when the world state carries a player who wears it, an NPC's
+ * ({@link NPC_ART}, FS-9JV5K §G R26), fetched when the world state first carries him, or the
+ * dungeon encounters' humans' ({@link ENCOUNTER_ART}, FS-4EC7Z §H R36), when it first carries one.
  *
  * Pure, so it is tested against the real manifest without a canvas. The loading itself is
  * `preloadArt` / `registerArt` (`phaser.ts`).
@@ -130,6 +132,108 @@ export const ON_DEMAND_ART: readonly OnDemandGroup[] = [
   ...VARIANT_ART,
 ];
 
+/**
+ * An NPC drawn from a group of his own, fetched on demand (ADR-0071 Decision 6, a table change):
+ * a world scene queues `group` the first time a game-state snapshot carries `stateKey`, whether or
+ * not he is in sight, and draws `standIn` until every page has landed.
+ */
+export interface NpcArtGroup {
+  group: string;
+  /** The game-state key whose first appearance in a snapshot fetches the group. */
+  stateKey: string;
+  /** His sheet, on the group. */
+  sheet: string;
+  /** What he draws until the group is in: a sheet on a resident group, under a multiply `tint`. */
+  standIn: { sheet: string; tint?: number };
+}
+
+/**
+ * FS-9JV5K §G R26: the wandering merchant, on group `merchant`, fetched when a run's state first
+ * carries `merchant` (§A R4); until it lands he is the mercenary's resident base sheet under a
+ * road-dust wash, an unarmoured body in a coat, so the run never draws him as the placeholder.
+ */
+export const NPC_ART: readonly NpcArtGroup[] = [
+  {
+    group: "merchant",
+    stateKey: "merchant",
+    sheet: "npc_merchant",
+    standIn: { sheet: "char_mercenary_base", tint: palette.merchantStandIn },
+  },
+];
+
+/** What an encounter look is drawn from: its sheet, and the variant whose clips it plays. */
+export interface EncounterLook {
+  sheet: string;
+  /**
+   * The variant's clip suffix: the sheet's first variant plays the plain clips (`idle`), every
+   * other one its own (`idle_b`), as a hub resident's palette does (`hubFolk.ts`).
+   */
+  suffix: string;
+}
+
+/**
+ * The dungeon encounters' humans (FS-4EC7Z §H R36), on a group of their own fetched on demand
+ * (ADR-0071 Decision 6, a table change): a run queues `group` the first time a snapshot carries
+ * `stateKey` or a monster of one of `archetypes`, whether or not it is in sight, and draws
+ * `standIn` for each until every page has landed.
+ */
+export interface EncounterArtGroup {
+  group: string;
+  /** The game-state key whose first appearance in a snapshot fetches the group (§F R22). */
+  stateKey: string;
+  /** The monster archetypes drawn from the group (§F R24): the hostile humans. */
+  archetypes: readonly string[];
+  /** Each look the server sends (`look`), by name: the cast's variants and the mark's two looks. */
+  looks: Readonly<Record<string, EncounterLook>>;
+  /** What every look draws meanwhile: a sheet on a resident group, under a multiply `tint`. */
+  standIn: { sheet: string; tint?: number };
+}
+
+/** A sheet's variants as looks `<kind>_<letter>`, the first on the plain clips. */
+const variantLooks = (kind: string, letters: readonly string[]): Record<string, EncounterLook> =>
+  Object.fromEntries(letters.map((l, i) => [`${kind}_${l}`, { sheet: `npc_${kind}`, suffix: i === 0 ? "" : `_${l}` }]));
+
+/**
+ * FS-4EC7Z §H R36: the pilgrims (three variants, game-service `PilgrimLooks`), the captives and the
+ * cutthroats (two each) and the contract mark's two looks, on group `encounter`, fetched when a
+ * run's state first carries `encounter_npcs` or a `cutthroat` or `contract_mark` monster. Until it
+ * lands each is the mercenary's resident base sheet under the merchant's road-dust wash: a drab
+ * human in a coat, never a player's madder, and never the placeholder. The pilgrim's `cower` and
+ * the captive's `bound` (caged, wrists roped) are clips of their own; the cage and its key are on
+ * the resident `sealed` group (`cage`: `shut`/`open`, each also as `_back` and `_front` layers to
+ * draw the captives between; `cage_key`).
+ */
+export const ENCOUNTER_ART: EncounterArtGroup = {
+  group: "encounter",
+  stateKey: "encounter_npcs",
+  archetypes: ["cutthroat", "contract_mark"],
+  looks: {
+    ...variantLooks("pilgrim", ["a", "b", "c"]),
+    ...variantLooks("captive", ["a", "b"]),
+    ...variantLooks("cutthroat", ["a", "b"]),
+    hooded_duelist: { sheet: "npc_hooded_duelist", suffix: "" },
+    debtor_knight: { sheet: "npc_debtor_knight", suffix: "" },
+  },
+  standIn: { sheet: "char_mercenary_base", tint: palette.encounterStandIn },
+};
+
+/**
+ * What encounter look `look` is drawn from: its own row, or for a variant the bake does not carry
+ * (`cutthroat_c`) its kind's first variant, so a look the server adds draws as its kind; undefined
+ * for a kind the group does not hold.
+ */
+export function encounterLook(look: string): EncounterLook | undefined {
+  const { looks } = ENCOUNTER_ART;
+  if (Object.hasOwn(looks, look)) return looks[look];
+  const kind = /^(.+)_[a-z]$/.exec(look)?.[1];
+  const first = `${kind}_a`;
+  return kind !== undefined && Object.hasOwn(looks, first) ? looks[first] : undefined;
+}
+
+/** The on-demand NPC group a game-state key fetches, if any. */
+export const npcArtFor = (stateKey: string): NpcArtGroup | undefined =>
+  NPC_ART.find((entry) => entry.stateKey === stateKey);
+
 /** The on-demand group an archetype's art is on, if any. */
 export const onDemandFor = (archetype: string): OnDemandGroup | undefined =>
   ON_DEMAND_ART.find((entry) => entry.archetype === archetype);
@@ -206,6 +310,8 @@ export const SCENE_SCOPED_GROUPS: ReadonlySet<string> = new Set([
     SCENE_ART.BarrowspireScene,
   ].flat(),
   ...ON_DEMAND_ART.map((entry) => entry.group),
+  ...NPC_ART.map((entry) => entry.group),
+  ENCOUNTER_ART.group,
   ...SPEC_LOOK_ART.map((row) => row.group),
 ]);
 

@@ -40,6 +40,8 @@ vi.mock("@/render/iso", async (importOriginal) => {
 vi.mock("@/render/viewport", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/render/viewport")>()),
   boundCamera: () => {},
+  // the world's closer camera and its HUD's are worldView.test.ts's; the stub has one camera
+  zoomWorldView: () => {},
   followWith: (cam: { startFollow(target: unknown): void }, target: unknown) => cam.startFollow(target),
 }));
 const { HubScene, delveChoices, hubMenuChoices, ELDER_TALE } = await import("./HubScene");

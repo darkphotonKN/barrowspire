@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { paced } from "@/data/pace";
 import type { EquippedItems, ItemState } from "@/types/gameState";
 import {
   characterSheet,
@@ -190,7 +191,7 @@ describe("characterSheet class stats (FS-HRH2J R28)", () => {
       { label: "Attack", value: "10" },
       { label: "Defense", value: "5" },
       { label: "Range", value: "8" },
-      { label: "Speed", value: "220" },
+      { label: "Speed", value: String(Math.round(paced(220))) }, // FS-TAGWA R12
     ]);
   });
 

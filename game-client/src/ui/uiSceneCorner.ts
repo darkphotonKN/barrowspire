@@ -14,6 +14,10 @@
  * under the gear's refusals. Its marker, on while the player holds unspent points (R33), is set on the
  * standing row as the points change, never rebuilding it, and on each row built after.
  *
+ * Book is the UI scene's own class book (FS-X2CMM R36), in a run only: its press toggles it there, inside the
+ * same act; in the hub and the fields it stands greyed, as the Mailbox does outside the town, and its press
+ * plays the refusal alone.
+ *
  * Menu is the UI scene's own menu slot's (R16): its press is handed to the slot. While the slot is
  * filled its blocker, in the same scene and over the row, takes every icon's hover and press but
  * Menu's, whose plate it leaves to the icon (FS-3EBCA R18, `covers`).
@@ -58,6 +62,16 @@ export interface CornerTree {
 /** No tree: a row whose Tree icon changes nothing. */
 const NO_TREE: CornerTree = { isOpen: () => false, toggle: () => {} };
 
+/** The class book as the row's Book icon reaches it: the UI scene's own (FS-X2CMM R36). */
+export interface CornerBook {
+  isOpen(): boolean;
+  /** Under the book's own refusals. */
+  toggle(): void;
+}
+
+/** No book: a row whose Book icon changes nothing. */
+const NO_BOOK: CornerBook = { isOpen: () => false, toggle: () => {} };
+
 /** The row as the UI scene keeps it. `HudCorner` is one. */
 export interface CornerRow {
   relayout(): void;
@@ -92,6 +106,8 @@ export class UiCornerRow {
     private readonly gear: CornerGear = NO_GEAR,
     /** The Tree icon's overlay: the UI scene's tree slot (FS-8RZ51 R32). */
     private readonly tree: CornerTree = NO_TREE,
+    /** The Book icon's window: the UI scene's book slot (FS-X2CMM R36). */
+    private readonly book: CornerBook = NO_BOOK,
   ) {}
 
   /**
@@ -135,8 +151,9 @@ export class UiCornerRow {
   }
 
   /**
-   * Menu, Inventory, Character, Party and Tree (FS-8RZ51 R32); outside the town the Mailbox too, greyed,
-   * the mailbox being the town's: the town's own envelope stands in its slot there (R13; FS-3EBCA R9).
+   * Menu, Inventory, Character, Party, Tree (FS-8RZ51 R32) and Book, greyed outside a run (FS-X2CMM R36);
+   * outside the town the Mailbox too, greyed, the mailbox being the town's: the town's own envelope stands
+   * in its slot there (R13; FS-3EBCA R9).
    */
   private icons(world: WorldReport["world"]): CornerIconSpec[] {
     // a hover on a pressable icon, and the greyed Mailbox's press, sounded (FS-WDM0X § Change M5, M10)
@@ -150,6 +167,9 @@ export class UiCornerRow {
       })),
       { icon: "party", press: () => this.send("party", () => this.party.toggle()), hovered },
       { icon: "tree", press: () => this.send("tree", () => this.tree.toggle()), hovered },
+      world === "run"
+        ? { icon: "book", press: () => this.send("book", () => this.book.toggle()), hovered }
+        : { icon: "book", greyed: true, refused: () => this.bridge.play("menu_error") },
     ];
     const greyedMail: CornerIconSpec = { icon: "mail", greyed: true, refused: () => this.bridge.play("menu_error") };
     return world === "hub" ? icons : [...icons, greyedMail];
@@ -169,7 +189,7 @@ export class UiCornerRow {
     });
   }
 
-  /** What a press can change, as one key: the world's letter panel, the UI's party panel, gear overlay, tree and menu slot. */
+  /** What a press can change, as one key: the world's letter panel, the UI's party panel, gear overlay, tree, book and menu slot. */
   private screen(): string {
     const windows = this.bridge.world?.windows();
     return JSON.stringify([
@@ -178,6 +198,7 @@ export class UiCornerRow {
       this.gear.isInventoryOpen(),
       this.gear.isCharacterOpen(),
       this.tree.isOpen(),
+      this.book.isOpen(),
       this.bridge.ui.menuOpen,
     ]);
   }

@@ -1153,6 +1153,11 @@ export class Occluders {
     this.items.length = 0;
   }
 
+  /** Let go of the occluders destroyed since: a floor's walls drawn again (FS-5FZ4J §J R56). */
+  prune(): void {
+    for (let i = this.items.length - 1; i >= 0; i--) if (!this.items[i].sprite.active) this.items.splice(i, 1);
+  }
+
   /** Eases each occluder toward faded or restored; `subject` is the player, or null if gone. */
   update(subject: { bounds: Rect; depth: number } | null, dtMs: number): void {
     for (const { sprite, bounds } of this.items) {

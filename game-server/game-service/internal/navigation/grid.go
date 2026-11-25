@@ -14,8 +14,11 @@ movement system's.
 Cells are numbered row by row, y*cols + x. A cell's walls are whole cells of
 rock (ADR-0061), so a body that overlaps only walkable cells touches no wall.
 
-The walkable cells never change, but Path reuses one search's scratch: a Grid
-is used by one goroutine at a time, the tick's.
+A cell's walkability changes only where a barrier stands on it, a shut gate
+or a secret door, or a stone block, and only through SetWalkable (FS-5FZ4J §D
+R22). Path reuses
+one search's scratch, and SetWalkable writes the cells: a Grid is used by one
+goroutine at a time, the tick's.
 */
 type Grid struct {
 	cols, rows int
@@ -33,6 +36,19 @@ func NewGrid(cols, rows int, size float64, walkable []bool) *Grid {
 	g.search = newSearch(cols * rows)
 	return g
 }
+
+// SetWalkable makes the cell at column x, row y walkable or rock: a barrier
+// shut over it or opened (FS-5FZ4J §D R22). A cell off the grid is ignored.
+func (g *Grid) SetWalkable(x, y int, walkable bool) {
+	if x < 0 || y < 0 || x >= g.cols || y >= g.rows {
+		return
+	}
+	g.walkable[y*g.cols+x] = walkable
+}
+
+// Walkable is whether the cell at column x, row y is on the grid and ground:
+// neither rock nor shut by a barrier or a stone block (FS-5FZ4J §C R19).
+func (g *Grid) Walkable(x, y int) bool { return g.ground(x, y) }
 
 // Cell is the walkable cell holding (x, y); false on rock or off the grid. A
 // point on a shared edge is in the cell right of it or below it.
@@ -124,6 +140,48 @@ func (g *Grid) Within(dst []int, x, y, radius float64) []int {
 	return dst
 }
 
+/*
+Nearest is the walkable cell whose centre lies nearest (x, y), a tie to the
+lowest cell; false when no cell is walkable. A point anywhere, on rock or off
+the grid, has one while any cell does: where a delver whose afloat ends over a
+pit is set down (FS-X2CMM §J R51).
+
+It looks in square rings of cells round the point's cell, nearest first. A
+cell k rings out has its centre at least (k-0.5) cells from the point, so the
+search stops at the first ring that cannot beat the nearest found; one that
+could tie it is still looked over, for the lower cell.
+*/
+func (g *Grid) Nearest(x, y float64) (int, bool) {
+	cx, cy := int(math.Floor(x/g.size)), int(math.Floor(y/g.size))
+	best, bestD := -1, math.Inf(1)
+	consider := func(col, row int) {
+		if !g.ground(col, row) {
+			return
+		}
+		c := row*g.cols + col
+		centreX, centreY := g.Centre(c)
+		if d := math.Hypot(centreX-x, centreY-y); d < bestD || d == bestD && c < best {
+			best, bestD = c, d
+		}
+	}
+	// the rings that touch the grid: from its nearest cell to its farthest
+	first := max(0, -cx, cx-(g.cols-1), -cy, cy-(g.rows-1))
+	last := max(cx, g.cols-1-cx, cy, g.rows-1-cy)
+	for k := first; k <= last && bestD >= (float64(k)-0.5)*g.size; k++ {
+		for row := max(cy-k, 0); row <= min(cy+k, g.rows-1); row++ {
+			if row == cy-k || row == cy+k {
+				for col := max(cx-k, 0); col <= min(cx+k, g.cols-1); col++ {
+					consider(col, row)
+				}
+				continue
+			}
+			consider(cx-k, row)
+			consider(cx+k, row)
+		}
+	}
+	return best, best >= 0
+}
+
 // ground is whether the cell at column x, row y is on the grid and walkable.
 func (g *Grid) ground(x, y int) bool {
 	return x >= 0 && y >= 0 && x < g.cols && y < g.rows && g.walkable[y*g.cols+x]
@@ -132,4 +190,34 @@ func (g *Grid) ground(x, y int) bool {
 // valid is whether cell is on the grid and walkable.
 func (g *Grid) valid(cell int) bool {
 	return cell >= 0 && cell < len(g.walkable) && g.walkable[cell]
+}
+
+// WalkDistances is the 4-neighbour walk in cells from cell from to every
+// cell over the walkable ones, as the grid stands now (a shut barrier
+// blocks it): -1 for a cell it cannot reach, and for every cell when from is
+// not walkable. FS-4EC7Z §E R17-R18.
+func (g *Grid) WalkDistances(from int) []int {
+	dist := make([]int, len(g.walkable))
+	for i := range dist {
+		dist[i] = -1
+	}
+	if !g.valid(from) {
+		return dist
+	}
+	dist[from] = 0
+	queue := []int{from}
+	for i := 0; i < len(queue); i++ {
+		c := queue[i]
+		x, y := c%g.cols, c/g.cols
+		for _, n := range [4][2]int{{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}} {
+			if !g.ground(n[0], n[1]) {
+				continue
+			}
+			if next := n[1]*g.cols + n[0]; dist[next] < 0 {
+				dist[next] = dist[c] + 1
+				queue = append(queue, next)
+			}
+		}
+	}
+	return dist
 }

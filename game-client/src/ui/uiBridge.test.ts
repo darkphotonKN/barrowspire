@@ -55,6 +55,7 @@ function recording(): UiBridge & { heard: string[] } {
     abilityBar: () => void heard.push("abilityBar"),
     hud: (message) => void heard.push(`hud ${message.kind}`),
     confirmBurn: (altar) => void heard.push(`confirmBurn ${altar}`),
+    wares: (message) => void heard.push(`wares ${message.kind}`),
     lore: (message) => void heard.push(`lore ${message.kind}`),
     onScreen: () => () => {},
   };
@@ -717,6 +718,20 @@ describe("the gear's, the container's and the record's data, told to the UI scen
 
 // FS-TQZ5J § Change: Phase 3 (I-TQZ5J-13): the UI scene asks the world for the gear's sends, a take and
 // the record's close, as plain data; a world with no answer ignores them.
+describe("the class book's requests (FS-X2CMM R44a)", () => {
+  it("should hand a page pressed and a disarm to the world's answers, and ignore them where it has none", () => {
+    const done: string[] = [];
+    const answer = answering({ page: (page) => void done.push(`page ${page}`), disarm: () => void done.push("disarm") });
+
+    answer({ kind: "page", page: "witchlight" });
+    answer({ kind: "disarm" });
+    answering({})({ kind: "page", page: "recall" });
+    answering({})({ kind: "disarm" });
+
+    expect(done).toEqual(["page witchlight", "disarm"]);
+  });
+});
+
 describe("the gear's, the container's and the record's requests (FS-TQZ5J § Change: Phase 3, R54)", () => {
   it("should hand equip, unequip, take and close: record to the world's answers, and ignore one it has none for", () => {
     const done: string[] = [];
@@ -735,6 +750,32 @@ describe("the gear's, the container's and the record's requests (FS-TQZ5J § Cha
     answering({})({ kind: "take", item });
 
     expect(done).toEqual(["equip sword-1", "unequip helm-1", "take ring-1", "close record"]);
+  });
+
+  // FS-9JV5K §F R22–R24 (I-9JV5K-5)
+  it("should hand buy, drink and close: wares to the world's answers", () => {
+    const done: string[] = [];
+    const answer = answering({
+      buy: (ware) => void done.push(`buy ${ware}`),
+      drink: (item) => void done.push(`drink ${item}`),
+      close: { wares: () => void done.push("close wares") },
+    });
+    answer({ kind: "buy", ware: "antidote" });
+    answer({ kind: "drink", item: "antidote-1" });
+    answer({ kind: "close", window: "wares" });
+    answering({})({ kind: "buy", ware: "antidote" });
+    expect(done).toEqual(["buy antidote", "drink antidote-1", "close wares"]);
+  });
+
+  it("should tell every screen the wares panel's data as the world hands it", () => {
+    const bridge = new GameUiBridge();
+    const heard: string[] = [];
+    bridge.onScreen({ wares: (message) => void heard.push(message.kind) });
+    bridge.wares({ kind: "show", wares: { merchantId: "merchant-1", rows: [] } });
+    bridge.wares({ kind: "answered" });
+    bridge.wares({ kind: "close" });
+    NO_UI.wares({ kind: "close" });
+    expect(heard).toEqual(["show", "answered", "close"]);
   });
 
   it("should carry the world's part of the gear's refusal in its blockers, false where left out", () => {

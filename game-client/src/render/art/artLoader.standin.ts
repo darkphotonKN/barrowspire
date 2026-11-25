@@ -31,8 +31,9 @@ export function withSpecLooks(manifest: ArtManifest, ...groups: string[]): ArtMa
 
 /**
  * The shipped manifest's resident pages (FS-C4JWH §A R3), written out rather than derived, so a
- * test that compares against them checks the table: the four class groups, the 14 small ones and
- * the tome and altar's `summoning` (FS-3103M §I). The tiered roster's variant groups are not here:
+ * test that compares against them checks the table: the four class groups, the 14 small ones,
+ * the tome and altar's `summoning` (FS-3103M §I) and the sealed floor's props, `sealed`
+ * (FS-5FZ4J §K R57), its second page the encounters' cage and key (FS-4EC7Z §H R36). The tiered roster's variant groups are not here:
  * each is floor-scoped and fetched on demand (FS-C8VM7 §G R41, ADR-0081).
  */
 export const RESIDENT_ART_PAGES = [
@@ -45,12 +46,15 @@ export const RESIDENT_ART_PAGES = [
   "fx-0",
   "ground-0",
   "hall-0",
+  "hound-0",
   "icons-0",
   "interior-0",
   "knight-0",
   "mercenary-0",
   "nature-0",
   "props-0",
+  "sealed-0",
+  "sealed-1",
   "spire-0",
   "summoning-0",
   "tower-0",

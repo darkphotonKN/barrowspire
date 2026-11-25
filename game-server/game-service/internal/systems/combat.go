@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -58,8 +59,12 @@ type KillRecord struct {
 	// Champion is a top floor's champion boss (FS-C8VM7 §D R31)
 	Champion bool
 	// KillerMemberID is the delver whose hit took it to 0, credited even when
-	// that delver died, escaped or left before a projectile of theirs landed.
+	// that delver died, escaped or left before a projectile of theirs landed;
+	// for a hired ally's hit, its hirer (FS-4EC7Z §C R11).
 	KillerMemberID uuid.UUID
+	// ByAlly marks a kill a hired ally made: it is its hirer's for loot alone,
+	// and gives no experience to anyone (FS-4EC7Z §C R11).
+	ByAlly bool
 	// X, Y is where it died: where its corpse lies and its drops land.
 	X, Y float64
 	// Floor is the depth it died on; 1 where the world keeps no floors.
@@ -223,9 +228,10 @@ const (
 	// and starts afresh, so no cast ever carries anyone more than dashDistance.
 	dashDistance = 180.0
 	dashSpeed    = 450.0 // px per second
-	// dashEpsilon absorbs the float drift of summing steps, so a charge whose
-	// last step lands it on its distance is over on that tick.
-	dashEpsilon = 1e-6
+	// carryEpsilon absorbs the float drift of summing steps, so a carry (a
+	// charge or a roll) whose last step lands it on its distance is over on
+	// that tick.
+	carryEpsilon = 1e-6
 
 	// The parry stance: open for parryWindow from its opening tick; one that
 	// closes having negated nothing locks the stance out for parryLockout from
@@ -249,7 +255,8 @@ const (
 )
 
 // attackTable is FS-77AB6 §Requirements 6. Starting values. Projectile speed,
-// range, radius and spread are what they were before the CombatSystem existed.
+// range, radius and spread are what they were before the CombatSystem existed,
+// the speed paced since (its full-pace figure × PaceScale, FS-TAGWA R2).
 //
 // Slash's coefficient is 1.5, not the table's 1.0: the FS tunes coefficients so a
 // level-1 unequipped delver deals roughly today's numbers, and a warrior slash at
@@ -269,6 +276,13 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackMonsterStrike: {
 		delivery: deliverTargeted, damageType: components.DamagePhysical, scaling: scaleNone,
 		coefficient: 1, reach: math.Inf(1), parriable: true,
+	},
+	// a hired ally's swing is its sheet's hit, as is, at a monster: the
+	// AllyAISystem paces it and measures its reach, as the monster AI does a
+	// strike (FS-4EC7Z §C R9)
+	components.AttackAllyStrike: {
+		delivery: deliverTargeted, damageType: components.DamagePhysical, scaling: scaleNone,
+		coefficient: 1, reach: math.Inf(1),
 	},
 	// a ranged monster's shot is its damage at level too, delivered as one
 	// projectile. The row has no projectile of its own: the type, speed, radius
@@ -301,53 +315,54 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackArrow: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
 		coefficient: 1.4, cooldown: 0.25,
-		projectile: projectileSpec{kind: "arrow", speed: 480, maxDistance: 550, radius: 8, spread: []float64{0}},
+		projectile: projectileSpec{kind: "arrow", speed: 480 * constants.PaceScale, maxDistance: 550, radius: 8, spread: []float64{0}},
 		pins:       true,
 	},
 	components.AttackFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
 		coefficient: 1.1, cooldown: 0.25,
-		projectile: projectileSpec{kind: "fireball", speed: 350, maxDistance: 500, radius: 12, spread: []float64{0}},
+		projectile: projectileSpec{kind: "fireball", speed: 350 * constants.PaceScale, maxDistance: 500, radius: 12, spread: []float64{0}},
 		pins:       true,
 	},
-	// the archer's ability: one slow, heavy bolt, paid in stamina. 90 of the
-	// archer's 100 nearly drains it, so the next waits on regen. FS-JTNPR
-	// §Requirements 1, 5 (amended 2026-10-30).
+	// the archer's ability: one slow, heavy bolt, paid in stamina. It takes the
+	// archer's whole 100, so the next waits on regen. FS-JTNPR §Requirements 1,
+	// 5 (amended 2026-10-30; ×1.5 capped at the pool by the 2026-11-25 pace
+	// charter, I-8AY7S-7).
 	components.AttackShadowShot: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
-		coefficient: 3.2, cost: 90, cooldown: 1.2,
-		projectile: projectileSpec{kind: "shadow_shot", speed: 260, maxDistance: 650, radius: 10, spread: []float64{0}},
+		coefficient: 3.2, cost: 100, cooldown: 1.2,
+		projectile: projectileSpec{kind: "shadow_shot", speed: 260 * constants.PaceScale, maxDistance: 650, radius: 10, spread: []float64{0}},
 		pins:       true,
 	},
 	components.AttackTripleFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
-		coefficient: 0.9, cost: 15, cooldown: 0.4,
-		projectile: projectileSpec{kind: "fireball", speed: 360, maxDistance: 500, radius: 12, spread: []float64{-0.26, 0, 0.26}},
+		coefficient: 0.9, cost: 25, cooldown: 0.4,
+		projectile: projectileSpec{kind: "fireball", speed: 360 * constants.PaceScale, maxDistance: 500, radius: 12, spread: []float64{-0.26, 0, 0.26}},
 		pins:       true,
 	},
 	// the charge is movement, not an attack: it never pins (FS-JS7C8 §Change:
 	// Attacking pins the attacker R55), though a pin refuses it like any row
 	components.AttackDash: {
-		delivery: deliverMovement, cost: 25, cooldown: 0.4,
+		delivery: deliverMovement, cost: 40, cooldown: 0.4,
 	},
 	// the warrior's tree ability: a slam all round on Strength, as the slash.
 	// FS-04EEA §B R8–R9 (integrator correction 2026-11-21), §A R5.
 	components.AttackEarthbreaker: {
 		delivery: deliverAround, damageType: components.DamagePhysical, scaling: scaleStrength,
-		coefficient: 1.5, cost: 40, cooldown: 10, reach: earthbreakerRange,
+		coefficient: 1.5, cost: 60, cooldown: 10, reach: earthbreakerRange,
 		pins: true, stuns: true,
 	},
 	// the mage's tree ability: an instant move toward the cursor, paid in
 	// mana. FS-04EEA §D R18, §A R5.
 	components.AttackBlink: {
-		delivery: deliverBlink, cost: 30, cooldown: 8, reach: blinkDistance,
+		delivery: deliverBlink, cost: 45, cooldown: 8, reach: blinkDistance,
 		pins: true,
 	},
 	// the archer's tree ability: a circle the arrows fall on, 5 volleys each
 	// on Agility. FS-04EEA §E R23–R25, §A R5.
 	components.AttackArrowRain: {
 		delivery: deliverRain, damageType: components.DamagePhysical, scaling: scaleAgility,
-		coefficient: 0.5, cost: 35, cooldown: 12, reach: arrowRainReach,
+		coefficient: 0.5, cost: 55, cooldown: 12, reach: arrowRainReach,
 		pins: true,
 	},
 	// the mercenary's tree ability: one hit all round per target at 1.0 per
@@ -458,6 +473,9 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		}
 	}
 
+	// the archers' hounds bite (FS-X2CMM §E R28, book_hound.go)
+	s.houndsBite(deltaTime, entities)
+
 	// after the burn, so a trail a charge lays as it ends first burns next tick
 	for _, entity := range entities {
 		s.settleCharge(entity)
@@ -484,8 +502,10 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		pending := intents.Pending
 		intents.Pending = nil
 
-		// a dead or resolved attacker is out of play: what it queued is dropped
-		if !canAct(entity) {
+		// a dead or resolved attacker is out of play: what it queued is
+		// dropped; so is a rolling delver's, never kept for after (FS-7P736
+		// §A R8)
+		if !canAct(entity) || Rolling(entity) {
 			continue
 		}
 
@@ -651,6 +671,10 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if attacker.HasComponent(ecs.ComponentTypeAttackPin) {
 		return
 	}
+	// an afloat delver is refused as if on cooldown too (FS-X2CMM §E R23)
+	if afloat(attacker) {
+		return
+	}
 
 	var cooldowns *components.CooldownComponent
 	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCooldown); ok {
@@ -708,7 +732,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 
 	// a new cast stops a charge in flight where the body stands; a new dash then
 	// starts afresh from there, never adding on what the old one had left
-	s.endCharge(attacker)
+	s.EndCharge(attacker)
 	if spec.delivery == deliverMovement {
 		startCharge(attacker, at, intent.TargetX, intent.TargetY)
 	}
@@ -743,10 +767,10 @@ func (s *CombatSystem) blink(caster *ecs.Entity, at *components.TransformCompone
 	}
 	share := min(dist, spec.reach) / dist
 	x, y := s.Ground.Reach(entities, at.X, at.Y, at.X+dx*share, at.Y+dy*share)
-	if math.Hypot(x-at.X, y-at.Y) <= dashEpsilon {
+	if math.Hypot(x-at.X, y-at.Y) <= carryEpsilon {
 		return false
 	}
-	s.endCharge(caster)
+	s.EndCharge(caster)
 	at.X, at.Y = x, y
 	return true
 }
@@ -858,7 +882,8 @@ func stepStance(entity *ecs.Entity, deltaTime float64) (raised bool) {
 			rest = append(rest, intent)
 			continue
 		}
-		if !stance.Open && stance.LockoutRemaining == 0 {
+		// afloat refuses the class ability, the parry included (FS-X2CMM §E R23)
+		if !stance.Open && stance.LockoutRemaining == 0 && !afloat(entity) {
 			stance.Open, stance.OpenFor, stance.Negated = true, 0, false
 			raised = true
 		}
@@ -1022,18 +1047,25 @@ func monsterShot(attacker *ecs.Entity) (projectileSpec, bool) {
 }
 
 // startCharge sets a charge going from where the attacker stands toward the
-// aim: +x when the aim is where they stand. The MovementSystem carries it.
+// aim: +x when the aim is where they stand. The MovementSystem carries it. A
+// rolling body starts none: one carry at a time, as a roll refuses a charge in
+// flight (FS-7P736 §A R6, R8).
 func startCharge(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64) {
+	if Rolling(attacker) {
+		return
+	}
 	dirX, dirY := 1.0, 0.0
 	dx, dy := aimX-at.X, aimY-at.Y
 	if dist := math.Hypot(dx, dy); dist > 0 {
 		dirX, dirY = dx/dist, dy/dist
 	}
 	attacker.AddComponent(&components.DashComponent{
-		DirX: dirX, DirY: dirY,
-		Speed:     dashSpeed,
-		Remaining: dashDistance,
-		FromX:     at.X, FromY: at.Y,
+		Carry: components.Carry{
+			DirX: dirX, DirY: dirY,
+			Speed:     dashSpeed,
+			Remaining: dashDistance,
+		},
+		FromX: at.X, FromY: at.Y,
 	})
 }
 
@@ -1048,14 +1080,14 @@ func (s *CombatSystem) settleCharge(entity *ecs.Entity) {
 		entity.RemoveComponent(ecs.ComponentTypeDash)
 		return
 	}
-	if dc.(*components.DashComponent).Remaining <= dashEpsilon {
-		s.endCharge(entity)
+	if dc.(*components.DashComponent).Remaining <= carryEpsilon {
+		s.EndCharge(entity)
 	}
 }
 
-// endCharge ends the entity's charge, if one is in flight, where it stands, and
+// EndCharge ends the entity's charge, if one is in flight, where it stands, and
 // lays an Ashwalk wearer's trail along the path it actually travelled.
-func (s *CombatSystem) endCharge(entity *ecs.Entity) {
+func (s *CombatSystem) EndCharge(entity *ecs.Entity) {
 	dc, ok := entity.GetComponent(ecs.ComponentTypeDash)
 	if !ok {
 		return
@@ -1241,11 +1273,17 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 		damage, crit = ResolveDamage(attack, s.mitigation(target), s.roll())
 	}
 	damage = damageTaken(target, health, damage)
+	damage = underLongNight(target, damage)
 	// the ward's mana share comes off first; only the HP share can be a
 	// killing blow (FS-E1ZDG Edge States)
 	toHealth := arcaneWard(target, damage)
+	before := health.CurrentHealth
 	if !lastStand(target, health, toHealth) {
 		health.CurrentHealth = max(health.CurrentHealth-toHealth, 0)
+	}
+	// poison blades poison with a hit that cost health (FS-4EC7Z §E R18)
+	if attack.PoisonSeconds > 0 && health.CurrentHealth < before {
+		Poison(target, attack.PoisonSeconds)
 	}
 
 	// the hit that took it to 0 is the killing blow; every later one stops at
@@ -1324,6 +1362,9 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 		KillerMemberID:  attack.AttackerMemberID,
 		Floor:           s.floor,
 	}
+	if attack.AllyOf != uuid.Nil {
+		record.KillerMemberID, record.ByAlly = attack.AllyOf, true
+	}
 	if tc, ok := target.GetComponent(ecs.ComponentTypeTransform); ok {
 		transform := tc.(*components.TransformComponent)
 		record.X, record.Y = transform.X, transform.Y
@@ -1365,6 +1406,8 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 	attack.Pierce += spec.pierce
 	attack.PiercesAll = shadowRangersShadowShot(attacker, spec.kind)
 	attack.Coefficient *= bloodPricedDamage(attacker)
+	// Contract Settled raises the taker's own hits (FS-4EC7Z §E R19)
+	attack.Coefficient *= settledDamage(attacker)
 
 	return attack
 }
@@ -1384,6 +1427,10 @@ func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapsh
 	}
 	if pc, ok := attacker.GetComponent(ecs.ComponentTypePlayer); ok {
 		attack.AttackerMemberID = pc.(*components.PlayerComponent).MemberID
+	}
+	attack.AllyOf = hirerOf(attacker)
+	if mc, ok := attacker.GetComponent(ecs.ComponentTypeEnemy); ok {
+		attack.PoisonSeconds = mc.(*components.MonsterComponent).PoisonSeconds
 	}
 	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCombat); ok {
 		attack.Power = float64(cc.(*components.CombatComponent).Attack)
@@ -1457,14 +1504,35 @@ func alive(entity *ecs.Entity) bool {
 // dead, or a delver out of play (escaped or left behind), takes nothing.
 // Monsters never damage monsters, and with player damage off a delver never
 // damages a delver (FS-77AB6 §Requirements 12, 14, 17). A projectile passes
-// through whatever this refuses.
+// through whatever this refuses. Only a monster's hit lands on an encounter
+// NPC: a delver's, its reflect, and a trap's pass it by (FS-4EC7Z §A R3), and
+// nothing lands on a caged captive, behind bars (§D R13). A hired ally's
+// lands on a monster and nothing else (§C R9). Nothing whose source is a
+// delver or a hired ally lands on a hound, whatever the player-damage setting
+// (FS-X2CMM R28, §Change: The archer's wolf W3): this one rule, here. Nothing
+// lands on a rolling delver: no strike, shot, area, trap or trail, so a
+// projectile flies through them (FS-7P736 §A R5).
 func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage PlayerDamage) bool {
-	if !alive(target) {
+	if !alive(target) || BodyKindOf(target) == BodyCaptive {
+		return false
+	}
+	if sparesHound(attack, target) {
+		return false
+	}
+	if attack.AllyOf != uuid.Nil && !target.HasComponent(ecs.ComponentTypeEnemy) {
+		return false
+	}
+	if !attack.FromMonster && target.HasComponent(ecs.ComponentTypeEncounterNPC) {
 		return false
 	}
 
 	targetIsDelver := target.HasComponent(ecs.ComponentTypePlayer)
 	if targetIsDelver && !InPlay(target) {
+		return false
+	}
+	// no hit of any source lands on a rolling delver, and one refused here
+	// does nothing at all (FS-7P736 §A R5)
+	if targetIsDelver && Rolling(target) {
 		return false
 	}
 	if attack.FromMonster && target.HasComponent(ecs.ComponentTypeEnemy) {

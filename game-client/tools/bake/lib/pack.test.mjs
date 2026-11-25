@@ -207,3 +207,26 @@ describe("a trimmed sheet (FS-HF0WW, lib/trim.mjs)", () => {
     expect(() => packAtlases([s])).toThrow(/archer.*5 frame sizes for 6/);
   });
 });
+
+describe("a sheet added to a group on a page of its own (`appendPage`, FS-4EC7Z §H R36)", () => {
+  const props = [sheet("gate", "sealed", 168, 198, 2), sheet("lever", "sealed", 89, 101, 8), sheet("wire", "sealed", 101, 34, 2)];
+  const added = (s) => ({ ...s, appendPage: true });
+
+  it("leaves the group's committed page exactly as it was, however tall the new sheet", () => {
+    const before = packAtlases(props);
+    const after = packAtlases([...props, added(sheet("cage", "sealed", 150, 240, 6)), added(sheet("key", "sealed", 60, 40, 1))]);
+    expect(after[0]).toEqual(before[0]);
+  });
+
+  it("packs the added sheets after the others, from the group's next page", () => {
+    const pages = packAtlases([...props, added(sheet("cage", "sealed", 150, 240, 6)), added(sheet("key", "sealed", 60, 40, 1))]);
+    expect(pages.map((p) => p.key)).toEqual(["sealed-0", "sealed-1"]);
+    expect(Object.keys(pages[1].placements).sort()).toEqual(["cage", "key"]);
+    expect(Object.keys(pages[0].placements)).not.toContain("cage");
+  });
+
+  it("packs a group of added sheets alone from its first page", () => {
+    const pages = packAtlases([added(sheet("cage", "solo", 150, 240, 6))]);
+    expect(pages.map((p) => p.key)).toEqual(["solo-0"]);
+  });
+});

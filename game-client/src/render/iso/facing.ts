@@ -41,6 +41,13 @@ const UNIT: Record<Facing8, [number, number]> = {
   nw: [-1, -1],
 };
 
+/** The unit world vector a facing points along: `se` is (√½, √½). */
+export function facingVector(facing: Facing8): { x: number; y: number } {
+  const [dx, dy] = UNIT[facing];
+  const length = Math.hypot(dx, dy);
+  return { x: dx / length, y: dy / length };
+}
+
 /**
  * The placeholder texture nearest a world facing once it is projected: the
  * dominant screen axis of the direction as drawn. Stands in until the 8-way

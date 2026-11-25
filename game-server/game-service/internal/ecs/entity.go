@@ -74,6 +74,9 @@ const (
 
 	ComponentTypeBurningTrail ComponentType = "BurningTrail"
 	ComponentTypeDash         ComponentType = "Dash"
+	// a roll in flight, and the wait before the next (FS-7P736 §A)
+	ComponentTypeRoll         ComponentType = "Roll"
+	ComponentTypeRollCooldown ComponentType = "RollCooldown"
 	ComponentTypeParry        ComponentType = "Parry"
 	ComponentTypePotion       ComponentType = "Potion"
 	ComponentTypeTimedOpen    ComponentType = "TimedOpen"
@@ -96,6 +99,63 @@ const (
 	ComponentTypeTomePlan ComponentType = "TomePlan"
 	ComponentTypeTome     ComponentType = "Tome"
 	ComponentTypeAltar    ComponentType = "Altar"
+
+	// a delver's class book: its cooldowns, spent pages and states (FS-X2CMM §A)
+	ComponentTypeBook ComponentType = "Book"
+	// what a book ability leaves on the floor: a witchlight, a rune (FS-X2CMM §E)
+	ComponentTypeBookEffect ComponentType = "BookEffect"
+	// a rune's catch, on the rune's book effect (FS-X2CMM §E R24)
+	ComponentTypeRune ComponentType = "Rune"
+	// a hound's bite and heel, on the hound's book effect (FS-X2CMM §E R28)
+	ComponentTypeHound ComponentType = "Hound"
+	// the warrior's Long Night while it runs, on the warrior (FS-X2CMM §E R31)
+	ComponentTypeLongNight ComponentType = "LongNight"
+	// a drunk draught's heal while it runs, on the drinker (FS-X2CMM §E R27)
+	ComponentTypeDraughtHeal ComponentType = "DraughtHeal"
+	// a sealed floor's seals, their pieces, what a piece's first work wakes
+	// and the barriers the seals hold shut (FS-5FZ4J §B, §C, §A R4)
+	ComponentTypeSeal      ComponentType = "Seal"
+	ComponentTypeSealPiece ComponentType = "SealPiece"
+	// a lore piece, a mural or a shrine: read, part of no seal (FS-5FZ4J §C
+	// R15, §F R39)
+	ComponentTypeLorePiece ComponentType = "LorePiece"
+	ComponentTypeAmbush    ComponentType = "Ambush"
+	ComponentTypeBarrier   ComponentType = "Barrier"
+	// a stone block's push and slide, beside its seal piece (FS-5FZ4J §C R19)
+	ComponentTypeStoneBlock ComponentType = "StoneBlock"
+	// what the party has not seen yet, a secret door or a trap, and what a
+	// shut secret door hides (FS-5FZ4J §F R37-R38, §D R30)
+	ComponentTypeDetectable ComponentType = "Detectable"
+	ComponentTypeConcealed  ComponentType = "Concealed"
+	// a floor's traps and a delver's poison (FS-5FZ4J §D R23-R29)
+	ComponentTypeTrap   ComponentType = "Trap"
+	ComponentTypePoison ComponentType = "Poison"
+	// the respites: a floor's healing fountain, a run's hallowed altar plan,
+	// the altar itself and a delver's Blessing (FS-5FZ4J §G R40-R44)
+	ComponentTypeFountain          ComponentType = "Fountain"
+	ComponentTypeHallowedAltarPlan ComponentType = "HallowedAltarPlan"
+	ComponentTypeHallowedAltar     ComponentType = "HallowedAltar"
+	ComponentTypeBlessed           ComponentType = "Blessed"
+	// the wandering merchant and his wares (FS-9JV5K §A R1-R4)
+	ComponentTypeMerchant ComponentType = "Merchant"
+	// a floor's encounter, its humanoid NPCs and the Lost Pilgrims' plea and
+	// wave (FS-4EC7Z §A-§B)
+	ComponentTypeEncounter    ComponentType = "Encounter"
+	ComponentTypeEncounterNPC ComponentType = "EncounterNPC"
+	ComponentTypePilgrimWave  ComponentType = "PilgrimWave"
+	// a hired ally's fighting and following, and the Captives' cage and key
+	// (FS-4EC7Z §C-§D)
+	ComponentTypeAlly     ComponentType = "Ally"
+	ComponentTypeCaptives ComponentType = "Captives"
+	ComponentTypeCage     ComponentType = "Cage"
+	ComponentTypeCageKey  ComponentType = "CageKey"
+	// the Cutthroats' parley and hire (FS-4EC7Z §D R14-R15)
+	ComponentTypeCutthroats ComponentType = "Cutthroats"
+	// the delve's contract, its mark and the taker's Contract Settled
+	// (FS-4EC7Z §E R16-R19)
+	ComponentTypeContract        ComponentType = "Contract"
+	ComponentTypeMark            ComponentType = "Mark"
+	ComponentTypeContractSettled ComponentType = "ContractSettled"
 )
 
 type Entity struct {

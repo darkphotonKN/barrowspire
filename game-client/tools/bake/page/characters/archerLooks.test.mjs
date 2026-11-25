@@ -59,7 +59,7 @@ const THREE = await import("three");
 const { readFileSync } = await import("node:fs");
 const { CAST, archer } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
-const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, throughCloth, tubeNow } = await import("./clearance.js");
+const { KNOWN_CLIPPING, MIRRORED_LEGACY, UNGUARDED, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, throughCloth, tubeNow } = await import("./clearance.js");
 const { along, boneOf, cloakOf, crossings, leastOutside, legSolids, segmentsOf, shown, trianglesOf } = await import("./edgeGuards.mjs");
 const { OFFHAND_OF, applyPose, clipsFor, groundPose, sample } = await import("./clips.js");
 const { BOW_BRACE, BOW_GRIP, drawGrip } = await import("./draw.js");
@@ -177,7 +177,8 @@ describe("the archer's spec looks keep the quiver over the cloak (FS-HF0WW; FS-1
     const axis = new THREE.Vector3();
     const v = new THREE.Vector3();
     for (const p of poses) {
-      if (p.anim === "death") continue;
+      // the death and the roll ball the body up past any cloak (clearance.js UNGUARDED)
+      if (UNGUARDED.includes(p.anim)) continue;
       p.apply();
       rig.root.updateMatrixWorld(true);
       const { rows, cols } = cloakMesh.geometry.userData.tube;

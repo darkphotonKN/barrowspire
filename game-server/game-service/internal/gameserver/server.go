@@ -118,6 +118,9 @@ type Server struct {
 	// who is in which party, as the party cache last published it: handed to every world's
 	// serializer, so a recipient's teammates carry their resource (FS-CH21F R5, R6)
 	partyMembership *partyMembership
+	// what every run's purchases are paid from; nil on a pod built without one
+	// (FS-9JV5K §B R7)
+	wallet game.WalletDebiter
 }
 
 // CharacterReader is character-service as the server uses it: reading one of
@@ -198,6 +201,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		characters:      characters,
 		partyMembership: newPartyMembership(),
 		endgameRun:      boot.devTestRoom,
+		wallet:          boot.wallet,
 	}
 	if boot.partyStore != nil {
 		server.leaders = boot.partyStore
@@ -1308,6 +1312,11 @@ func (s *Server) createRun(players *types.ResolvedMatchedPlayers, newWorld newRu
 
 	// create session with message sender
 	newGameSession := newWorld(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.RunBounds())
+
+	// a run's purchases are paid from the pod's wallet (FS-9JV5K §B R7)
+	if s.wallet != nil {
+		newGameSession.UseWallet(s.ctx, s.wallet)
+	}
 
 	newGameSession.InitialSystems()
 

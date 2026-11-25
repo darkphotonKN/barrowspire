@@ -35,6 +35,7 @@ import {
   type Point,
 } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
+import type { ResourceKind } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import { drawGlint, fxImage, GLINT, type GlintDraw } from "./glitter";
 import type { EffectLights, EffectsScene, FxArt } from "./runtime";
@@ -56,6 +57,40 @@ export const HEAL_LOOK: Look = {
   centre: "vellum",
   light: "oxblood",
 };
+
+/**
+ * Poison ended by an antidote (FS-9JV5K §F R24): the potion shimmer in the poison tint's colour, drawn
+ * from the tint's two parents (`palette.poisoned` is arcane warmed toward bright brass), so the cure
+ * reads as the poison's own colour going, never as health's red.
+ */
+export const ANTIDOTE_LOOK: Look = {
+  glint: "arcane",
+  centre: "brassBright",
+  light: "arcane",
+};
+
+/**
+ * A class resource refilled by a Restoring Draught (FS-9JV5K §Change: The Restoring Draught D6): the
+ * potion shimmer in the drinker's own bar's colour (guideline "Restoring a resource"), each look from
+ * the tokens its HUD fill is drawn from (`palette.hudMana`, `hudStamina`, `hudParry`). Keyed by the
+ * wire's `resource.kind`.
+ */
+const RESTORE_LOOKS: Readonly<Record<ResourceKind, Look>> = {
+  // the mana bar's necrotic blue-green
+  mana: { glint: "necrotic", centre: "vellum", light: "necrotic" },
+  // the stamina bar's worn parchment-gold: vellum warmed toward brass
+  stamina: { glint: "vellum", centre: "brassBright", light: "brass" },
+  // a held parry charge's bright-brass stud
+  parry_charges: { glint: "brassBright", centre: "vellum", light: "brassBright" },
+};
+
+/** A kind the client does not know, or none on the wire: the plain label tone its bar draws in. */
+const RESTORE_OTHER: Look = { glint: "vellumDark", centre: "vellum", light: "vellumDark" };
+
+/** The look of a refilled pool of `kind` (D6): its bar's colours, never health's red. */
+export function restoreLook(kind: string | undefined): Look {
+  return kind !== undefined && Object.hasOwn(RESTORE_LOOKS, kind) ? RESTORE_LOOKS[kind as ResourceKind] : RESTORE_OTHER;
+}
 
 /** Every object and the light of a granted shimmer are gone by now (R12; FS-KYPQ9 §B.2's 1200). */
 export const SHIMMER_GRANTED_MS = 1150;

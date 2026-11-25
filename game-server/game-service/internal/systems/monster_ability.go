@@ -166,7 +166,7 @@ func (s *MonsterAISystem) pounce(deltaTime float64, entity *ecs.Entity, monster 
 }
 
 // landAbility lands a monster's ability as its wind-up ends: its area or cone
-// on every delver in it, or its shots. Each hit is the monster's level damage
+// on every hunted body in it (huntedHit), or its shots. Each hit is the monster's level damage
 // (an elite's or champion's, as its Combat holds it) × the multiplier,
 // physical, with the base crit, mitigated. FS-C8VM7 §B R14.
 func (s *CombatSystem) landAbility(attacker *ecs.Entity, intent components.AttackIntent, entities []*ecs.Entity) {
@@ -192,14 +192,14 @@ func (s *CombatSystem) landAbility(attacker *ecs.Entity, intent components.Attac
 	}
 }
 
-// abilityArea hits every delver whose body overlaps the circle.
+// abilityArea hits every hunted body that overlaps the circle.
 func (s *CombatSystem) abilityArea(attacker *ecs.Entity, x, y, radius float64, spec attackSpec, entities []*ecs.Entity) {
 	s.areaHit(s.snapshot(attacker, spec), x, y, radius, entities)
 }
 
-// areaHit lands one hit on every delver whose body overlaps the circle.
+// areaHit lands one hit on every hunted body that overlaps the circle.
 func (s *CombatSystem) areaHit(attack components.AttackSnapshot, x, y, radius float64, entities []*ecs.Entity) {
-	for _, target := range delversHit(attack, entities, s.playerDamage) {
+	for _, target := range huntedHit(attack, entities, s.playerDamage) {
 		to := target.at
 		if math.Hypot(to.X-x, to.Y-y) <= radius+constants.PlayerRadius {
 			s.applyHit(attack, target.entity)
@@ -207,13 +207,13 @@ func (s *CombatSystem) areaHit(attack components.AttackSnapshot, x, y, radius fl
 	}
 }
 
-// abilityCone hits every delver whose centre is within the cone's reach of its
+// abilityCone hits every hunted body whose centre is within the cone's reach of its
 // apex and within half its angle of its facing.
 func (s *CombatSystem) abilityCone(attacker *ecs.Entity, intent components.AttackIntent, ability components.MonsterAbility, spec attackSpec, entities []*ecs.Entity) {
 	attack := s.snapshot(attacker, spec)
 	facing := math.Atan2(intent.FacingY, intent.FacingX)
 	halfArc := ability.Arc / 2 * math.Pi / 180
-	for _, target := range delversHit(attack, entities, s.playerDamage) {
+	for _, target := range huntedHit(attack, entities, s.playerDamage) {
 		dx, dy := target.at.X-intent.TargetX, target.at.Y-intent.TargetY
 		if math.Hypot(dx, dy) > ability.Radius {
 			continue
@@ -225,25 +225,29 @@ func (s *CombatSystem) abilityCone(attacker *ecs.Entity, intent components.Attac
 	}
 }
 
-// placedDelver is a delver an ability may hit, and where it stands.
-type placedDelver struct {
+// placedBody is a body an ability may hit, and where it stands.
+type placedBody struct {
 	entity *ecs.Entity
 	at     *components.TransformComponent
 }
 
-// delversHit is every delver the attack may land on: a monster's ability hits
-// delvers only, never a monster or anything else with health.
-func delversHit(attack components.AttackSnapshot, entities []*ecs.Entity, playerDamage PlayerDamage) []placedDelver {
-	var out []placedDelver
+// huntedHit is every body the attack may land on: a monster's ability hits
+// the bodies monsters hunt, a delver in play, an ally and a peaceful
+// encounter NPC (FS-4EC7Z §A R3), never a monster, a caged captive or
+// anything else with health. A standing hound is hunted (chased and struck
+// in melee, by shots too) but an area or cone spares it: monster area
+// abilities strike delvers (FS-X2CMM "Reconciled at review (wave 1)").
+func huntedHit(attack components.AttackSnapshot, entities []*ecs.Entity, playerDamage PlayerDamage) []placedBody {
+	var out []placedBody
 	for _, entity := range entities {
-		if !entity.HasComponent(ecs.ComponentTypePlayer) || !CanHit(attack, entity, playerDamage) {
+		if !BodyKindOf(entity).StruckByArea() || !CanHit(attack, entity, playerDamage) {
 			continue
 		}
 		tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)
 		if !ok {
 			continue
 		}
-		out = append(out, placedDelver{entity: entity, at: tc.(*components.TransformComponent)})
+		out = append(out, placedBody{entity: entity, at: tc.(*components.TransformComponent)})
 	}
 	return out
 }
@@ -288,7 +292,7 @@ func armBurst(entity *ecs.Entity, monster *components.MonsterComponent) {
 }
 
 // burnFuses runs every corpse's death burst fuse on by a tick and lands each
-// that ends, once, on every delver in its circle, credited to the dead
+// that ends, once, on every hunted body in its circle, credited to the dead
 // monster. FS-C8VM7 §B R16.
 func (s *CombatSystem) burnFuses(deltaTime float64, entities []*ecs.Entity) {
 	for _, entity := range entities {

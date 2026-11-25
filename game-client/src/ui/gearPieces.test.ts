@@ -7,7 +7,12 @@ const built = vi.hoisted(() => ({
   overlays: [] as { onLink?: (item: unknown) => void; tipsAvoid?: () => unknown }[],
   hub: [] as { refreshes: number; released: number; port?: { gearChanged?(): void } }[],
   hud: [] as {
-    port: { send(action: string, payload: { item_entity_id: string }): void; notice(t: string): void; gearChanged?(): void };
+    port: {
+      send(action: string, payload: { item_entity_id: string }): void;
+      notice(t: string): void;
+      gearChanged?(): void;
+      drink?(item: string): void;
+    };
     room: boolean;
   }[],
   views: [] as {
@@ -71,6 +76,7 @@ const wiring = () => ({
   notice: vi.fn(),
   send: vi.fn(),
   take: vi.fn(),
+  drink: vi.fn(),
   level: () => 7,
   sounds: { play: vi.fn() },
   link: vi.fn(),
@@ -123,6 +129,20 @@ describe("a field's and the run's gear and container view on the UI scene (FS-TQ
       ["unequip", "helm-1"],
     ]);
     expect(w.notice).toHaveBeenCalledWith("Your bag is full.");
+  });
+
+  // FS-9JV5K §F R24: only the run answers a drink; a field's bag keeps the old equip path
+  it("should hand the run's gear a drink that asks the run for the use_item", () => {
+    const w = wiring();
+    mountGearPieces({} as never, art, "run", w);
+    built.hud.at(-1)!.port.drink?.("antidote-1");
+    expect(w.drink.mock.calls).toEqual([["antidote-1"]]);
+  });
+
+  it("should hand a field's gear no drink, where nothing answers one: an antidote there is worn", () => {
+    const w = wiring();
+    mountGearPieces({} as never, art, "field", w);
+    expect(built.hud.at(-1)!.port.drink).toBeUndefined();
   });
 
   it("should pre-check a take against the gear's bag, ask the world for it, and tip by the level handed", () => {

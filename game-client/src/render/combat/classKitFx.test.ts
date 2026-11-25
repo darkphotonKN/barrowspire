@@ -64,6 +64,25 @@ describe("ClassKitFx Arrow Rain aim circle (FS-04EEA R38)", () => {
   });
 });
 
+describe("ClassKitFx armed page reticle (FS-X2CMM R41)", () => {
+  const ring = { page: "witchlight", kind: "ground", at: { x: 100, y: 100 }, radius: 240, valid: true } as const;
+
+  it("should draw the reticle while a page is armed, and leave none once it is cast or disarmed", () => {
+    const kit = new ClassKitFx(scene());
+    kit.reticle(ring);
+    expect(kit.pageReticle?.drawn).toBe(true);
+    kit.endReticle();
+    expect(kit.pageReticle?.drawn).toBe(false);
+  });
+
+  it("should drop the reticle with the world", () => {
+    const kit = new ClassKitFx(scene());
+    kit.reticle(ring);
+    kit.forget();
+    expect(kit.pageReticle).toBeUndefined();
+  });
+});
+
 /**
  * A kit over a scene whose clock runs what is due on `advance`, and an effects runtime recording what is
  * played and released (FS-04EEA §H).

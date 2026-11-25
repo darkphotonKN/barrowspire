@@ -1,12 +1,17 @@
 package levelgen
 
 // buildRegions numbers the walkable cells into regions (FS-KE075 §A.5): room i
-// is region i+1, its rect; the corridor cells (walkable, outside every room)
-// follow as corridor segments, each described as merged cell rects.
-func buildRegions(cols, rows int, rooms []CellRect, corridor []bool, segmentMax int) []Region {
-	regions := make([]Region, 0, len(rooms))
-	for i, r := range rooms {
-		regions = append(regions, Region{ID: i + 1, Kind: RegionRoom, Cells: []CellRect{r}})
+// is region i+1, its floor (floor[c] == i+1, §Change: Room variety R74); the
+// corridor cells (walkable, on no room's floor) follow as corridor segments,
+// each described as merged cell rects.
+func buildRegions(cols, rows, rooms int, floor []int, corridor []bool, segmentMax int) []Region {
+	regions := make([]Region, 0, rooms)
+	for i := range rooms {
+		mask := make([]bool, cols*rows)
+		for c, f := range floor {
+			mask[c] = f == i+1
+		}
+		regions = append(regions, Region{ID: i + 1, Kind: RegionRoom, Cells: mergeCells(cols, rows, mask)})
 	}
 	mask := make([]bool, cols*rows)
 	for _, seg := range corridorSegments(cols, rows, corridor, segmentMax) {
@@ -62,11 +67,15 @@ func corridorSegments(cols, rows int, corridor []bool, maxSide int) [][]int {
 	return segs
 }
 
-// roomDoorways lists room's cells 4-adjacent to a corridor cell, row by row
-// (FS-KE075 §A.6).
-func roomDoorways(cols, rows int, room CellRect, corridor []bool) []Cell {
+// roomDoorways lists room's floor cells (floor[c] its region) 4-adjacent to
+// a corridor cell, row by row (FS-KE075 §A.6).
+func roomDoorways(cols, rows int, room CellRect, floor []int, corridor []bool) []Cell {
 	var out []Cell
+	region := floor[centreIndex(cols, room)]
 	for _, c := range rectCells(cols, room) {
+		if floor[c] != region {
+			continue
+		}
 		for _, n := range neighbours4(cols, rows, c) {
 			if corridor[n] {
 				out = append(out, Cell{X: c % cols, Y: c / cols})

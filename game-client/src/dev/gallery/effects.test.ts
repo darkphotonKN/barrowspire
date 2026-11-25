@@ -1,7 +1,8 @@
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { EFFECT_CARDS } from "./effects";
+import { palette } from "@/utils/canvasPalette";
+import { EFFECT_CARDS, type Stage } from "./effects";
 
 // FS-1819Q R12: every effect module has a card, so the gallery can't fall behind the effects.
 // At least one card per module: a module may carry several (shimmer.ts: a granted base and an
@@ -78,6 +79,23 @@ describe("effect cards", () => {
     for (const card of cards) expect(card.demo).toBeTypeOf("function");
   });
 
+  // FS-9JV5K §F R24 (I-9JV5K-5): the antidote's shimmer, beside the heal's
+  it("should card the heal and the antidote shimmers on the granted base, each playable", () => {
+    const names = EFFECT_CARDS.filter((c) => c.module === "shimmer").map((c) => c.name);
+    expect(names).toEqual(expect.arrayContaining(["Heal shimmer (granted base)", "Antidote shimmer (granted base)"]));
+  });
+
+  // FS-9JV5K §Change: The Restoring Draught D6 (I-9JV5K-7): the draught's shimmer in each pool's colour
+  it("should card the Restoring Draught's shimmer for mana, stamina and parry charges, each playable", () => {
+    const cards = EFFECT_CARDS.filter((c) => c.module === "shimmer" && c.name.startsWith("Restoring Draught"));
+    expect(cards.map((c) => c.name)).toEqual([
+      "Restoring Draught shimmer (mana)",
+      "Restoring Draught shimmer (stamina)",
+      "Restoring Draught shimmer (parry charges)",
+    ]);
+    for (const card of cards) expect(card.demo).toBeTypeOf("function");
+  });
+
   it("should card the ward on the mage, the gloom on the archer, and a ward under a heal, each playable (FS-1J1CB R38)", () => {
     const cards = EFFECT_CARDS.filter((c) => c.module === "aura");
     expect(cards.map((c) => c.name)).toEqual([
@@ -101,6 +119,36 @@ describe("effect cards", () => {
     expect(names("stun")).toEqual(["Stun tell (on a ghoul)"]);
     for (const owner of ["earthbreaker", "blink", "arrowRain", "settleTheDebt", "stun"])
       for (const card of EFFECT_CARDS.filter((c) => c.module === owner)) expect(card.demo).toBeTypeOf("function");
+  });
+
+  // I-X2CMM-27: Far Hand arms on an interactable (FS-X2CMM §H R41, §J R50), so its amber ring is carded
+  it("should card the reticle's ground ring, the interactable ring in amber and the hound's paw, one after another", () => {
+    const card = EFFECT_CARDS.find((c) => c.module === "pageReticle");
+    if (!card?.demo) throw new Error("the pageReticle card must play");
+    const inks: number[] = [];
+    const graphics = new Proxy({} as Record<string, unknown>, {
+      get: (_, key) => (...args: unknown[]) => {
+        if (key === "lineStyle") inks.push(args[1] as number);
+        return graphics;
+      },
+    });
+    const later: (() => void)[] = [];
+    const stage = {
+      scene: { add: { graphics: () => graphics } },
+      aim: { x: 400, y: 300 },
+      later: (_ms: number, fn: () => void) => later.push(fn),
+    } as unknown as Stage;
+    card.demo(stage);
+    for (const step of later) step();
+    const runs = inks.filter((ink, i) => ink !== inks[i - 1]);
+    expect(runs).toEqual([palette.reticleGround, palette.reticleInteractable, palette.reticleGround]);
+  });
+
+  // FS-X2CMM §Change: The archer's wolf W2: the reticle card and the bay's card name the summon by its page
+  it("should name the archer's summon on its cards the wolf, as its page reads, never the hound", () => {
+    const reticle = EFFECT_CARDS.find((c) => c.module === "pageReticle");
+    expect(reticle?.name).toContain("Call the Wolf's paw");
+    for (const card of EFFECT_CARDS) expect(card.name).not.toMatch(/hound/i);
   });
 
   it("should give every card that can't be played a reason", () => {

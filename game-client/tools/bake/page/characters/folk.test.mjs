@@ -20,7 +20,7 @@ vi.mock("./fabrics.js", async () => {
 // the theme (BARROW) is served to the bake page only; gear.js paints with it on a canvas alone
 vi.mock("../palette.js", () => ({ cssRgb: () => "", mix: () => [0, 0, 0], shade: () => [0, 0, 0] }));
 
-const { FOLK } = await import("./folk.js");
+const { FOLK, MERCHANT } = await import("./folk.js");
 const { characterPoses } = await import("./poses.js");
 const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, clearanceLimit, legClearance, mirroredGarment, seenThroughCloth, throughCloth } = await import("./clearance.js");
 const { fabrics } = await import("./fabrics.js");
@@ -135,5 +135,50 @@ describe("the Confessor (FS-R4MYX §H R37)", () => {
     // the loop ran over the idle and the walk, and nothing else: an empty pose list fails here
     expect(Object.keys(checked).sort()).toEqual(["idle", "walk"]);
     for (const n of Object.values(checked)) expect(n).toBeGreaterThan(0);
+  });
+});
+
+// FS-9JV5K §G R26: the wandering merchant, a townsfolk build on a group of his own, idle only (he
+// never walks), held to the folk's clothes guard, his hands on his pack's straps at his chest
+describe("the wandering merchant (FS-9JV5K §G R26)", () => {
+  const [sheet] = MERCHANT;
+
+  it("bakes one idle-only sheet on its own group", () => {
+    expect(MERCHANT.map((m) => [m.sheet, m.group])).toEqual([["npc_merchant", "merchant"]]);
+    expect(Object.keys(sheet.animations)).toEqual(["idle"]);
+    const { poses } = characterPoses(sheet);
+    expect(new Set(poses.map((p) => p.anim))).toEqual(new Set(["idle"]));
+  });
+
+  it("keeps his legs inside his clothes through the idle, to one baked px at 1x, with no exemption", () => {
+    const { rig, poses } = characterPoses(sheet);
+    expect(mirroredGarment(rig)).toBe(false);
+    const clips = legClearance(rig, poses);
+    const w = worst(clips);
+    expect(w.px, `${w.anim} frame ${w.frame}`).toBeLessThanOrEqual(clearanceLimit(1));
+    expect(clearanceError(sheet.sheet, clips, { mirrored: false, known: new Map(), legacy: new Set() })).toBeNull();
+  });
+
+  it("shows no hip, thigh or knee through his clothes in any facing", () => {
+    const { rig, poses } = characterPoses(sheet);
+    const seen = seenThroughCloth(rig, poses);
+    const most = seen.reduce((m, p) => (p.seen > m.seen ? p : m), { seen: 0 });
+    expect(most.seen, `${most.anim} frame ${most.i}`).toBe(0);
+  });
+
+  it("holds his hands up before his chest, on the straps, through the idle", () => {
+    const { rig, poses } = characterPoses(sheet);
+    const at = (bone) => new THREE.Vector3().setFromMatrixPosition(rig.bones[bone].matrixWorld).divideScalar(rig.H);
+    for (const p of poses) {
+      p.apply();
+      rig.root.updateMatrixWorld(true);
+      const [L, R, hips, chest, neck] = ["handL", "handR", "hips", "chest", "neck"].map(at);
+      for (const w of [L, R]) {
+        expect(w.y, `frame ${p.i}`).toBeGreaterThan(chest.y - 0.06);
+        expect(w.y, `frame ${p.i}`).toBeLessThan(neck.y);
+        expect(w.z, `frame ${p.i}`).toBeGreaterThan(chest.z);
+        expect(w.y, `frame ${p.i}`).toBeGreaterThan(hips.y);
+      }
+    }
   });
 });

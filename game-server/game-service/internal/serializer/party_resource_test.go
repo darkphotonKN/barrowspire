@@ -84,7 +84,7 @@ func (w *partyWorld) frameFor(t *testing.T, worldType types.WorldType, recipient
 // FS-CH21F R1–R3.
 func TestFormatStateToClientState_PartyMembersCarryResource(t *testing.T) {
 	w := newPartyWorld()
-	mageResource := map[string]any{"kind": "mana", "current": float64(120), "max": float64(150), "ability_cost": float64(15)}
+	mageResource := map[string]any{"kind": "mana", "current": float64(120), "max": float64(150), "ability_cost": float64(25)}
 	mercResource := map[string]any{"kind": "parry_charges", "current": float64(2), "max": float64(3), "ability_cost": float64(0)}
 	mercParry := map[string]any{"parry_open": true, "parry_lockout": float64(0), "parries": float64(3)}
 

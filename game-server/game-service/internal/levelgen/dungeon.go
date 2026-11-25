@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"sort"
 )
 
@@ -29,7 +30,8 @@ type DungeonParams struct {
 	// CorridorWidth bounds a corridor's width, drawn per corridor.
 	CorridorWidth IntRange
 	// ExtraEdgeShare: round(ExtraEdgeShare x rooms) connections are added to the
-	// spanning tree, the shortest pairs first, so the floor has loops.
+	// spanning tree, the shortest pairs first, so the floor has loops. None
+	// joins a dead end or opens one up (FS-5FZ4J §A R3).
 	ExtraEdgeShare float64
 	// SegmentMax is the longest side of a corridor segment's bounding box.
 	SegmentMax int
@@ -39,29 +41,54 @@ type DungeonParams struct {
 	TreasureRooms IntRange
 	// RetryLimit is how many retries follow a failed first attempt.
 	RetryLimit int
+	// EscapeDoor says the floor has an escape door and its switch: every floor
+	// but floor 1 (FS-5FZ4J §A R6). Without one their roles are -1.
+	EscapeDoor bool
+	// HiddenRooms is how many hidden rooms the floor has, each a dead end behind
+	// a secret door (FS-5FZ4J §F R35-R36). The game draws the count.
+	HiddenRooms int
+	// PlainRooms is how many rooms at least PlainMin either way round, besides
+	// the fixed roles and the treasure rooms, keep the rectangle when shapes
+	// are drawn (FS-KE075 §Change: Room variety R72).
+	PlainRooms int
+	PlainMin   Span
 }
 
-// DungeonFloor1Params is floor 1's parameter set (FS-KE075 §A.2–6): 72 x 48
-// cells of 80 px (5 760 x 3 840 px), 18–28 rooms from 4x4 to 10x8, corridors
-// 2–3 wide in segments of at most 16 cells, round(0.2 x rooms) extra
-// connections, a start room of at least 5x5 and 3–4 treasure rooms. The
-// 1 000-seed property test is the gate for any change.
+// Span is a size in cells.
+type Span struct{ W, H int }
+
+// holds reports whether r is at least s either way round: its longer side at
+// least s's longer, its shorter at least s's shorter.
+func (s Span) holds(r CellRect) bool {
+	return max(r.W, r.H) >= max(s.W, s.H) && min(r.W, r.H) >= min(s.W, s.H)
+}
+
+// DungeonFloor1Params is floor 1's parameter set (FS-KE075 §A.2–6, §Change:
+// Room variety R62–R65), sealed (FS-5FZ4J §A): 60 x 40 cells of 80 px
+// (4 800 x 3 200 px), 16–22 rooms from 4x4 to 8x7, corridors 2–3 wide in
+// segments of at most 12 cells, round(0.1 x rooms) extra connections, a start
+// room of at least 5x5, 3–4 treasure rooms, no escape door and no hidden room,
+// and two rooms of at least 6x5 besides the roles kept plain (R72).
+// Floors 2+ set EscapeDoor and their hidden-room count on a copy. The 1 000-seed
+// property test is the gate for any change.
 var DungeonFloor1Params = DungeonParams{
 	CellSize:       80,
-	Cols:           72,
-	Rows:           48,
-	Rooms:          IntRange{Min: 18, Max: 28},
-	RoomWidth:      IntRange{Min: 4, Max: 10},
-	RoomHeight:     IntRange{Min: 4, Max: 8},
+	Cols:           60,
+	Rows:           40,
+	Rooms:          IntRange{Min: 16, Max: 22},
+	RoomWidth:      IntRange{Min: 4, Max: 8},
+	RoomHeight:     IntRange{Min: 4, Max: 7},
 	RoomGap:        2,
 	EdgeMargin:     2,
 	PlaceTries:     400,
 	CorridorWidth:  IntRange{Min: 2, Max: 3},
-	ExtraEdgeShare: 0.2,
-	SegmentMax:     16,
+	ExtraEdgeShare: 0.1,
+	SegmentMax:     12,
 	StartMin:       5,
 	TreasureRooms:  IntRange{Min: 3, Max: 4},
 	RetryLimit:     32,
+	PlainRooms:     2,
+	PlainMin:       Span{W: 6, H: 5},
 }
 
 // fixedRoles is how many rooms the start, switch, escape door and stairs take.
@@ -81,9 +108,11 @@ func (p DungeonParams) Validate() error {
 	case !rangeOK(p.TreasureRooms, 0):
 		return invalid("treasure rooms %d..%d must be non-negative with min <= max",
 			p.TreasureRooms.Min, p.TreasureRooms.Max)
-	case !rangeOK(p.Rooms, fixedRoles+p.TreasureRooms.Max):
+	case p.HiddenRooms < 0:
+		return invalid("hidden rooms %d must not be negative", p.HiddenRooms)
+	case !rangeOK(p.Rooms, fixedRoles+p.TreasureRooms.Max+p.HiddenRooms):
 		return invalid("rooms %d..%d must be at least %d (the roles) with min <= max",
-			p.Rooms.Min, p.Rooms.Max, fixedRoles+p.TreasureRooms.Max)
+			p.Rooms.Min, p.Rooms.Max, fixedRoles+p.TreasureRooms.Max+p.HiddenRooms)
 	case !rangeOK(p.RoomWidth, 1) || !rangeOK(p.RoomHeight, 1):
 		return invalid("room size %d..%d x %d..%d must be positive with min <= max",
 			p.RoomWidth.Min, p.RoomWidth.Max, p.RoomHeight.Min, p.RoomHeight.Max)
@@ -113,6 +142,8 @@ func (p DungeonParams) Validate() error {
 			p.StartMin, p.RoomWidth.Max, p.RoomHeight.Max)
 	case p.RetryLimit < 0:
 		return invalid("retry limit %d must not be negative", p.RetryLimit)
+	case p.PlainRooms < 0 || p.PlainMin.W < 0 || p.PlainMin.H < 0:
+		return invalid("plain rooms %d of at least %dx%d must not be negative", p.PlainRooms, p.PlainMin.W, p.PlainMin.H)
 	}
 	return nil
 }
@@ -151,9 +182,13 @@ type Region struct {
 	Cells []CellRect `json:"cells"`
 }
 
-// Room is one rectangular chamber.
+// Room is one chamber: its rect, less the cells its shape cuts (FS-KE075
+// §Change: Room variety R68).
 type Room struct {
 	Rect CellRect `json:"rect"`
+	// Shape is the room's shape; its floor, the room's region, is Rect less
+	// the shape's cuts (R73-R74).
+	Shape RoomShape `json:"shape"`
 	// Region is the room's region id.
 	Region int `json:"region"`
 	// Doorways are the room's cells 4-adjacent to a corridor cell, row by row.
@@ -178,7 +213,8 @@ type Edge struct {
 }
 
 // Roles are the rooms each room role is given, as indices into Rooms.
-// Server-only: never on the wire (FS-KE075 §B.12).
+// Server-only: never on the wire (FS-KE075 §B.12). Switch and EscapeDoor are
+// noRoom on a floor with no escape door (floor 1, FS-5FZ4J §A R6).
 type Roles struct {
 	Start      int   `json:"start"`
 	Switch     int   `json:"switch"`
@@ -208,7 +244,23 @@ type DungeonLayout struct {
 	// Walls are the shell walls merged into rects in px.
 	Walls []Rect `json:"walls"`
 	Roles Roles  `json:"roles"`
+
+	// Stairs is the stairs room behind its gate, Barrier the gate's cells
+	// (FS-5FZ4J §A R2, R4). Stairs.Room is Roles.Stairs.
+	Stairs BarredRoom `json:"stairs"`
+	// Hidden are the hidden rooms, each Barrier a secret door's cells (FS-5FZ4J
+	// §F R36), by room index. Server-only, as the roles are.
+	Hidden []BarredRoom `json:"hidden"`
+	// ChasmCapable says the stairs room is at least 6 cells deep from its
+	// doorway wall and 5 wide along it, so a Chasm seal fits (FS-5FZ4J §E R33).
+	ChasmCapable bool `json:"chasm_capable"`
 }
+
+// noRoom is a role no room takes.
+const noRoom = -1
+
+// HasEscapeDoor reports whether the floor has an escape door and its switch.
+func (r Roles) HasEscapeDoor() bool { return r.EscapeDoor != noRoom }
 
 // Grid returns the region id of every cell, row by row: 0 where the cell is
 // not walkable (shell wall or void).
@@ -263,58 +315,177 @@ func roomCount(p DungeonParams, seed uint64) int {
 	return pickIn(rand.New(rand.NewPCG(seed, splitmix64(seed))), p.Rooms)
 }
 
-// buildDungeon runs one attempt for a floor of rooms rooms: place them, connect
-// them, carve corridors, cut regions, derive doorways and shell walls, assign
-// roles.
+/**
+* buildDungeon runs one attempt for a floor of rooms rooms: place them, join
+* them by the spanning tree's corridors, draw the start room, find the rooms
+* that could stand behind a barrier, add the extra connections that leave
+* those rooms alone, cut regions, derive doorways and shell walls, assign
+* roles and bar the stairs and hidden rooms (FS-5FZ4J §A R2-R4, §F R36).
+**/
 func buildDungeon(p DungeonParams, rooms int, seed uint64) (DungeonLayout, error) {
 	rng := rand.New(rand.NewPCG(seed, splitmix64(seed)))
 	rects, err := placeRooms(p, rooms, rng)
 	if err != nil {
 		return DungeonLayout{}, err
 	}
-	edges := connectRooms(p, rng, rects)
-
+	tree, rest := connectionPairs(rects)
+	edges := make([]Edge, 0, len(tree)+extraEdges(p, rooms))
 	open := make([]bool, p.Cols*p.Rows)
-	inRoom := make([]bool, len(open))
 	for _, r := range rects {
 		for _, c := range rectCells(p.Cols, r) {
-			open[c], inRoom[c] = true, true
-		}
-	}
-	for _, e := range edges {
-		for _, c := range corridorCells(p.Cols, rects[e.A], rects[e.B], e.Width, e.HorizontalFirst) {
 			open[c] = true
 		}
 	}
-	corridor := make([]bool, len(open))
-	for c := range open {
-		corridor[c] = open[c] && !inRoom[c]
+	for _, pr := range tree {
+		e := drawEdge(p, rng, pr, false)
+		carveEdge(p.Cols, open, rects, e)
+		edges = append(edges, e)
+	}
+	start, err := drawStart(p, rng, rects)
+	if err != nil {
+		return DungeonLayout{}, err
+	}
+	barrable := barrableRooms(p.Cols, p.Rows, rects, edges, open, start)
+	if edges, open, err = addExtraEdges(p, rng, rects, rest, edges, open, start, barrable); err != nil {
+		return DungeonLayout{}, err
+	}
+	// the roles read the rooms whole, before any is shaped: a room's distance
+	// is the walk over its rect (R73 leaves every corridor its way through)
+	roles, err := assignRoles(p, rng, rects, open, start, barrable)
+	if err != nil {
+		return DungeonLayout{}, err
 	}
 
+	shapes := drawShapes(rng, rects, rectangularRooms(p, rng, rects, roles))
+	floor, cut := roomFloors(p.Cols, p.Rows, rects, shapes, corridorCarved(p.Cols, len(open), rects, edges))
+	corridor := make([]bool, len(open))
+	for c := range open {
+		open[c] = open[c] && !cut[c]
+		corridor[c] = open[c] && floor[c] == 0
+	}
 	l := DungeonLayout{
 		CellSize: p.CellSize,
 		Cols:     p.Cols,
 		Rows:     p.Rows,
 		Bounds:   Size{W: float64(p.Cols) * p.CellSize, H: float64(p.Rows) * p.CellSize},
 		Edges:    edges,
-		Regions:  buildRegions(p.Cols, p.Rows, rects, corridor, p.SegmentMax),
+		Regions:  buildRegions(p.Cols, p.Rows, len(rects), floor, corridor, p.SegmentMax),
 		Walls:    mergeWalls(p.Cols, p.Rows, shellCells(p.Cols, p.Rows, open), p.CellSize),
 	}
-	roles, dist, err := assignRoles(p, rng, rects, open)
-	if err != nil {
-		return DungeonLayout{}, err
+	l.Roles = roles.Roles
+	grid := l.Grid()
+	l.Stairs = withBarrierSegments(p.Cols, grid, roles.stairs)
+	for _, h := range roles.hidden {
+		l.Hidden = append(l.Hidden, withBarrierSegments(p.Cols, grid, h))
 	}
-	l.Roles = roles
+	l.ChasmCapable = chasmCapable(rects[l.Stairs.Room], l.Stairs.Barrier)
 	l.Rooms = make([]Room, len(rects))
 	for i, r := range rects {
 		l.Rooms[i] = Room{
 			Rect:     r,
+			Shape:    shapes[i],
 			Region:   i + 1,
-			Doorways: roomDoorways(p.Cols, p.Rows, r, corridor),
-			Distance: dist[i],
+			Doorways: roomDoorways(p.Cols, p.Rows, r, floor, corridor),
+			Distance: roles.dist[i],
 		}
 	}
 	return l, nil
+}
+
+/**
+* addExtraEdges adds the round(ExtraEdgeShare x rooms) extra connections
+* (FS-KE075 §A.4, FS-5FZ4J §A R3): the shortest pairs not in the tree first,
+* passing over a pair that joins a barrable room and one whose corridor would
+* open a way into one, so every barrable room stays a dead end behind its
+* barrier. Fewer pairs than that left is an invalid layout.
+**/
+func addExtraEdges(p DungeonParams, rng *rand.Rand, rects []CellRect, rest [][2]int, edges []Edge,
+	open []bool, start int, barrable []BarredRoom) ([]Edge, []bool, error) {
+	want := extraEdges(p, len(rects))
+	isBarrable := make(map[int]bool, len(barrable))
+	for _, b := range barrable {
+		isBarrable[b.Room] = true
+	}
+	from := centreIndex(p.Cols, rects[start])
+	added := 0
+	for _, pr := range rest {
+		if added == want {
+			break
+		}
+		if isBarrable[pr[0]] || isBarrable[pr[1]] {
+			continue
+		}
+		e := drawEdge(p, rng, pr, true)
+		trial := slices.Clone(open)
+		carveEdge(p.Cols, trial, rects, e)
+		if !slices.ContainsFunc(barrable, func(b BarredRoom) bool {
+			return !barredOff(p.Cols, p.Rows, trial, from, rects, []BarredRoom{b})
+		}) {
+			edges, open = append(edges, e), trial
+			added++
+		}
+	}
+	if added < want {
+		return nil, nil, fmt.Errorf("%w: %d of %d extra connections leave the dead ends alone", errInvalidLayout, added, want)
+	}
+	return edges, open, nil
+}
+
+// drawEdge draws one connection's corridor width and leg order.
+func drawEdge(p DungeonParams, rng *rand.Rand, pr [2]int, extra bool) Edge {
+	return Edge{
+		A:               pr[0],
+		B:               pr[1],
+		Width:           pickIn(rng, p.CorridorWidth),
+		HorizontalFirst: rng.IntN(2) == 0,
+		Extra:           extra,
+	}
+}
+
+// corridorCarved marks every cell the edges' corridors carve, inside a room's
+// rect or out of it: the cells no shape may cut (R73).
+func corridorCarved(cols, n int, rects []CellRect, edges []Edge) []bool {
+	carved := make([]bool, n)
+	for _, e := range edges {
+		for _, c := range corridorCells(cols, rects[e.A], rects[e.B], e.Width, e.HorizontalFirst) {
+			carved[c] = true
+		}
+	}
+	return carved
+}
+
+// rectangularRooms is the rooms that keep the rectangle (R72): the start,
+// stairs, switch and escape door rooms, every hidden room, and PlainRooms
+// drawn from the rest at least PlainMin either way round that are not
+// treasure rooms, so a puzzle that walks a rect finds one (a Weighted Plates
+// seal, FS-5FZ4J §C R17).
+func rectangularRooms(p DungeonParams, rng *rand.Rand, rects []CellRect, r roomRoles) map[int]bool {
+	keep := map[int]bool{r.Start: true, r.Stairs: true}
+	if r.HasEscapeDoor() {
+		keep[r.Switch], keep[r.EscapeDoor] = true, true
+	}
+	for _, h := range r.hidden {
+		keep[h.Room] = true
+	}
+	var large []int
+	for i, rect := range rects {
+		if !keep[i] && !slices.Contains(r.Treasure, i) && p.PlainMin.holds(rect) {
+			large = append(large, i)
+		}
+	}
+	shuffle(rng, large)
+	for _, i := range large[:min(p.PlainRooms, len(large))] {
+		keep[i] = true
+	}
+	return keep
+}
+
+// carveEdge opens e's corridor cells on open. Corridors run between room
+// centres, inside the edge margin, so they never leave the grid.
+func carveEdge(cols int, open []bool, rects []CellRect, e Edge) {
+	for _, c := range corridorCells(cols, rects[e.A], rects[e.B], e.Width, e.HorizontalFirst) {
+		open[c] = true
+	}
 }
 
 // pickIn draws a seeded value from r.
@@ -374,31 +545,12 @@ func apartFromAll(r CellRect, rooms []CellRect, gap int) bool {
 	return true
 }
 
-// connectRooms draws each connection's corridor width and leg order.
-func connectRooms(p DungeonParams, rng *rand.Rand, rooms []CellRect) []Edge {
-	tree, extra := connectionPairs(p, rooms)
-	edges := make([]Edge, 0, len(tree)+len(extra))
-	add := func(pairs [][2]int, isExtra bool) {
-		for _, pr := range pairs {
-			edges = append(edges, Edge{
-				A:               pr[0],
-				B:               pr[1],
-				Width:           pickIn(rng, p.CorridorWidth),
-				HorizontalFirst: rng.IntN(2) == 0,
-				Extra:           isExtra,
-			})
-		}
-	}
-	add(tree, false)
-	add(extra, true)
-	return edges
-}
-
 // connectionPairs is the connection graph, with no randomness: a minimum
 // spanning tree over room centres by straight distance (Prim's, from room 0),
-// then the round(ExtraEdgeShare x rooms) shortest pairs not in the tree. Ties
-// go to the lower room index. Each pair is (lower, higher).
-func connectionPairs(p DungeonParams, rooms []CellRect) (tree, extra [][2]int) {
+// then every pair not in the tree, shortest first, the candidates for the
+// extra connections. Ties go to the lower room index. Each pair is (lower,
+// higher).
+func connectionPairs(rooms []CellRect) (tree, rest [][2]int) {
 	n := len(rooms)
 	// Doubled centres keep distances exact integers.
 	d2 := func(i, j int) int {
@@ -435,7 +587,6 @@ func connectionPairs(p DungeonParams, rooms []CellRect) (tree, extra [][2]int) {
 		}
 	}
 
-	var rest [][2]int
 	for i := range n {
 		for j := i + 1; j < n; j++ {
 			if !linked[[2]int{i, j}] {
@@ -446,8 +597,7 @@ func connectionPairs(p DungeonParams, rooms []CellRect) (tree, extra [][2]int) {
 	sort.SliceStable(rest, func(a, b int) bool {
 		return d2(rest[a][0], rest[a][1]) < d2(rest[b][0], rest[b][1])
 	})
-	k := min(len(rest), extraEdges(p, n))
-	return tree, rest[:k]
+	return tree, rest
 }
 
 // extraEdges is how many connections beyond the tree a floor of n rooms gets.
