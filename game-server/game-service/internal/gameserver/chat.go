@@ -22,7 +22,8 @@ import (
 * The chat relay: a line comes in from a connection, the pod stamps it, works
 * out who hears it, delivers it, and forgets it. It runs on the message hub's
 * loop and never touches a world (FS-WJGFJ §Requirements B11); nothing it
-* handles is stored or logged in full (R14, ADR-0033).
+* handles is stored or logged in full (R14, ADR-0033). A line's item links ride it like its text
+* (FS-KBA4Q; chat_items.go).
 *
 * It depends on two narrow things, who is in the audience and how a line
 * reaches a player, so that if chat ever moves out of game-service only those
@@ -274,6 +275,7 @@ var chatNoticeCopy = map[constants.ChatNoticeCode]string{
 	constants.ChatNoticeNoParty:       "You are not in a party.",
 	constants.ChatNoticeNotOnline:     "That player is not online.",
 	constants.ChatNoticeWhisperSelf:   "You can't whisper yourself.",
+	constants.ChatNoticeBadItemLink:   "That item could not be shown. Your line was not sent.",
 }
 
 // relay handles one inbound chat line from sender on conn. The sender was
@@ -329,6 +331,15 @@ func (r *chatRelay) relay(ctx context.Context, sender *types.Player, conn *webso
 		r.notice(conn, constants.ChatNoticeTooLong)
 		return
 	}
+	// the line's item links, checked and rebuilt; a line that fails is refused whole, before the
+	// flood window, so it does not use the sender's (FS-KBA4Q R27)
+	items, err := validateChatItems(payload["items"], text)
+	if err != nil {
+		// the error names what failed, never a value the client sent (R26)
+		slog.Debug("chat line refused", "chat_channel", channelName, "player_id", sender.ID, "error", err)
+		r.notice(conn, constants.ChatNoticeBadItemLink)
+		return
+	}
 
 	// one clock read per line: the window and the stamp agree on when it was said
 	at := r.now()
@@ -341,20 +352,20 @@ func (r *chatRelay) relay(ctx context.Context, sender *types.Player, conn *webso
 
 	// the world's scope key is the fixed constant; area's is this pod (FS-WJGFJ R1, FS-5SH4G R2)
 	if chatChannel == constants.ChatChannelWorld {
-		r.queueWorldChat(r.stamp(sender, chatChannel, chatWorldScope, text, at))
+		r.queueWorldChat(r.stamp(sender, chatChannel, chatWorldScope, text, items, at))
 		return
 	}
 	// a whisper's scope key is its target, known once they are looked up (FS-KCQ06 R3, R6)
 	if chatChannel == constants.ChatChannelWhisper {
-		r.relayWhisper(ctx, sender, conn, target, text, at)
+		r.relayWhisper(ctx, sender, conn, target, text, items, at)
 		return
 	}
 	// a party's scope key is the party (FS-XGW7H R6)
 	if chatChannel == constants.ChatChannelParty {
-		r.relayParty(ctx, party, r.stamp(sender, chatChannel, party.id.String(), text, at))
+		r.relayParty(ctx, party, r.stamp(sender, chatChannel, party.id.String(), text, items, at))
 		return
 	}
-	line := r.stamp(sender, chatChannel, r.podID, text, at)
+	line := r.stamp(sender, chatChannel, r.podID, text, items, at)
 
 	audience := r.audience.SeatedPlayerIDs()
 	if err := r.sender.BroadcastToPlayerList(audience, line); err != nil {
@@ -366,23 +377,26 @@ func (r *chatRelay) relay(ctx context.Context, sender *types.Player, conn *webso
 
 // stamp builds the outbound line. Every field here is the pod's: the id, the
 // sender from the connection's record, the character's name as the name plate
-// shows it, the clock. The client supplies the text and nothing else (R3).
-func (r *chatRelay) stamp(sender *types.Player, channel constants.ChatChannel, scope, text string, at time.Time) types.Message {
+// shows it, the clock. The client supplies the text and nothing else (R3), but for the line's
+// item links: items is what validateChatItems rebuilt from them, and a line with none carries no
+// `items` at all, so it is what it was before links (FS-KBA4Q R25).
+func (r *chatRelay) stamp(sender *types.Player, channel constants.ChatChannel, scope, text string, items []interface{}, at time.Time) types.Message {
 	// the character's name, as the name plate shows it; never the account's (R3)
 	name := sender.Character.Name
 
-	return types.Message{
-		Action: string(constants.ActionChat),
-		Payload: map[string]interface{}{
-			"message_id":  r.newID().String(),
-			"sender_id":   sender.ID.String(),
-			"sender_name": name,
-			"channel":     string(channel),
-			"scope":       scope,
-			"sent_at":     at.UTC().Format("2006-01-02T15:04:05.000Z07:00"),
-			"text":        text,
-		},
+	payload := map[string]interface{}{
+		"message_id":  r.newID().String(),
+		"sender_id":   sender.ID.String(),
+		"sender_name": name,
+		"channel":     string(channel),
+		"scope":       scope,
+		"sent_at":     at.UTC().Format("2006-01-02T15:04:05.000Z07:00"),
+		"text":        text,
 	}
+	if len(items) > 0 {
+		payload["items"] = items
+	}
+	return types.Message{Action: string(constants.ActionChat), Payload: payload}
 }
 
 // forgetQuiet drops every speaker whose window has passed: their record can refuse nothing any

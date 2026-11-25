@@ -183,6 +183,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] World chat across pods → FS-5SH4G
 - [ ] Whisper a player on any pod → FS-KCQ06
 - [ ] Party chat across pods → FS-XGW7H
+- [x] Item links relayed in chat lines → FS-KBA4Q
 
 ### Transport
 

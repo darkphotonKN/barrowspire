@@ -450,3 +450,35 @@ func TestChat_WorldIsClosedOnAPodWithoutABus(t *testing.T) {
 	notice := awaitNotice(t, wrenInbox, "Wren")
 	assert.Equal(t, "channel_closed", notice.Payload["code"])
 }
+
+// An area line with an item link reaches everyone seated on the pod with the seven stamp fields
+// and the validated snapshot; a bad link is refused to the sender alone. FS-KBA4Q R24, R25, R28.
+func TestChat_AreaCarriesItemLinks(t *testing.T) {
+	rig := newChatRig(t)
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	_, _, kaelenInbox := rig.inMeadows(t, "Kaelen")
+
+	sendChatPayload(rig.server, wrenConn, map[string]interface{}{"channel": "area", "text": linkedText, "items": linked(rustyBlade())})
+
+	for who, inbox := range map[string]*startSoloInbox{"Wren (sender)": wrenInbox, "Kaelen (Meadows)": kaelenInbox} {
+		line := awaitChat(t, inbox, who)
+		assert.Equal(t, map[string]interface{}{
+			"message_id":  chatTestID.String(),
+			"sender_id":   wren.ID.String(),
+			"sender_name": "Wren",
+			"channel":     "area",
+			"scope":       testPodID,
+			"sent_at":     "2026-10-31T09:30:15.250Z",
+			"text":        linkedText,
+			"items":       linked(rustyBlade()),
+		}, line.Payload, "%s gets the stamped line with its link", who)
+	}
+
+	rig.clock.advance(chatFloodWindow)
+	forged := rustyBlade()
+	forged["entity_id"] = uuid.NewString()
+	sendChatPayload(rig.server, wrenConn, map[string]interface{}{"channel": "area", "text": linkedText, "items": linked(forged)})
+
+	assert.Equal(t, "bad_item_link", awaitNotice(t, wrenInbox, "Wren").Payload["code"])
+	assertSilent(t, kaelenInbox, "Kaelen")
+}

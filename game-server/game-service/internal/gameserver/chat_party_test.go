@@ -676,3 +676,39 @@ func TestPartyChat_InARun_DeadAndEscapedMembersTalk(t *testing.T) {
 		assert.Equal(t, "I'm out", awaitChat(t, inbox, who).Payload["text"])
 	}
 }
+
+// A party line with an item link is told here and carried for the members elsewhere as one line,
+// `items` and all; a bad link is refused and nothing is told or carried. FS-KBA4Q R28, R30.
+func TestPartyChat_Relay_CarriesItemLinks(t *testing.T) {
+	wren := seatedSpeaker("Wren")
+	marl := uuid.New()
+	party := partyWith(wren.ID, marl)
+	rig := newPartyRelayRig([]uuid.UUID{wren.ID}, party)
+	say := func(items interface{}) {
+		rig.relay.relay(context.Background(), wren, &websocket.Conn{}, map[string]interface{}{"channel": "party", "text": linkedText, "items": items})
+	}
+
+	say(linked(named("Iron Helm")))
+	require.Equal(t, []string{"bad_item_link"}, rig.noticeCodes())
+	require.Empty(t, rig.spy.lines)
+	require.Empty(t, rig.party.carried)
+
+	say(linked(rustyBlade()))
+	require.Len(t, rig.spy.lines, 1, "the refused line did not use the flood window")
+	assert.Equal(t, linked(rustyBlade()), rig.spy.lines[0].Payload["items"])
+	require.Len(t, rig.party.carried, 1)
+	assert.Equal(t, rig.spy.lines[0], rig.party.carried[0].line, "the line carried is the line told here")
+}
+
+// A party line with an item link reaches a member on another pod through the party-chat letter
+// with `items` intact. FS-KBA4Q R30.
+func TestPartyChat_TwoPods_CarryItemLinks(t *testing.T) {
+	a, _, _, _, _, wrenConn, _, wrenInbox, marlInbox := crossPodParty(t)
+
+	sendChatPayload(a.server, wrenConn, map[string]interface{}{"channel": "party", "text": linkedText, "items": linked(rustyBlade())})
+
+	mine := awaitChat(t, wrenInbox, "Wren, the sender, on A")
+	theirs := awaitChat(t, marlInbox, "Marl, on B")
+	assert.Equal(t, linked(rustyBlade()), theirs.Payload["items"])
+	assert.Equal(t, mine.Payload, theirs.Payload, "the same line on both pods")
+}
