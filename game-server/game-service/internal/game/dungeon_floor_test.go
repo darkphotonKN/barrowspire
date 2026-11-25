@@ -115,10 +115,10 @@ func TestDungeonFloors_SizeAndCellSizeOnEveryFloor(t *testing.T) {
 	s, _ := dungeonRun(t, 3, 2, 0)
 
 	width, height := floorSize(firstFloor)
-	assert.Equal(t, [2]float64{5760, 3840}, [2]float64{width, height})
+	assert.Equal(t, [2]float64{4800, 3200}, [2]float64{width, height})
 	assert.Equal(t, RunBounds().Width, width, "a run is created at its first floor's normal size")
 	assert.Equal(t, RunBounds().Height, height)
-	assert.Equal(t, [2]float64{5760, 3840}, [2]float64{s.mapWidth, s.mapHeight})
+	assert.Equal(t, [2]float64{4800, 3200}, [2]float64{s.mapWidth, s.mapHeight})
 	assert.Equal(t, s.dungeon.layout.Bounds.W, s.mapWidth, "the map and the layout are one build")
 	assert.Equal(t, 80.0, currentFloor(t, s).CellSize)
 
@@ -127,7 +127,7 @@ func TestDungeonFloors_SizeAndCellSizeOnEveryFloor(t *testing.T) {
 		require.NoError(t, s.regenerateFloor())
 		require.NotNil(t, s.dungeon, "floor %d is a dungeon", depth)
 		assert.NotEqual(t, previous, s.dungeon.layout.Seed, "floor %d has a layout of its own", depth)
-		assert.Equal(t, [2]float64{5760, 3840}, [2]float64{s.mapWidth, s.mapHeight}, "floor %d", depth)
+		assert.Equal(t, [2]float64{4800, 3200}, [2]float64{s.mapWidth, s.mapHeight}, "floor %d", depth)
 		assert.Equal(t, 80.0, currentFloor(t, s).CellSize, "floor %d", depth)
 		assert.Empty(t, buildingDoorIDs(s), "floor %d has no buildings", depth)
 	}
@@ -486,8 +486,8 @@ func TestDungeonFloor1_FloorMapCarriesCellSizeAndRegions(t *testing.T) {
 	assert.ElementsMatch(t, []string{"session_id", "floor", "width", "height", "cell_size", "regions", "walls", "enemy_pool"}, keys,
 		"no room roles on the wire; the floor's enemy pool (FS-C8VM7 §G R40)")
 	assert.Equal(t, 80.0, payload["cell_size"])
-	assert.Equal(t, 5760.0, payload["width"])
-	assert.Equal(t, 3840.0, payload["height"])
+	assert.Equal(t, 4800.0, payload["width"])
+	assert.Equal(t, 3200.0, payload["height"])
 
 	raw, err := json.Marshal(s.dungeon.layout.Regions)
 	require.NoError(t, err)

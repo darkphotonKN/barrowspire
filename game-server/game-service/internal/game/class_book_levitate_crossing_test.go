@@ -26,7 +26,7 @@ func floatFor(delver *ecs.Entity, secs float64) {
 // An afloat delver walks straight over the shut pits to the stairs side, and
 // along the ledge over its spike plates, firing none.
 func TestLevitate_AnAfloatDelverCrossesTheChasmFiringNothing(t *testing.T) {
-	s, ids, _ := chasmRun(t, 1, 1)
+	s, ids, _ := chasmRun(t, 3, 1)
 	g := s.dungeon.chasm
 	f := chasmFrameOfFloor(s)
 	delver := delverEntity(t, s, ids[0])
@@ -46,7 +46,7 @@ func TestLevitate_AnAfloatDelverCrossesTheChasmFiringNothing(t *testing.T) {
 // Afloat ending over a pit sets the delver down, unhurt, on the centre of the
 // nearest walkable cell, off the band.
 func TestLevitate_AfloatEndingOverAPit_SetsTheDelverDownUnhurt(t *testing.T) {
-	s, ids, _ := chasmRun(t, 1, 1)
+	s, ids, _ := chasmRun(t, 3, 1)
 	g := s.dungeon.chasm
 	delver := delverEntity(t, s, ids[0])
 	pit := g.pits[0]

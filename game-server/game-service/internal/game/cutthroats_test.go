@@ -176,9 +176,9 @@ func parley(t *testing.T, s *Session, id uuid.UUID, body *ecs.Entity) *ecs.Entit
 // gives the tip, and the floor's unopened secret door nearest them is
 // detected and revealed; the other is not revealed. They stay peaceful NPCs.
 func TestCutthroats_PeacefulDraw_TheNearestSecretDoorIsRevealed(t *testing.T) {
-	s, ids, bodies := cutthroatsRun(t, 11, 1, 0)
+	s, ids, bodies := cutthroatsRun(t, 12, 1, 0)
 	doors := secretDoors(s)
-	require.Len(t, doors, 2, "seed 11's floor 2 holds two secret doors")
+	require.Len(t, doors, 2, "seed 12's floor 2 holds two secret doors")
 	byNear := doorsByNearness(t, doors, npcsOf(s))
 	for _, d := range doors {
 		require.False(t, detectableOf(t, d).Revealed)
@@ -199,7 +199,7 @@ func TestCutthroats_PeacefulDraw_TheNearestSecretDoorIsRevealed(t *testing.T) {
 // FS-4EC7Z §D R14: an opened secret door is never the one revealed: the
 // nearest unopened one is.
 func TestCutthroats_PeacefulDraw_PassesAnOpenedDoor(t *testing.T) {
-	s, ids, bodies := cutthroatsRun(t, 11, 1, 0)
+	s, ids, bodies := cutthroatsRun(t, 12, 1, 0)
 	byNear := doorsByNearness(t, secretDoors(s), npcsOf(s))
 	s.openSecretDoor(byNear[0])
 
@@ -213,8 +213,8 @@ func TestCutthroats_PeacefulDraw_PassesAnOpenedDoor(t *testing.T) {
 // on the floor, the tip is lore: `cutthroat_lore` said, nothing revealed, and
 // lore again on a later talk.
 func TestCutthroats_PeacefulDraw_NoDoor_TheTipIsLore(t *testing.T) {
-	s, ids, bodies := cutthroatsRun(t, 3, 1, 0)
-	require.Empty(t, secretDoors(s), "seed 3's floor 2 holds no secret door")
+	s, ids, bodies := cutthroatsRun(t, 7, 1, 0)
+	require.Empty(t, secretDoors(s), "seed 7's floor 2 holds no secret door")
 
 	speaker := parley(t, s, ids[0], bodies[0])
 	assert.Equal(t, components.FatePeaceful, cutthroatsOf(t, s).Fate)

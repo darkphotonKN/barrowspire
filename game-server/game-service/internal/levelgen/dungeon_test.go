@@ -252,7 +252,7 @@ func everySeedValid(t *testing.T, p DungeonParams) {
 	var (
 		retried, maxAttempt, maxWalls, maxRegions int
 		minRooms, maxRooms                        = math.MaxInt, 0
-		halls, loop4                              int
+		halls, hallFloors, loop4                  int
 		minSegment                                = math.MaxInt
 	)
 	chasm := 0
@@ -276,10 +276,16 @@ func everySeedValid(t *testing.T, p DungeonParams) {
 			loop4++
 		}
 
+		// a hall is at least 7 x 6 (FS-KE075 §Change: Room variety R66)
+		hasHall := false
 		for _, room := range l.Rooms {
-			if room.Rect.W >= 8 && room.Rect.H >= 6 {
+			if room.Rect.W >= 7 && room.Rect.H >= 6 {
 				halls++
+				hasHall = true
 			}
+		}
+		if hasHall {
+			hallFloors++
 		}
 		for _, reg := range l.Regions {
 			if reg.Kind != RegionCorridor {
@@ -302,7 +308,10 @@ func everySeedValid(t *testing.T, p DungeonParams) {
 	if loop4 == 0 {
 		t.Fatalf("no layout in %d has a loop through four or more rooms", seeds)
 	}
-	t.Logf("%d seeds: rooms %d..%d, %d halls (>= 8x6) in all, max %d wall rects, max %d regions, "+
+	if hallFloors*2 < seeds {
+		t.Errorf("%d of %d floors have a hall (>= 7x6), want most", hallFloors, seeds)
+	}
+	t.Logf("%d seeds: rooms %d..%d, %d halls (>= 7x6) in all, max %d wall rects, max %d regions, "+
 		"smallest corridor segment %d cells, %d with a loop of >= 4 rooms, %d needed a retry (max attempt %d of %d), "+
 		"%d with a Chasm-capable stairs room",
 		seeds, minRooms, maxRooms, halls, maxWalls, maxRegions, minSegment, loop4, retried, maxAttempt, p.RetryLimit, chasm)
@@ -495,15 +504,15 @@ func TestDungeonFloor1Params_ApprovedNumbers(t *testing.T) {
 		got, want any
 	}{
 		{"cell size", p.CellSize, 80.0},
-		{"grid", [2]int{p.Cols, p.Rows}, [2]int{72, 48}},
-		{"rooms", p.Rooms, IntRange{Min: 18, Max: 28}},
-		{"room width", p.RoomWidth, IntRange{Min: 4, Max: 10}},
-		{"room height", p.RoomHeight, IntRange{Min: 4, Max: 8}},
+		{"grid", [2]int{p.Cols, p.Rows}, [2]int{60, 40}},
+		{"rooms", p.Rooms, IntRange{Min: 16, Max: 22}},
+		{"room width", p.RoomWidth, IntRange{Min: 4, Max: 8}},
+		{"room height", p.RoomHeight, IntRange{Min: 4, Max: 7}},
 		{"room gap", p.RoomGap, 2},
 		{"edge margin", p.EdgeMargin, 2},
 		{"corridor width", p.CorridorWidth, IntRange{Min: 2, Max: 3}},
 		{"extra edge share", p.ExtraEdgeShare, 0.1},
-		{"segment max", p.SegmentMax, 16},
+		{"segment max", p.SegmentMax, 12},
 		{"start min", p.StartMin, 5},
 		{"treasure rooms", p.TreasureRooms, IntRange{Min: 3, Max: 4}},
 		{"escape door", p.EscapeDoor, false},

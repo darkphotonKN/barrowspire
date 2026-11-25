@@ -54,7 +54,7 @@ const (
 
 	// a hall is a room at least this many cells wide and tall (width × height,
 	// as the generator draws rooms: up to 10 × 8)
-	HallMinWidth  = 8
+	HallMinWidth  = 7
 	HallMinHeight = 6
 	// a hall that is not the start or a treasure room holds one pack: a brute
 	// of the floor pool and a uniform [min, max] of the pool's fodder, each

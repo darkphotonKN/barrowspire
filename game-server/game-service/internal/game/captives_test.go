@@ -264,7 +264,7 @@ func TestMakeAllies_TheCapOfThree(t *testing.T) {
 // FS-4EC7Z §A R4: talking to a caged captive answers with its plea; to an
 // ally, its acknowledgement; neither starts anything.
 func TestCaptives_TalkingToThem(t *testing.T) {
-	s, ids, bodies := captivesRun(t, 7, 1)
+	s, ids, bodies := captivesRun(t, 9, 1)
 	npc := npcsOf(s)[0]
 	standBeside(t, s, bodies[0], npc, 45)
 	tick(s)

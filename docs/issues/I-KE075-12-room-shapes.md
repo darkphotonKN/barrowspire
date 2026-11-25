@@ -3,7 +3,7 @@ id: I-KE075-12
 status: open
 implements: FS-KE075
 blocked_by: [I-KE075-11]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-KE075 slice 12: room shapes: rectangle, L, cross, pillared, cut corners as cut cells in the room's rect (game-service levelgen)"
 ---
 Implements FS-KE075 §Change: Room variety (§L, R68–R76)

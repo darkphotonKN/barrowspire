@@ -3,7 +3,7 @@ id: I-KE075-13
 status: open
 implements: FS-KE075
 blocked_by: [I-KE075-11]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-KE075 slice 13: fewer large packs: a brute and 0–1 fodder, corridors 1–3, top-up 2, treasure two at 25%, floor held to 8–18 (game-service)"
 ---
 Implements FS-KE075 §Change: Room variety (§N, R82–R83)

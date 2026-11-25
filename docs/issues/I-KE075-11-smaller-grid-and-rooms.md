@@ -1,6 +1,6 @@
 ---
 id: I-KE075-11
-status: open
+status: done
 implements: FS-KE075
 blocked_by: []
 labels: [ready-for-agent]
@@ -18,9 +18,9 @@ numbers (72×48, 5760×3840, 18–28, 10×8, 16-cell segments, 8×6 halls) follo
 
 ## Acceptance Criteria
 
-- [ ] The 1,000-seed property test passes on every sealed-floor parameter set at the new values
-- [ ] The golden layout is re-pinned; floor size tests read 4800×3200
-- [ ] `go test ./...` in game-service passes
+- [x] The 1,000-seed property test passes on every sealed-floor parameter set at the new values
+- [x] The golden layout is re-pinned; floor size tests read 4800×3200
+- [x] `go test ./...` in game-service passes
 
 ## Blocked By
 
