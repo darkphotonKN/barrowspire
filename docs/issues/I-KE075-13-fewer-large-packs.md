@@ -1,6 +1,6 @@
 ---
 id: I-KE075-13
-status: open
+status: done
 implements: FS-KE075
 blocked_by: [I-KE075-11]
 labels: [ready-for-agent]
@@ -18,9 +18,10 @@ A hall pack of a lone brute is a whole pack (no "short" warning). The population
 
 ## Acceptance Criteria
 
-- [ ] Across many builds: hall packs 1–2, corridors 1–3, treasure rooms 1–2 elites, a top-up never past 2
-- [ ] The floor's total besides a demon stays within 8–18
-- [ ] `go test ./...` in game-service passes
+- [x] Across many builds: hall packs 1–2, corridors 1–3, treasure rooms 1–2 elites, a top-up never past 2
+- [x] The floor's total besides a demon stays within 8–18
+- [x] Dark Warriors one per 8 monsters (R83 as promoted); a plates room keeps one footing cell to spare for a nudged block
+- [x] `go test ./...` in game-service passes
 
 ## Blocked By
 

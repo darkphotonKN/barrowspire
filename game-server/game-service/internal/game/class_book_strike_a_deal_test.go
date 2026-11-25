@@ -116,7 +116,7 @@ func TestCastSkill_StrikeADeal_RefusedAtTheCastsEndAndToldWhy(t *testing.T) {
 			return s, ids[0]
 		}, RefusalAlreadyHired},
 		{"past the ally cap", func(t *testing.T) (*Session, uuid.UUID) {
-			s, ids, _ := cutthroatsRun(t, 12, 1, 0)
+			s, ids, _ := cutthroatsRun(t, 13, 1, 0)
 			other := CreateEncounterNPCEntity(s.EntityManager, EncounterNPCConfig{Kind: components.EncounterNPCCaptive, Stance: components.StancePeaceful, Health: 100})
 			require.NoError(t, s.makeAllies([]*ecs.Entity{other}, ids[0]))
 			return s, ids[0]

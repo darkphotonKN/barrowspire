@@ -423,7 +423,7 @@ func TestDungeonPopulation_TreasureGuardsAreElite(t *testing.T) {
 		}
 	}
 	share := float64(packs) / float64(alone+packs)
-	assert.InDelta(t, TreasureGuardPackShare, share, 0.05, "a treasure room holds a pack about half the time")
+	assert.InDelta(t, TreasureGuardPackShare, share, 0.05, "a treasure room holds a pack at its share")
 }
 
 // A treasure guard draws through the same roll as any rolled monster, so on
@@ -717,16 +717,16 @@ func TestPopulateMonsters_DungeonFloorPlacesARolledBloodDemon(t *testing.T) {
 	}
 }
 
-// The floor's population is FS-C8VM7 §I R49's tune of FS-KE075 §C, its total
-// FS-5FZ4J §D R21's: 15-25 a sealed floor, hall packs of 1-3, ordinary rooms
-// 0-2 topped up to 3, corridors 3-5; the treasure guards as they were.
+// The floor's population is FS-KE075 §Change: Room variety R82-R83's tune of
+// FS-C8VM7 §I R49 and FS-5FZ4J §D R21: 8-18 a floor, hall packs of a brute and
+// 0-1, top-ups to 2, corridors 1-3, treasure rooms one elite or two at 25%.
 func TestDungeonPopulation_ThinnerFloorsTune(t *testing.T) {
-	assert.Equal(t, []int{15, 25}, []int{DungeonMonstersMin, DungeonMonstersMax})
-	assert.Equal(t, []int{1, 3}, []int{HallPackFodderMin, HallPackFodderMax})
-	assert.Equal(t, []int{0, 2, 3}, []int{RoomMonstersMin, RoomMonstersMax, RoomMonstersTopUpMax})
-	assert.Equal(t, []int{3, 5}, []int{CorridorMonstersMin, CorridorMonstersMax})
-	assert.Equal(t, 0.5, TreasureGuardPackShare)
-	assert.Equal(t, []int{2, 3}, []int{TreasureGuardPackMin, TreasureGuardPackMax})
+	assert.Equal(t, []int{8, 18}, []int{DungeonMonstersMin, DungeonMonstersMax})
+	assert.Equal(t, []int{0, 1}, []int{HallPackFodderMin, HallPackFodderMax})
+	assert.Equal(t, []int{0, 2, 2}, []int{RoomMonstersMin, RoomMonstersMax, RoomMonstersTopUpMax})
+	assert.Equal(t, []int{1, 3}, []int{CorridorMonstersMin, CorridorMonstersMax})
+	assert.Equal(t, 0.25, TreasureGuardPackShare)
+	assert.Equal(t, []int{2, 2}, []int{TreasureGuardPackMin, TreasureGuardPackMax})
 }
 
 // No ordinary room holds more than a top-up allows. FS-KE075 §C R18.

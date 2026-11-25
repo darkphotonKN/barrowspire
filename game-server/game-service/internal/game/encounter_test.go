@@ -315,7 +315,7 @@ func seconds(secs float64) int { return int(math.Ceil(secs * float64(constants.G
 // FS-4EC7Z §B R7, Edge States: nothing starts while the party keeps away;
 // the first delver within 3 cells of a pilgrim starts the plea.
 func TestPilgrims_ThePleaOnApproach(t *testing.T) {
-	s, bodies := pilgrimsRun(t, 11, 1)
+	s, bodies := pilgrimsRun(t, 13, 1)
 	ticks(s, seconds(PilgrimWaveDelay+1))
 	assert.False(t, waveOf(t, s).Pleaded, "ignored, nothing starts")
 	assert.Empty(t, waveOf(t, s).Wave)
@@ -389,7 +389,7 @@ func delverIDs(s *Session) []uuid.UUID {
 // delver.
 func TestPilgrims_TheWave(t *testing.T) {
 	for _, delvers := range []int{1, 2, 3} {
-		s, bodies := pilgrimsRun(t, 6, delvers)
+		s, bodies := pilgrimsRun(t, 11, delvers)
 		_, enc, _ := theEncounter(s)
 		p := npcsOf(s)[0]
 		standBeside(t, s, bodies[0], p, 100)

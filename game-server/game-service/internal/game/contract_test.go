@@ -487,7 +487,7 @@ func TestCompassWord_EightWords(t *testing.T) {
 // direction from them, refreshed every 5 s and not between: a move of the
 // taker shows only at the next refresh.
 func TestContract_Heading_RefreshedEveryFiveSeconds(t *testing.T) {
-	s, _, bodies, mark := markedRun(t, 14, 1)
+	s, _, bodies, mark := markedRun(t, 17, 1)
 	m := transformOf(t, mark)
 	taker := transformOf(t, bodies[0])
 	assert.Equal(t, compassWord(m.X-taker.X, m.Y-taker.Y), contractOf(t, s).Heading, "given at the take")

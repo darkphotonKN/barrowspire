@@ -861,7 +861,9 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
     monsters besides a demon are held to **8–18**, from 15–25 (FS-5FZ4J §D R21). *(charter default —
     reason: on the new rooms the floor's natural total is about 13 and its ceiling with every
     top-up about 17; held at 15, nearly every floor would top every monsters room to 2 and M3's
-    "one or two" would be "two")*
+    "one or two" would be "two")* A floor holds at most one **Dark Warrior** per 8 of its monsters,
+    from 12 (FS-C8VM7 §C R24), up to the cap of 4 as before. *(charter default — reason: at 12, a
+    floor of 8–11 could hold none; at 8 the thinner floor keeps the one or two that 15–25 gave)*
 
 **§O. The client**
 

@@ -49,40 +49,43 @@ const (
 	// the floor's monsters besides a demon, held to [min, max] by topping up
 	// ordinary rooms and trimming ordinary rooms, then corridors, then hall-pack
 	// fodder, then treasure-guard packs: a sealed floor's fewer monsters
-	// (FS-5FZ4J §D R21, from 30-45)
-	DungeonMonstersMin = 15
-	DungeonMonstersMax = 25
+	// (FS-5FZ4J §D R21, from 30-45), fewer again room by room (FS-KE075
+	// §Change: Room variety R83, from 15-25)
+	DungeonMonstersMin = 8
+	DungeonMonstersMax = 18
 
 	// a hall is a room at least this many cells wide and tall (width × height,
-	// as the generator draws rooms: up to 10 × 8)
+	// as the generator draws rooms: up to 8 × 7; FS-KE075 §Change: Room
+	// variety R66)
 	HallMinWidth  = 7
 	HallMinHeight = 6
 	// a hall that is not the start or a treasure room holds one pack: a brute
 	// of the floor pool and a uniform [min, max] of the pool's fodder, each
-	// within the radius of the brute, in px
-	HallPackFodderMin = 1
-	HallPackFodderMax = 3
+	// within the radius of the brute, in px (R82, from 1-3)
+	HallPackFodderMin = 0
+	HallPackFodderMax = 1
 	HallPackRadius    = 160.0
 	// brute spots a hall pack tries before it settles for the one that fitted
 	// the most of its fodder
 	HallPackBruteTries = 20
 
 	// every other room but the start holds a uniform [min, max] rolled monsters;
-	// a top-up never takes a room past RoomMonstersTopUpMax
+	// a top-up never takes a room past RoomMonstersTopUpMax (R83, from 3)
 	RoomMonstersMin      = 0
 	RoomMonstersMax      = 2
-	RoomMonstersTopUpMax = 3
+	RoomMonstersTopUpMax = 2
 
 	// the corridors hold a uniform [min, max] rolled monsters in all, at most one
-	// per corridor segment
-	CorridorMonstersMin = 3
-	CorridorMonstersMax = 5
+	// per corridor segment (R83, from 3-5)
+	CorridorMonstersMin = 1
+	CorridorMonstersMax = 3
 
 	// a treasure room is guarded by one elite, or with this chance by a pack of
 	// a uniform [min, max] elites; every guard is elite, its archetype rolled
-	TreasureGuardPackShare = 0.5
+	// (R83, from 2-3 at 0.5)
+	TreasureGuardPackShare = 0.25
 	TreasureGuardPackMin   = 2
-	TreasureGuardPackMax   = 3
+	TreasureGuardPackMax   = 2
 
 	// on every dungeon floor, Bone Archers take ghouls' places (FS-B4SG9 §B
 	// R14–R17): a monster rolled for an ordinary room, a top-up included, that
@@ -182,7 +185,9 @@ const (
 	// a dark warrior variant weighs this in a pool draw; every other weighs 1
 	DarkWarriorPoolWeight = 2
 	// a floor holds at most min(cap, ⌊its monsters / per⌋) dark warriors
-	DarkWarriorPer    = 12
+	// (FS-KE075 §Change: Room variety R83, from 12: the floor's thinner 8-18
+	// keeps the one or two that 15-25 gave)
+	DarkWarriorPer    = 8
 	DarkWarriorCapMax = 4
 )
 

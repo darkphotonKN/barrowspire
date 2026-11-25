@@ -247,12 +247,15 @@ func (d *dungeonFloor) plateRooms() []int {
 * keeps the first draw the push search passes from the room's first doorway
 * (FS-5FZ4J §C R20). Every piece stands inside the room's border, which is
 * left open, so a delver entering at any doorway can walk its whole ring.
-* false when the room has too few cells or no draw passes.
+* false when the room has too few cells, one to spare, or no draw passes.
 **/
 func (d *dungeonFloor) placePlates(rng populationRand, room, n int) (plates, blocks []components.Cell, ok bool) {
 	r := d.layout.Rooms[room]
 	cells := d.plateFooting(room)
-	if len(cells) < 2*n || len(r.Doorways) == 0 {
+	// one cell to spare, so a block laid by a chained seal onto a delver
+	// standing on its cell is laid beside it instead (FS-5FZ4J §B R9): a
+	// shaped room's footing can be just enough for the pieces alone
+	if len(cells) < 2*n+1 || len(r.Doorways) == 0 {
 		return nil, nil, false
 	}
 	start := d.roomEntry(room)
