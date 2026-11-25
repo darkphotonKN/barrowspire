@@ -82,6 +82,7 @@ const { ProgressHud: ProgressHudClass } = await_progressHud;
 const await_resourceHud = await import("@/ui/ResourceHud");
 const await_partyFramesLayout = await import("@/ui/partyFramesLayout");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
+type MarkerModes = import("@/render/creatures/markerMode").MarkerModes;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
 const { useGameStore } = await import("@/stores/gameStore");
@@ -8573,8 +8574,14 @@ describe("the run's top-left stack, closed up (FS-77DVN §E)", () => {
   );
 });
 
-describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-48CTQ-1)", () => {
+// No floor uses the frame in the shipped table (FS-48CTQ § Change: Floor 1 carries overhead markers; no
+// floor uses the target frame, 24–26; I-48CTQ-4), so these tests name their own `frame` floor: a later
+// floor opts in by one table entry (26).
+describe("BarrowspireScene target frame on a frame floor (FS-48CTQ §A–§C, §E; I-48CTQ-1, I-48CTQ-4)", () => {
   const { TARGET_FRAME, TARGET_FRAME_TOP, targetFrameRect } = await_targetFrame;
+  /** The floor these tests opt in, and the table that does it. */
+  const FRAME_FLOOR = 2;
+  const FRAMED: MarkerModes = { run: { [FRAME_FLOOR]: "frame" } };
 
   interface FrameRun {
     time: { now: number; delayedCall: ReturnType<typeof vi.fn> };
@@ -8583,6 +8590,8 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     relayoutHud(): void;
     resetRun(end: "shutdown" | "destroy"): void;
     targetFrame?: { texts(): Made[] };
+    /** The marker-mode table the run reads: the shipped one unless a test names its own. */
+    markerModes: MarkerModes;
     watchedPlayerId?: string;
     /** The shared arrival card (FS-PQ2TW R37): the dark first, then the card, while one is up. */
     arrivalCard: { parts: unknown[] };
@@ -8593,18 +8602,22 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     vi.restoreAllMocks();
   });
 
-  /** The run on `floor` with its HUD up, at scene time 0. */
-  function framed(floor = 1) {
+  /**
+   * The run on `floor` with its HUD up, at scene time 0, reading `table`: the test's own entry, or
+   * the shipped table the scene starts with.
+   */
+  function framed(floor = FRAME_FLOOR, table: MarkerModes | "shipped" = FRAMED) {
     const stage = onStage();
     const run = stage.run as unknown as FrameRun & FloorRun;
     run.time.now = 0;
+    if (table !== "shipped") run.markerModes = table;
     run.createUI();
     const state = (fields: Partial<ReturnType<typeof monster>> = {}) =>
       ({
         ...floorState(floor),
         current_player: player("me", "Aldric", 130),
         other_players: [player("ally", "Wenna", 160)],
-        monsters: [{ ...monster("m1", floor === 1 ? 100 : 600), ...fields }],
+        monsters: [{ ...monster("m1", 100), ...fields }],
       }) as GameState;
     run.handleGameStateUpdate(state());
     /** What the frame names now, or null while it is hidden. */
@@ -8625,15 +8638,44 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     return { ...stage, run, state, named, tick, plates };
   }
 
-  it("should draw no overhead plate over floor 1's monsters, and plates as today on floor 2", () => {
-    const one = framed(1);
-    (one.run.monsters as InstanceType<typeof MonsterRoster>).update(16);
-    expect(one.plates().length).toBeGreaterThan(0);
-    expect(one.plates().every((p) => p.shown === false)).toBe(true);
+  it("should draw no overhead plate over the opted-in floor's monsters, and plates on the floor beside it", () => {
+    const opted = framed();
+    (opted.run.monsters as InstanceType<typeof MonsterRoster>).update(16);
+    expect(opted.plates().length).toBeGreaterThan(0);
+    expect(opted.plates().every((p) => p.shown === false)).toBe(true);
 
-    const two = framed(2);
-    (two.run.monsters as InstanceType<typeof MonsterRoster>).update(16);
-    expect(two.plates().some((p) => p.shown === true)).toBe(true);
+    const beside = framed(FRAME_FLOOR + 1);
+    (beside.run.monsters as InstanceType<typeof MonsterRoster>).update(16);
+    expect(beside.plates().some((p) => p.shown === true)).toBe(true);
+  });
+
+  // § Change: Floor 1 carries overhead markers; no floor uses the target frame (24)
+  it.each([1, 2, 3])("should draw the plate over floor %i's monsters under the shipped table", (floor) => {
+    const { run, plates } = framed(floor, "shipped");
+    (run.monsters as InstanceType<typeof MonsterRoster>).update(16);
+    const shown = plates().filter((p) => p.shown === true);
+    expect(shown.map((p) => p.args[2])).toContain("Ghoul · Lv 1");
+  });
+
+  // § Change (25): hovered, struck or engaged, floor 1's monsters take no frame; the demon keeps its plate
+  it("should show no frame on floor 1 for a hovered monster, a struck one or an engaged boss", () => {
+    const { run, monsters, named, tick, state, plates } = framed(1, "shipped");
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    expect(named()).toBeNull();
+
+    monsters()[0].handlers.pointerdown();
+    run.time.now += 280;
+    run.handleGameStateUpdate(state({ current_health: 6 }));
+    tick(120);
+    expect(named()).toBeNull();
+
+    monsters()[0].handlers.pointerout();
+    run.handleGameStateUpdate(state({ boss: true, current_health: 4 } as Partial<ReturnType<typeof monster>>));
+    tick(120);
+    expect(named()).toBeNull();
+    (run.monsters as InstanceType<typeof MonsterRoster>).update(16);
+    expect(plates().some((p) => p.shown === true)).toBe(true);
   });
 
   it("should name the hovered monster at the top centre, and let go when the pointer leaves", () => {
@@ -8648,8 +8690,8 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     expect(named()).toBeNull();
   });
 
-  it("should show no frame on floor 2, where the plates are", () => {
-    const { monsters, named, tick } = framed(2);
+  it("should show no frame on the floor beside the opted-in one, where the plates are", () => {
+    const { monsters, named, tick } = framed(FRAME_FLOOR + 1);
     monsters()[0].handlers.pointerover();
     tick(120);
     expect(named()).toBeNull();
@@ -10955,6 +10997,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         createUI(): void;
         updateTargetFrame(deltaMs: number): void;
         targetFrame?: { texts(): Made[] };
+        /** The marker-mode table the run reads: the shipped one unless a test names its own. */
+        markerModes: MarkerModes;
       }
       const stageWith = (party: Partial<Party> = inRoom) => {
         const staged = stageIn(party);
@@ -10971,11 +11015,9 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
 
       it("should show a monster in the player's room or within 400 px of them, and hide one beyond, plate, prefix and bar with it", () => {
         const { run, stage, handle, shownMonsters } = stageWith();
-        // floor 2 laid out as floor 1: its plates are overhead (FS-48CTQ §A.1)
-        useGameStore.getState().receiveFloorMap({ ...dungeonMap, floor: 2 } as never);
+        // floor 1 itself: its plates are overhead (FS-48CTQ § Change: Floor 1 carries overhead markers, 24)
         handle({
           ...dungeonState(inRoom),
-          floor: 2,
           monsters: [beast("room", inRoomAt), beast("near", near, elite), beast("far", far, elite)],
         } as GameState);
         run.monsters.update(16);
@@ -11006,6 +11048,9 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
 
       it("should name no hidden monster in the target frame, not even an engaged boss, and name a shown one", () => {
         const { run, frame } = stageWith();
+        // the dungeon floor opted in by the test's own entry: the shipped table names no floor
+        // (FS-48CTQ § Change: Floor 1 carries overhead markers; no floor uses the target frame, 26)
+        run.markerModes = { run: { 1: "frame" } };
         run.time.now = 0;
         run.createUI();
         const named = () => {
