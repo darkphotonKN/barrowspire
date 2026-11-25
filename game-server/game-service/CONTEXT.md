@@ -247,6 +247,12 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   (`ChestRestockDelay`; 5 minutes in the Forest), so its next opening rolls afresh. What a player
   already took is theirs. Timed from the first open, not from the last item taken.
 
+### Movement pace (FS-TAGWA, ADR-0099)
+
+- **Pace scale** — the one knob every travel speed is multiplied by (`PaceScale`, 0.5): walks,
+  ambles, monster and ally pace, the variant step gain and every projectile. Never a timing or a
+  reach. A speed's **full-pace figure** is its number before the scale (the delver's 200).
+
 ### Dungeon floors and the floor map (FS-KE075, ADR-0060, ADR-0061, ADR-0062)
 
 - **Cell** — one square of a generated floor's grid, 80 px a side (`levelgen`). A cell is

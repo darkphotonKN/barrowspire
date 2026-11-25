@@ -433,3 +433,5 @@ Left to the owner. None blocks a slice: each slice leaves the behaviour named he
    headless on SwiftShader against a local server; then a human reads the contact sheets.
 
 ## Change: Tiered enemy roster and floor pools → FS-C8VM7
+
+## Change: Exploration pace → FS-TAGWA
