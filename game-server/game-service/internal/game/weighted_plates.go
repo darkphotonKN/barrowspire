@@ -15,10 +15,11 @@ import (
 * Weighted Plates (FS-5FZ4J §C R17-R20): plates in one room of their own, as
 * many stone blocks beside them, the seal broken on the first tick every plate
 * is held at once. A plate is held by what stands on its cell: a body that
-* weighs (a delver's centre; a hired ally's, FS-4EC7Z, through the same body
-* kind, systems.BodyKindOf) or a stone block come to rest there; never a
-* monster. The first plate held wakes the seal's one ambush. One delver can
-* push every block onto a plate: solvable by one (R10), as the build checks.
+* weighs (a delver's centre; a hired ally's, FS-4EC7Z, or a hound's, FS-X2CMM
+* R58, through the same body kind, systems.BodyKindOf) or a stone block come
+* to rest there; never a monster. The first plate held wakes the seal's one
+* ambush. One delver can push every block onto a plate: solvable by one
+* (R10), as the build checks.
 **/
 type weightedPlates struct{}
 

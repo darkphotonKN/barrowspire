@@ -24,8 +24,9 @@ import (
 * delver's hit lands on it. Its kills are its archer's: a bite is a hit from the
 * archer's member id, as the burning trail's are (FS-4R9M9 R36).
 *
-* Four hooks, a line each: the monster AI counts it among its quarries
-* (quarries) and steers it after the monsters (runHounds); combat lands its
+* Four hooks, a line each: the ground counts it a body of its own kind
+* (BodyHound, body.go), which monsters hunt and a plate is held by (R58), and
+* the monster AI steers it after the monsters (runHounds); combat lands its
 * bites (houndsBite); CanHit spares it every delver's hit (sparesHound). The
 * BookSystem ages it with the other book effects and takes it at no health.
 * Its bay at a shut secret door or a waiting ambush is the BookRevealSystem's

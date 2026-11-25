@@ -137,7 +137,8 @@ func (s *Session) advanceCasts(deltaTime float64, entities []*ecs.Entity, attack
 // bookGround is the run's floor as a page reads it: its ground, the walk's own
 // ground a move over it lands on (as a blink's does), and the combat's end to
 // a charge in flight; on a dungeon floor its cells, where a delver whose
-// afloat ends over a pit is set down. FS-X2CMM §C R14, §E R25, §J R51.
+// afloat ends over a pit is set down and over which Heave shoves a stone
+// block. FS-X2CMM §C R14, §E R25, §J R51, R52.
 func (s *Session) bookGround() systems.BookGround {
 	ground := systems.BookGround{
 		Walkable:  s.pageGround,
@@ -148,6 +149,7 @@ func (s *Session) bookGround() systems.BookGround {
 	// a nil grid is no footing, never a footing holding a nil grid
 	if s.navGrid != nil {
 		ground.Footing = s.navGrid
+		ground.Cells = s.navGrid
 	}
 	return ground
 }

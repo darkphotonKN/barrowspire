@@ -1,6 +1,7 @@
 package serializer
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -29,11 +30,17 @@ var warriorPages = []components.PageID{components.PageHeave, components.PageHard
 func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 	em := ecs.NewEntityManager()
 	warrior := uuid.New()
-	book := seatBook(seatWithResource(em, warrior, "warrior", stamina(100, 100), components.AttackDash), warriorPages...)
+	// a page not yet offered (Far Hand, wave 2) is never sent, whoever holds it
+	pages := append(slices.Clone(warriorPages), components.PageFarHand)
+	book := seatBook(seatWithResource(em, warrior, "warrior", stamina(100, 100), components.AttackDash), pages...)
 
 	me := ownFrame(t, em, types.WorldTypeRun, warrior)
 	require.Contains(t, me, "book")
 	assert.Equal(t, map[string]any{"pages": []any{map[string]any{
+		"id": "heave", "unlock_level": float64(3), "cost": float64(25),
+		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
+		"cooldown_length": float64(20), "cast_time": float64(2),
+	}, map[string]any{
 		"id": "hardened", "unlock_level": float64(9), "cost": float64(30),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
 		"cooldown_length": float64(90), "cast_time": float64(0),
@@ -41,11 +48,11 @@ func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 		"id": "long_night", "unlock_level": float64(15), "cost": float64(40),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
 		"cooldown_length": float64(120), "cast_time": float64(0),
-	}}}, me["book"], "ready, {0, 0}; Heave (wave 2) never sent")
+	}}}, me["book"], "ready, {0, 0}, in book order; Far Hand never sent")
 
 	book.Cooldowns[components.PageHardened] = components.BookCooldown{Remaining: 45, Total: 90}
 	me = ownFrame(t, em, types.WorldTypeRun, warrior)
-	page := me["book"].(map[string]any)["pages"].([]any)[0].(map[string]any)
+	page := me["book"].(map[string]any)["pages"].([]any)[1].(map[string]any)
 	assert.Equal(t, map[string]any{"remaining": float64(45), "total": float64(90)}, page["cooldown"])
 }
 

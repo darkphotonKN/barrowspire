@@ -13,10 +13,11 @@ import (
 * leave on a delver's book: its book cooldowns and its timed book states.
 *
 * A cast passes every gate in bookGates, in order, then its page's own in
-* pageGates (Recall's someone to pull), or is refused with no
-* effect, no cost and no cooldown. An instant page then pays its cost, starts
-* its book cooldown (or is spent) and has its effect, through the resolver its
-* page id names in pageResolvers. A page with a cast time starts casting
+* pageGates (Recall's someone to pull, Heave's block free to go), or is
+* refused with no effect, no cost and no cooldown. An instant page then pays
+* its cost, starts its book cooldown (or is spent) and has its effect, through
+* the resolver its page id names in pageResolvers. A page with a cast time
+* starts casting
 * instead, and is paid for and has its effect when its cast completes
 * (book_casting.go). A page is offered exactly when it has a
 * resolver: the rest of the table is refused as a locked page is and never
@@ -74,6 +75,10 @@ type BookGround struct {
 	// Contracts is the world's contract entry point, Take a Contract's effect
 	// (book_contract.go). Nil takes none.
 	Contracts ContractTaker
+	// Cells is a dungeon floor's grid as a stone block reads and writes it:
+	// Heave shoves a block over it as a push does (book_heave.go, R52). Nil
+	// off a dungeon floor: nothing is shoved.
+	Cells CellMask
 }
 
 // pageResolver has a page's effect, once its cast is accepted and paid for.
@@ -87,6 +92,7 @@ var pageResolvers = map[components.PageID]pageResolver{
 	components.PageBrew:         resolveBrew,
 	components.PageCallTheHound: resolveCallTheHound,
 	components.PageHardened:     resolveHardened,
+	components.PageHeave:        resolveHeave,
 	components.PageLevitate:     resolveLevitate,
 	components.PageLongNight:    resolveLongNight,
 	components.PageRecall:       resolveRecall,
@@ -135,6 +141,7 @@ type pageGate func(world *ecs.EntityManager, cast BookCast) error
 // pageGates are the conditions a page adds, judged after bookGates at the
 // cast and again at its completion (R17).
 var pageGates = map[components.PageID]pageGate{
+	components.PageHeave:  gateHeave,
 	components.PageRecall: gateSomeoneToPull,
 }
 

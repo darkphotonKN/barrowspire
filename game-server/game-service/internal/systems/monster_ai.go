@@ -587,14 +587,14 @@ func distance(a, b *components.TransformComponent) float64 {
 	return math.Hypot(b.X-a.X, b.Y-a.Y)
 }
 
-// quarries is every body a monster hunts: a delver in play (alive, not
-// escaped, not left behind) and a live encounter NPC out of a cage (FS-4EC7Z
-// §A R3), and every hound standing (FS-X2CMM R28). Nobody else can be acquired, and a target who drops out of this is
-// dropped.
+// quarries is every body a monster hunts (BodyKind.Hunted): a delver in play
+// (alive, not escaped, not left behind), a live encounter NPC out of a cage
+// (FS-4EC7Z §A R3) and every hound standing (FS-X2CMM R28). Nobody else can
+// be acquired, and a target who drops out of this is dropped.
 func quarries(entities []*ecs.Entity) []quarry {
 	var out []quarry
 	for _, entity := range entities {
-		if !BodyKindOf(entity).Hunted() && !standingHound(entity) { // a hound is a body too (book_hound.go)
+		if !BodyKindOf(entity).Hunted() {
 			continue
 		}
 		tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)

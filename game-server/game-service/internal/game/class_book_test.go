@@ -98,8 +98,8 @@ func TestCastSkill_BookAbilityRefusedWithNothingSpent(t *testing.T) {
 		{name: "dead", world: unstartedRun, class: "warrior", level: 9, page: "hardened",
 			ready: func(t *testing.T, _ *Session, d *ecs.Entity) { hurt(t, d, 0, 150) }},
 		{name: "a mage casting hardened", world: unstartedRun, class: "mage", level: 20, page: "hardened"},
-		{name: "a page not offered", world: unstartedRun, class: "warrior", level: 20, page: "heave",
-			ready: notOffered(components.PageHeave)},
+		{name: "a page not offered", world: unstartedRun, class: "mage", level: 20, page: "far_hand",
+			ready: notOffered(components.PageFarHand)},
 	}
 
 	for _, tt := range tests {

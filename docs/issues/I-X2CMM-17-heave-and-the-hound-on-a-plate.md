@@ -1,6 +1,6 @@
 ---
 id: I-X2CMM-17
-status: open
+status: done
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-8", "I-X2CMM-11", "FS-5FZ4J (stone blocks, jammed portcullises, pressure plates)"]
 labels: [ready-for-agent]

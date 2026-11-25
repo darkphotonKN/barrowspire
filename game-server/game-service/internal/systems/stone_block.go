@@ -2,6 +2,7 @@ package systems
 
 import (
 	"math"
+	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -177,6 +178,52 @@ func (s *StoneBlockSystem) land(b stoneBlock, target components.Cell, by uuid.UU
 	b.block.Sliding = true
 	b.block.FromX, b.block.FromY = b.at.X, b.at.Y
 	b.block.Slid, b.block.SlideFor = 0, slideFor
+}
+
+/*
+ShoveStoneBlock moves the stone block one cell along (dx, dy) at once, by's
+shove (Heave, FS-X2CMM §J R52): it lands as a walked push lands, sliding at
+the push speed of a delver at the walk's default speed, so the grid, the
+drift home, the pusher a plate credits and the plates follow it as after a
+walk. (dx, dy) is one step along one axis. False, and nothing moves, with no
+grid, when block is no stone block or still slides, or when the cell is one a
+push may not enter (refused).
+*/
+func ShoveStoneBlock(grid CellMask, block *ecs.Entity, dx, dy int, by uuid.UUID, entities []*ecs.Entity) bool {
+	s, b, target, ok := shoveOf(grid, block, dx, dy, entities)
+	if !ok {
+		return false
+	}
+	b.block.Pushed, b.block.Still = 0, 0
+	s.land(b, target, by, b.block.Size/(constants.DefaultSpeed*BlockPushSpeedShare))
+	return true
+}
+
+// StoneBlockShovable is whether ShoveStoneBlock would move the block, moving
+// nothing.
+func StoneBlockShovable(grid CellMask, block *ecs.Entity, dx, dy int, entities []*ecs.Entity) bool {
+	_, _, _, ok := shoveOf(grid, block, dx, dy, entities)
+	return ok
+}
+
+// shoveOf is a shove of block along (dx, dy) as the block system judges a
+// push: the system over grid, the block, the cell it lands on, and whether
+// the shove may go.
+func shoveOf(grid CellMask, block *ecs.Entity, dx, dy int, entities []*ecs.Entity) (*StoneBlockSystem, stoneBlock, components.Cell, bool) {
+	if grid == nil || block == nil || dx*dx+dy*dy != 1 {
+		return nil, stoneBlock{}, components.Cell{}, false
+	}
+	blocks := stoneBlocksOf(entities)
+	i := slices.IndexFunc(blocks, func(b stoneBlock) bool { return b.entity.ID == block.ID })
+	if i < 0 || blocks[i].block.Sliding {
+		return nil, stoneBlock{}, components.Cell{}, false
+	}
+	s, b := &StoneBlockSystem{grid: grid}, blocks[i]
+	target := components.Cell{X: b.piece.Cell.X + dx, Y: b.piece.Cell.Y + dy}
+	if s.refused(target, b, entities, blocks) {
+		return nil, stoneBlock{}, components.Cell{}, false
+	}
+	return s, b, target, true
 }
 
 /*
