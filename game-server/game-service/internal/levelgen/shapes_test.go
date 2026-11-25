@@ -55,7 +55,7 @@ func TestShapeCuts_EachShape(t *testing.T) {
 // R70: a shape a room is too small for cuts nothing and is never drawn; the
 // centre cell is never cut by a shape that fits.
 func TestShapeCuts_FitAndCentre(t *testing.T) {
-	shapes := append([]RoomShape{ShapeRectangle, ShapeCross, ShapePillared, ShapeCutCorners}, lShapes...)
+	shapes := allShapes()
 	for _, s := range shapes {
 		for w := 4; w <= 8; w++ {
 			for h := 4; h <= 7; h++ {
@@ -77,4 +77,13 @@ func TestShapeCuts_FitAndCentre(t *testing.T) {
 	if ShapeLNorthWest.Fits(4, 7) || ShapeCross.Fits(5, 7) || ShapePillared.Fits(6, 7) || ShapeCutCorners.Fits(8, 4) {
 		t.Error("a shape fits a room below its size")
 	}
+}
+
+// allShapes is every shape the table draws, each L corner its own.
+func allShapes() []RoomShape {
+	var out []RoomShape
+	for _, k := range shapeKinds {
+		out = append(out, k.shapes...)
+	}
+	return out
 }

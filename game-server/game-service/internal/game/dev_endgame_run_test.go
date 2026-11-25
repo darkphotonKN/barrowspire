@@ -208,9 +208,9 @@ func TestEnsureDarkWarrior(t *testing.T) {
 	}
 	assert.Equal(t, 1, recast, "a floor under the per still gets its one")
 
-	none := floorOf(0, components.MonsterArchetypeBloodTroll)
-	ensureDarkWarrior(seeded(), pool, 6, none)
-	assert.Empty(t, none, "a floor with no monster has a cap of 0 and keeps none")
+	assert.Zero(t, darkWarriorCap(0), "a floor with no monster has a cap of 0")
+	assert.Equal(t, 1, darkWarriorCap(DarkWarriorPer-1))
+	assert.Equal(t, DarkWarriorCapMax, darkWarriorCap(100*DarkWarriorPer))
 }
 
 // The run's hub gate stands at (160, 720), its arrival at (300, 720), and is

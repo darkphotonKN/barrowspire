@@ -142,6 +142,11 @@ func (s *Session) layTraps(depth int, d *dungeonFloor) {
 	if len(cells) < want {
 		slog.Warn("Floor short of trap ground", "sessionID", s.ID, "floor", depth, "want", want, "laid", len(cells))
 	}
+	if bare := d.bareTrapRooms(cells); len(bare) > 0 {
+		// the count ran out, or the half off the walk held a room on it bare
+		// (FS-KE075 §Change: Room variety R80, Edge States)
+		slog.Warn("Trap rooms left without a trap", "sessionID", s.ID, "floor", depth, "rooms", bare, "want", want)
+	}
 	for _, c := range cells {
 		at := d.cellCentre(c)
 		kind := components.TrapKinds[rng.IntN(len(components.TrapKinds))]
@@ -154,6 +159,18 @@ func (d *dungeonFloor) trapRooms(rng populationRand) []int {
 	rooms := d.roomsHolding(contentTrap)
 	shuffle(rng, rooms)
 	return rooms
+}
+
+// bareTrapRooms is the rooms that rolled a trap and hold none of cells.
+func (d *dungeonFloor) bareTrapRooms(cells []components.Cell) []int {
+	var bare []int
+	for _, room := range d.roomsHolding(contentTrap) {
+		region := d.roomRegion(room)
+		if !slices.ContainsFunc(cells, func(c components.Cell) bool { return d.region[c.Y*d.layout.Cols+c.X] == region }) {
+			bare = append(bare, room)
+		}
+	}
+	return bare
 }
 
 // trapSpaced is whether c stands at least TrapSpacingCells from every one of

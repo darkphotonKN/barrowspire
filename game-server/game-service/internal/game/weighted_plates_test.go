@@ -180,6 +180,9 @@ func TestWeightedPlates_PlacementSearch_PassesOnEverySeed(t *testing.T) {
 			}
 			require.Len(t, blocks, len(plates))
 			room := d.roomAt(fixtures.seals[0].pieces[0].at.x, fixtures.seals[0].pieces[0].at.y)
+			// a cell to spare, for a block laid beside a delver (FS-KE075
+			// §Change: Room variety, Edge States)
+			assert.Greater(t, len(d.plateFooting(room)), len(plates)+len(blocks), "floor %d seed %d: the footing keeps a cell to spare", depth, seed)
 			assert.True(t, d.platesCoverableIn(room, plates, blocks, d.roomEntry(room)),
 				"floor %d seed %d: every plate can be covered", depth, seed)
 		}
@@ -571,10 +574,12 @@ func TestPlateFooting_ShapedRoomsKeepClearOfTheirCuts(t *testing.T) {
 				continue
 			}
 			shaped++
+			// the room's floor as the layout grids it, read apart from onFloor
+			grid := d.layout.Grid()
 			for _, c := range d.plateFooting(room) {
 				for dy := -1; dy <= 1; dy++ {
 					for dx := -1; dx <= 1; dx++ {
-						assert.True(t, d.onFloor(room, c.X+dx, c.Y+dy), "seed %d: footing (%d, %d) of %s room %d is beside a cut", seed, c.X, c.Y, r.Shape, room)
+						assert.Equal(t, r.Region, grid[(c.Y+dy)*d.layout.Cols+c.X+dx], "seed %d: footing (%d, %d) of %s room %d is beside a cut", seed, c.X, c.Y, r.Shape, room)
 					}
 				}
 			}

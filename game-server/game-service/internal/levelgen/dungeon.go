@@ -57,6 +57,12 @@ type DungeonParams struct {
 // Span is a size in cells.
 type Span struct{ W, H int }
 
+// holds reports whether r is at least s either way round: its longer side at
+// least s's longer, its shorter at least s's shorter.
+func (s Span) holds(r CellRect) bool {
+	return max(r.W, r.H) >= max(s.W, s.H) && min(r.W, r.H) >= min(s.W, s.H)
+}
+
 // DungeonFloor1Params is floor 1's parameter set (FS-KE075 §A.2–6, §Change:
 // Room variety R62–R65), sealed (FS-5FZ4J §A): 60 x 40 cells of 80 px
 // (4 800 x 3 200 px), 16–22 rooms from 4x4 to 8x7, corridors 2–3 wide in
@@ -136,8 +142,8 @@ func (p DungeonParams) Validate() error {
 			p.StartMin, p.RoomWidth.Max, p.RoomHeight.Max)
 	case p.RetryLimit < 0:
 		return invalid("retry limit %d must not be negative", p.RetryLimit)
-	case p.PlainRooms < 0:
-		return invalid("plain rooms %d must not be negative", p.PlainRooms)
+	case p.PlainRooms < 0 || p.PlainMin.W < 0 || p.PlainMin.H < 0:
+		return invalid("plain rooms %d of at least %dx%d must not be negative", p.PlainRooms, p.PlainMin.W, p.PlainMin.H)
 	}
 	return nil
 }
@@ -325,10 +331,9 @@ func buildDungeon(p DungeonParams, rooms int, seed uint64) (DungeonLayout, error
 	tree, rest := connectionPairs(rects)
 	edges := make([]Edge, 0, len(tree)+extraEdges(p, rooms))
 	open := make([]bool, p.Cols*p.Rows)
-	inRoom := make([]bool, len(open))
 	for _, r := range rects {
 		for _, c := range rectCells(p.Cols, r) {
-			open[c], inRoom[c] = true, true
+			open[c] = true
 		}
 	}
 	for _, pr := range tree {
@@ -352,7 +357,7 @@ func buildDungeon(p DungeonParams, rooms int, seed uint64) (DungeonLayout, error
 	}
 
 	shapes := drawShapes(rng, rects, rectangularRooms(p, rng, rects, roles))
-	floor, cut := roomFloors(p.Cols, p.Rows, rects, shapes, carvedCells(p.Cols, len(open), rects, edges))
+	floor, cut := roomFloors(p.Cols, p.Rows, rects, shapes, corridorCarved(p.Cols, len(open), rects, edges))
 	corridor := make([]bool, len(open))
 	for c := range open {
 		open[c] = open[c] && !cut[c]
@@ -437,9 +442,9 @@ func drawEdge(p DungeonParams, rng *rand.Rand, pr [2]int, extra bool) Edge {
 	}
 }
 
-// carvedCells marks every cell the rooms' rects and the edges' corridors
-// open: the floor before any room is shaped.
-func carvedCells(cols, n int, rects []CellRect, edges []Edge) []bool {
+// corridorCarved marks every cell the edges' corridors carve, inside a room's
+// rect or out of it: the cells no shape may cut (R73).
+func corridorCarved(cols, n int, rects []CellRect, edges []Edge) []bool {
 	carved := make([]bool, n)
 	for _, e := range edges {
 		for _, c := range corridorCells(cols, rects[e.A], rects[e.B], e.Width, e.HorizontalFirst) {
@@ -464,8 +469,7 @@ func rectangularRooms(p DungeonParams, rng *rand.Rand, rects []CellRect, r roomR
 	}
 	var large []int
 	for i, rect := range rects {
-		long, short := max(rect.W, rect.H), min(rect.W, rect.H)
-		if !keep[i] && !slices.Contains(r.Treasure, i) && long >= max(p.PlainMin.W, p.PlainMin.H) && short >= min(p.PlainMin.W, p.PlainMin.H) {
+		if !keep[i] && !slices.Contains(r.Treasure, i) && p.PlainMin.holds(rect) {
 			large = append(large, i)
 		}
 	}

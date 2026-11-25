@@ -475,10 +475,18 @@ func TestDungeonPopulation_CorridorsHoldTheirCountOnePerSegment(t *testing.T) {
 		assert.LessOrEqual(t, total, CorridorMonstersMax, "seed %d", seed)
 		if total < CorridorMonstersMin {
 			assert.Len(t, standardMonstersIn(s), DungeonMonstersMax, "seed %d: corridors short of their count only when the total is trimmed", seed)
+			// an ordinary room gives up its second before a corridor gives up
+			// any, and keeps its one (FS-KE075 §Change: Room variety R79, R83)
+			held := map[int]int{}
 			for _, m := range floor1Monsters(t, s) {
 				ordinary := m.room >= 0 && m.room != d.layout.Roles.Start &&
 					!slices.Contains(d.layout.Roles.Treasure, m.room) && !eligibleHall(d, m.room)
-				assert.False(t, ordinary && !m.monster.Boss, "seed %d: corridors trimmed before an ordinary room", seed)
+				if ordinary && !m.monster.Boss {
+					held[m.room]++
+				}
+			}
+			for room, n := range held {
+				assert.Equal(t, 1, n, "seed %d room %d: corridors trimmed before an ordinary room's second", seed, room)
 			}
 		}
 	}

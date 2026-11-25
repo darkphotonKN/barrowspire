@@ -367,7 +367,7 @@ func everySeedValid(t *testing.T, p DungeonParams) {
 		minRooms, maxRooms = min(minRooms, n), max(maxRooms, n)
 	}
 	// R71, R76: every shape comes up, each L corner among them
-	for _, shape := range append([]RoomShape{ShapeRectangle, ShapeCross, ShapePillared, ShapeCutCorners}, lShapes...) {
+	for _, shape := range allShapes() {
 		if shapes[shape] == 0 {
 			t.Errorf("no room in %d seeds is shaped %s", seeds, shape)
 		}

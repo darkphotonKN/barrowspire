@@ -34,21 +34,22 @@ func validateDungeon(p DungeonParams, l DungeonLayout) error {
 	if err := checkShapes(p, l); err != nil {
 		return bad("shapes: %v", err)
 	}
-	// carved is every cell the rooms' rects and the corridors open, byCorridor
-	// the corridors' alone; the floor is carved less the shapes' cuts
-	carved := make([]bool, cols*rows)
+	// whole is every cell the rooms' rects and the corridors open, the floor
+	// before any room is shaped; byCorridor the corridors' alone; the floor is
+	// whole less the shapes' cuts
+	whole := make([]bool, cols*rows)
 	byCorridor := make([]bool, cols*rows)
 	for _, r := range rects {
 		for _, c := range rectCells(cols, r) {
-			carved[c] = true
+			whole[c] = true
 		}
 	}
 	for i, e := range l.Edges {
 		for _, c := range corridorCells(cols, rects[e.A], rects[e.B], e.Width, e.HorizontalFirst) {
-			if c < 0 || c >= len(carved) {
+			if c < 0 || c >= len(whole) {
 				return bad("edge %d carves off the grid", i)
 			}
-			carved[c], byCorridor[c] = true, true
+			whole[c], byCorridor[c] = true, true
 		}
 	}
 	shapes := make([]RoomShape, len(l.Rooms))
@@ -64,7 +65,7 @@ func validateDungeon(p DungeonParams, l DungeonLayout) error {
 	open := make([]bool, len(grid))
 	for c, id := range grid {
 		open[c] = id > 0
-		if want := carved[c] && !cut[c]; open[c] != want {
+		if want := whole[c] && !cut[c]; open[c] != want {
 			return bad("cell (%d, %d) walkable %v, want %v: the regions do not cover exactly the rooms' floors and the carved corridors",
 				c%cols, c/cols, open[c], want)
 		}
@@ -97,10 +98,10 @@ func validateDungeon(p DungeonParams, l DungeonLayout) error {
 
 	// the roles read the rooms whole, before they were shaped (R73): every
 	// corridor keeps its way through, so the cuts move no barrier
-	if err := checkRoles(p, l, rects, carved); err != nil {
+	if err := checkRoles(p, l, rects, whole); err != nil {
 		return bad("roles: %v", err)
 	}
-	if err := checkBarred(p, l, rects, carved, grid); err != nil {
+	if err := checkBarred(p, l, rects, whole, grid); err != nil {
 		return bad("barred rooms: %v", err)
 	}
 	start := rects[l.Roles.Start].centre()
@@ -178,7 +179,7 @@ func checkEdges(p DungeonParams, rooms []CellRect, edges []Edge) error {
 }
 
 // regionGrid requires region ids 1.. in order, rooms first and each exactly
-// its room's rect, then corridor segments that are 4-connected, at most
+// its room's floor (its rect less its shape's cuts, floor), then corridor segments that are 4-connected, at most
 // SegmentMax on the longer side and hold no room cell; no cell in two regions.
 // It returns the region id of every cell, 0 for rock.
 func regionGrid(p DungeonParams, l DungeonLayout, floor []int) ([]int, error) {
@@ -255,9 +256,7 @@ func checkShapes(p DungeonParams, l DungeonLayout) error {
 	}
 	large, plainLarge := 0, 0
 	for i, room := range l.Rooms {
-		long, short := max(room.Rect.W, room.Rect.H), min(room.Rect.W, room.Rect.H)
-		if !slices.Contains(plain, i) && !slices.Contains(r.Treasure, i) &&
-			long >= max(p.PlainMin.W, p.PlainMin.H) && short >= min(p.PlainMin.W, p.PlainMin.H) {
+		if !slices.Contains(plain, i) && !slices.Contains(r.Treasure, i) && p.PlainMin.holds(room.Rect) {
 			large++
 			if room.Shape == ShapeRectangle {
 				plainLarge++

@@ -10603,6 +10603,17 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     expect(placesOf(crowded.run)).toEqual(plan);
   });
 
+  it("should dress a room the floor map names quiet with a brazier, and the same room unnamed with none (FS-KE075 §Change: Room variety R85)", () => {
+    // the dungeon fixture's tower band is the lower: it strews no brazier of its own
+    const regionOf = (p: { x: number; y: number }) => grid.region(Math.floor(p.x / grid.cell), Math.floor(p.y / grid.cell));
+    const braziersIn = (run: unknown, id: number) =>
+      dressedOf(run).filter((d) => (d.piece as unknown as { sheet: string }).sheet === "brazier" && regionOf(d.piece.at) === id).length;
+    const rooms = grid.regions.filter((r) => r.kind === "room").map((r) => r.id);
+    const lit = rooms.find((id) => braziersIn(dungeonStage({}, {}, { map: { ...dungeonMap, quiet_rooms: [id] } as typeof dungeonMap }).run, id) > 0);
+    expect(lit).toBeDefined();
+    expect(braziersIn(dungeonStage().run, lit!)).toBe(0);
+  });
+
   it("should take a dressing piece away for good once a container is seen standing by it, its flame with it (review M1)", () => {
     const { run, handle, look, lights } = dungeonStage(everyRegion(), { containers: [] });
     const dressed = dressedOf(run);

@@ -23,8 +23,8 @@ const (
 	// contentRole: the start, stairs, switch, escape door, treasure, respite
 	// and hidden rooms, each holding what its role puts there
 	contentRole roomContent = iota
-	// contentClaimed: a room a seal's piece, the encounter or the cage key
-	// stands in, holding that and nothing rolled
+	// contentClaimed: a room a seal's piece, the encounter or the encounter's
+	// key on the ground stands in, holding that and nothing rolled
 	contentClaimed
 	// contentQuiet: dressing and light only
 	contentQuiet
@@ -48,11 +48,12 @@ const (
 )
 
 /**
-* planRoomContents gives every room of d its contents on a stream of the
-* layout's seed and depth (R77). Role and claimed rooms first; each other room
-* then rolls in room order.
+* planContents gives every room of d its contents on a stream of the layout's
+* seed and depth (R77). Role and claimed rooms first; each other room then
+* rolls in room order. The floor build calls it once its seals, respites and
+* encounter are planned, before anything reads a room's contents.
 **/
-func (s *Session) planRoomContents(d *dungeonFloor, depth int) {
+func (d *dungeonFloor) planContents(depth int) {
 	rng := rand.New(rand.NewPCG(d.layout.Seed^roomContentsStream, uint64(depth)))
 	d.contents = make([]roomContent, len(d.layout.Rooms))
 	for room := range d.layout.Rooms {
@@ -114,8 +115,14 @@ func (d *dungeonFloor) isClaimed(room int) bool {
 	return false
 }
 
-// content is what room holds, as planRoomContents gave it.
-func (d *dungeonFloor) content(room int) roomContent { return d.contents[room] }
+// content is what room holds, as planContents gave it. A floor whose contents
+// were never planned is a build out of order: it fails loudly.
+func (d *dungeonFloor) content(room int) roomContent {
+	if d.contents == nil {
+		panic("dungeon floor read before its room contents were planned")
+	}
+	return d.contents[room]
+}
 
 // roomsHolding is the rooms whose contents are c, in room order.
 func (d *dungeonFloor) roomsHolding(c roomContent) []int {
@@ -129,9 +136,9 @@ func (d *dungeonFloor) roomsHolding(c roomContent) []int {
 }
 
 // quietRegions is the region ids of the rooms that rolled quiet, for the floor
-// map (R84); none when no room did.
+// map (R84); empty, never nil, when no room did, so the wire carries [].
 func (d *dungeonFloor) quietRegions() []int {
-	var out []int
+	out := []int{}
 	for _, room := range d.roomsHolding(contentQuiet) {
 		out = append(out, d.roomRegion(room))
 	}

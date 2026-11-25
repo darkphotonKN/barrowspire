@@ -358,7 +358,8 @@ describe("planRoomDressing: a quiet room dressed for ambience (FS-KE075 §Change
     expect(plain.some((r) => r.area < r.rect.width * r.rect.height)).toBe(true);
   });
 
-  it("should dress a floor with no quiet room exactly as before", () => {
-    expect(planRoomDressing(lean, 41, statics, dressingRooms(grid, new Set()))).toEqual(planRoomDressing(lean, 41, statics, plain));
+  it("should light nothing on a band that strews no brazier when no room is quiet", () => {
+    // a floor of plain rooms with none quiet is pinned piece for piece above (FS-XK2B6 §D.14)
+    expect(planRoomDressing(lean, 41, statics, plain).filter((p) => p.sheet === "brazier")).toEqual([]);
   });
 });

@@ -827,7 +827,8 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
     - **role rooms** keep their roles and roll nothing: the start, stairs, switch, escape door and
       treasure rooms, the respite rooms (the fountain's and the merchant's) and every hidden room;
     - **claimed decision rooms** roll nothing either: a room holding a seal's piece (a lever, a
-      plate or its blocks, a brazier, a key or a bridge lever) and the encounter's room. A hidden
+      plate or its blocks, a brazier, a key or a bridge lever), the encounter's room, and the room
+      the encounter's key lies in when it lies on the ground (the Captives' cage key). A hidden
       room's secret door is its decision. *(charter default — reason: these keep their own
       per-floor draws, FS-5FZ4J and FS-4EC7Z; a second draw would double them)*
     - every other room is **ordinary** and rolls **quiet** (30%), **monsters** (40%) or a
@@ -863,9 +864,12 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
     reason: on the new rooms the floor's natural total is about 13 and its ceiling with every
     top-up about 17; held at 15, nearly every floor would top every monsters room to 2 and M3's
     "one or two" would be "two")* A floor still short once every monsters room is topped up to 2
-    turns its quiet rooms to monsters rooms, one at a time, drawn, until it reaches 8 or has none
-    left; the floor map then names it quiet no more. *(charter default — reason: measured, about 1
-    floor in 20 rolled too few monsters rooms to reach 8)* A floor holds at most one **Dark Warrior** per 8 of its monsters,
+    turns its rolled quiet rooms that are not halls to monsters rooms, one at a time, drawn, each
+    once a monster stands in it, until it reaches 8 or has none left; the floor map then names it
+    quiet no more. *(charter default — reason: measured, about 1 floor in 20 rolled too few
+    monsters rooms to reach 8; a hall would owe a hall pack, which a top-up never places)* A floor
+    over 18 trims a monster from a monsters room holding two first, so each keeps one (R79), then
+    from the corridors, then the packs as before. A floor holds at most one **Dark Warrior** per 8 of its monsters,
     from 12, and one on any floor with a monster, up to the cap of 4 as before (FS-C8VM7 §C R24).
     *(charter default — reason: at 12, a floor of 8–11 could hold none; at 8 the thinner floor keeps
     the one or two that 15–25 gave, and a floor short of 8 still keeps its one)*
@@ -878,7 +882,11 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
     that a room holds nothing, which a delver sees on entering)*
 85. **A quiet room is dressed for ambience**: twice its share of run dressing, and a brazier, a
     light, when one fits and the floor's brazier budget allows. No new sheet, no sound. *(charter,
-    M3)*
+    M3)* A band whose dressing sets no brazier budget of its own (the lower floors') lights at most
+    **3** quiet rooms a floor; a band that does keeps its own (the upper floors' 2). A room's share
+    of dressing is by its walkable cells, a shaped room's cut cells left out (R86). *(charter
+    default — reason: "dressed with existing props and light" needs a light the lower band never
+    strews; 3 keeps the fixed lights near the upper band's budget)*
 86. **Shapes need no new art.** Floor art, wall art, the wall shadows, fog and the minimap follow
     the region and wall cells: a notch is drawn as a wall run, a pillar as a wall cell standing on
     its own, with posts at its corners (FS-XK2B6 §B.8). Where a look falls short, a working look
@@ -904,8 +912,8 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
 - [ ] Every room is a role room, a claimed decision room or an ordinary room with one of quiet,
       monsters, trap, chest or sack; across many builds the ordinary rooms come out near 30 / 40 /
       30, and the decisions near 40 / 60.
-- [ ] No monster stands in a quiet, decision or non-treasure role room at the build; a monsters
-      room holds 1–2 (a top-up never past 2); a hall that rolled monsters holds a brute and 0–1
+- [ ] No rolled monster (a demon besides) stands in a quiet, decision or non-treasure role room at
+      the build; a monsters room holds 1–2 (a top-up never past 2, a trim never under 1); a hall that rolled monsters holds a brute and 0–1
       fodder; a treasure room 1–2 elites; corridors 1–3.
 - [ ] The floor's monsters besides a demon are 8–18 across many builds.
 - [ ] Every trap room off the walk to the gate holds a trap when the count allows; no trap lies in
@@ -939,9 +947,11 @@ quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
   floor): it is skipped and logged, as a container or a monster is today; the room keeps its roll.
 - **More trap rooms than traps.** The count wins: some trap rooms hold none, and the warning is
   logged as for short trap ground.
-- **Too few rooms roll monsters.** The top-up fills the monsters rooms to 2, then turns quiet rooms
-  to monsters one at a time (R83); with none left the floor stays under 8, logged (2 floors in 400
-  measured, at 7).
+- **Too few rooms roll monsters.** The top-up fills the monsters rooms to 2, then turns rolled quiet
+  rooms that are not halls to monsters one at a time (R83); with none left the floor stays under 8,
+  logged (2 floors in 400 measured, at 7).
+- **A demon in a quiet room.** The demon (R19) goes to a far room whatever it rolled; a quiet room it
+  stands in is still named quiet. It is not a rolled monster.
 - **A corridor too short for the pilgrims' wave** (FS-4EC7Z §B R7) on the smaller floor: the wave's
   walk goes on through the ground beyond it to the next corridor, and still stands only on corridor
   cells.

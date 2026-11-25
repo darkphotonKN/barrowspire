@@ -315,7 +315,7 @@ func seconds(secs float64) int { return int(math.Ceil(secs * float64(constants.G
 // FS-4EC7Z §B R7, Edge States: nothing starts while the party keeps away;
 // the first delver within 3 cells of a pilgrim starts the plea.
 func TestPilgrims_ThePleaOnApproach(t *testing.T) {
-	s, bodies := pilgrimsRun(t, 13, 1)
+	s, bodies := pilgrimsRun(t, 15, 1)
 	ticks(s, seconds(PilgrimWaveDelay+1))
 	assert.False(t, waveOf(t, s).Pleaded, "ignored, nothing starts")
 	assert.Empty(t, waveOf(t, s).Wave)
@@ -644,4 +644,52 @@ func TestPilgrims_ADelversSwingLeavesThemWhole(t *testing.T) {
 	tick(s)
 	assert.Equal(t, npcHealth(p).MaxHealth, npcHealth(p).CurrentHealth)
 	assert.False(t, systems.InPlay(p))
+}
+
+// FS-KE075 §Change: Room variety, Edge States: a corridor too short for the
+// wave leads its walk on through the ground beyond to the next corridor; it
+// still takes only corridor cells, none in the encounter's room.
+func TestPilgrims_TheWaveWalksOnPastAShortCorridor(t *testing.T) {
+	const k = 8
+	found := 0
+	for seed := uint64(1); seed <= 40 && found == 0; seed++ {
+		s, _ := pilgrimsRun(t, seed, 1)
+		d := s.dungeon
+		_, enc, _ := theEncounter(s)
+		barred := d.barrierCells()
+		for _, mouth := range d.roomOpenings(enc.Room) {
+			// the corridor cells the mouth reaches over corridor cells alone
+			seen, queue := map[int]bool{}, []int{}
+			for _, c := range mouth {
+				i := c.Y*d.layout.Cols + c.X
+				seen[i], queue = true, append(queue, i)
+			}
+			for q := 0; q < len(queue); q++ {
+				x, y := queue[q]%d.layout.Cols, queue[q]/d.layout.Cols
+				for _, n := range [4][2]int{{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}} {
+					if i, ok := d.corridorCell(n[0], n[1], barred); ok && !seen[i] {
+						seen[i], queue = true, append(queue, i)
+					}
+				}
+			}
+			if len(seen) >= k {
+				continue
+			}
+			found++
+			got := d.walkOut(enc.Room, mouth, k, barred, map[int]bool{}, func(int) float64 { return math.Inf(1) })
+			require.Len(t, got, k, "seed %d: the walk goes on to fill the wave", seed)
+			beyond := 0
+			for _, c := range got {
+				i := c.Y*d.layout.Cols + c.X
+				_, corridor := d.corridorCell(c.X, c.Y, barred)
+				assert.True(t, corridor, "seed %d: %v is a corridor cell", seed, c)
+				assert.NotEqual(t, d.roomRegion(enc.Room), d.region[i], "seed %d: never in the encounter's room", seed)
+				if !seen[i] {
+					beyond++
+				}
+			}
+			assert.Positive(t, beyond, "seed %d: some of the wave stands past the short corridor", seed)
+		}
+	}
+	require.Positive(t, found, "a seed gives an opening whose corridor is shorter than the wave")
 }

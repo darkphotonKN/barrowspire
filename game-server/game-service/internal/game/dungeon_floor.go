@@ -67,7 +67,11 @@ const containerPadding = 10.0
 // placements read it: the generator's output, plus each cell's region and
 // whether it is a doorway, and where its seals stand. It is built once per
 // floor, its seals found before it is published, and never written after, so
-// any goroutine may read it.
+// any goroutine may read it. One exception: the population, later in the same
+// build and under its buildMu, may turn a rolled quiet room's contents to
+// monsters (holdTotal); every reader of contents (the population, the
+// containers, the traps and the floor map) runs on that build, before the
+// floor map is published.
 type dungeonFloor struct {
 	layout levelgen.DungeonLayout
 	// region is each cell's region id, row by row; 0 is rock.
@@ -181,7 +185,7 @@ func (s *Session) generateDungeonFloor(depth, arriving int) (*dungeonFloor, dung
 		}
 		// what every other room holds, the claims above made (FS-KE075
 		// §Change: Room variety R77)
-		s.planRoomContents(d, depth)
+		d.planContents(depth)
 		slog.Debug("Dungeon floor generated",
 			"sessionID", s.ID, "floor", depth, "seed", seed, "attempt", layout.Attempt, "rooms", len(layout.Rooms))
 		return d, fixtures

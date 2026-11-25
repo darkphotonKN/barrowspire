@@ -271,9 +271,9 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   **pillared** or **cut corners**. A **cut cell** is not walkable; where it touches the floor it is
   shell wall, so a pillar is a wall cell standing on its own. Server-only: the client sees the cells.
 - **Room contents** — what a room holds, given when its floor is planned: a role room keeps its role;
-  a **claimed decision room** holds a seal's piece or the encounter; every other room is
-  **ordinary** and rolls **quiet**, **monsters** (one or two, or a hall's pack) or a **decision**
-  (a trap or a chest or sack). Not a room role.
+  a **claimed decision room** holds a seal's piece, the encounter or its key on the ground; every
+  other room is **ordinary** and rolls **quiet**, **monsters** (one or two, or a hall's pack) or a
+  **decision** (a trap or a chest or sack). Not a room role.
 - **Quiet room** — an ordinary room that rolled quiet: no monster, container or trap, only dressing
   and light. Named on the floor map (`quiet_rooms`). The build's wider "quiet rooms" set
   (`quietRooms`: plates, hidden, respite and encounter rooms, empty of rolled monsters and

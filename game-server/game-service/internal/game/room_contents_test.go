@@ -102,6 +102,9 @@ func TestRoomContents_ThePopulationContainersAndTrapsReadIt(t *testing.T) {
 				// what its role puts there, a hidden room's chest among it
 				assert.Zero(t, monsters[room], "seed %d room %d: a role room holds no rolled monster", seed, room)
 			case c == contentMonsters:
+				// one or two, a trim leaving one (R79); a hall's pack is a brute
+				// and 0-1
+				assert.GreaterOrEqual(t, monsters[room], 1, "seed %d room %d: a monsters room holds one at least", seed, room)
 				assert.LessOrEqual(t, monsters[room], RoomMonstersTopUpMax, "seed %d room %d: a monsters room", seed, room)
 				assert.Zero(t, containers[room], "seed %d room %d", seed, room)
 			case c == contentContainer:
@@ -131,16 +134,45 @@ func TestRoomContents_ThePopulationContainersAndTrapsReadIt(t *testing.T) {
 	})
 }
 
-// R84: the floor map names the rolled quiet rooms by region.
+// R83, R84: a floor whose rolls leave it short turns rolled quiet rooms to
+// monsters; the floor map names the rooms that are still quiet, and each
+// holds nothing: no monster, container or trap stands in it.
 func TestRoomContents_TheFloorMapNamesTheQuietRooms(t *testing.T) {
-	s, _ := dungeonRun(t, 3, 1, 0)
-	require.NotNil(t, s.dungeon)
-	msg := s.floorMap.Load()
-	require.NotNil(t, msg)
-	got, ok := msg.Payload["quiet_rooms"].([]int)
-	require.True(t, ok, "quiet_rooms on the floor map")
-	assert.Equal(t, s.dungeon.quietRegions(), got)
-	for _, region := range got {
-		assert.Equal(t, contentQuiet, s.dungeon.content(region-1))
-	}
+	turnedFloors := 0
+	contentFloors(t, 200, func(seed uint64, s *Session, d *dungeonFloor) {
+		// the rolls as planned, before the population turned any room
+		planned := *d
+		planned.contents = nil
+		planned.planContents(currentFloor(t, s).Depth)
+
+		msg := s.floorMap.Load()
+		require.NotNil(t, msg)
+		named, ok := msg.Payload["quiet_rooms"].([]int)
+		require.True(t, ok, "seed %d: quiet_rooms on the floor map", seed)
+		held := map[int]int{}
+		for _, e := range s.EntityManager.GetAllEntities() {
+			tc, ok := e.GetComponent(ecs.ComponentTypeTransform)
+			if !ok || !(e.HasComponent(ecs.ComponentTypeEnemy) && !monsterOf(e).Boss || e.HasComponent(ecs.ComponentTypeContainer) || e.HasComponent(ecs.ComponentTypeTrap)) {
+				continue
+			}
+			at := tc.(*components.TransformComponent)
+			held[d.regionAt(at.X, at.Y)]++
+		}
+		for _, region := range named {
+			assert.Zero(t, held[region], "seed %d region %d: a named quiet room holds nothing", seed, region)
+		}
+		turned := false
+		for room := range d.layout.Rooms {
+			if planned.content(room) == contentQuiet && d.content(room) == contentMonsters {
+				turned = true
+				assert.NotContains(t, named, d.roomRegion(room), "seed %d room %d: turned, it is named quiet no more", seed, room)
+				assert.Positive(t, held[d.roomRegion(room)], "seed %d room %d: a turned room holds its monster", seed, room)
+				assert.False(t, d.isHall(room), "seed %d room %d: a hall never turns", seed, room)
+			}
+		}
+		if turned {
+			turnedFloors++
+		}
+	})
+	require.Positive(t, turnedFloors, "some floor in the sweep turns a quiet room")
 }

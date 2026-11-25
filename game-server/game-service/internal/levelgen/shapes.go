@@ -1,6 +1,9 @@
 package levelgen
 
-import "math/rand/v2"
+import (
+	"math/rand/v2"
+	"slices"
+)
 
 /**
 * A room's shape is the set of cells of its rect that are cut: not walkable,
@@ -26,108 +29,110 @@ const (
 	ShapeCutCorners RoomShape = "cut_corners"
 )
 
-// lShapes are the four L shapes, one per notched corner, drawn evenly.
-var lShapes = []RoomShape{ShapeLNorthWest, ShapeLNorthEast, ShapeLSouthWest, ShapeLSouthEast}
-
-// shapeDraw is each shape's weight among those a room may take (R71); an L's
-// weight is shared by its four corners.
-var shapeDraw = []struct {
-	shape  RoomShape
+// shapeKind is one entry of the shape table (R69-R71): the shapes it draws
+// evenly once it is drawn (an L names the corner it is notched at), its
+// weight among the kinds a room may take, the smallest room it fits and the
+// cells it cuts from a w x h room through block, (x, y) its top-left in the
+// room's own cells. A new shape is a new entry.
+type shapeKind struct {
+	shapes []RoomShape
 	weight int
-}{
-	{ShapeRectangle, 10},
-	{ShapeLNorthWest, 20},
-	{ShapeCross, 15},
-	{ShapePillared, 15},
-	{ShapeCutCorners, 20},
+	least  Span
+	cut    func(s RoomShape, w, h int, block func(x, y, bw, bh int))
 }
 
-// isL reports whether s is one of the L shapes.
-func (s RoomShape) isL() bool {
-	switch s {
-	case ShapeLNorthWest, ShapeLNorthEast, ShapeLSouthWest, ShapeLSouthEast:
-		return true
-	}
-	return false
+var shapeKinds = []shapeKind{
+	{shapes: []RoomShape{ShapeRectangle}, weight: 10, least: Span{W: 1, H: 1},
+		cut: func(RoomShape, int, int, func(x, y, bw, bh int)) {}},
+	{shapes: []RoomShape{ShapeLNorthWest, ShapeLNorthEast, ShapeLSouthWest, ShapeLSouthEast}, weight: 20, least: Span{W: 5, H: 5},
+		cut: func(s RoomShape, w, h int, block func(x, y, bw, bh int)) {
+			bw, bh := (w-1)/2, (h-1)/2
+			x, y := 0, 0
+			if s == ShapeLNorthEast || s == ShapeLSouthEast {
+				x = w - bw
+			}
+			if s == ShapeLSouthWest || s == ShapeLSouthEast {
+				y = h - bh
+			}
+			block(x, y, bw, bh)
+		}},
+	{shapes: []RoomShape{ShapeCross}, weight: 15, least: Span{W: 6, H: 6},
+		cut: func(_ RoomShape, w, h int, block func(x, y, bw, bh int)) {
+			bw, bh := w/3, h/3
+			for _, c := range [4][2]int{{0, 0}, {w - bw, 0}, {0, h - bh}, {w - bw, h - bh}} {
+				block(c[0], c[1], bw, bh)
+			}
+		}},
+	{shapes: []RoomShape{ShapePillared}, weight: 15, least: Span{W: 7, H: 6},
+		cut: func(_ RoomShape, w, h int, block func(x, y, bw, bh int)) {
+			at := func(side int) [2]int {
+				if side <= 6 {
+					return [2]int{1, side - 2}
+				}
+				return [2]int{2, side - 3}
+			}
+			for _, x := range at(w) {
+				for _, y := range at(h) {
+					block(x, y, 1, 1)
+				}
+			}
+		}},
+	{shapes: []RoomShape{ShapeCutCorners}, weight: 20, least: Span{W: 5, H: 5},
+		cut: func(_ RoomShape, w, h int, block func(x, y, bw, bh int)) {
+			for _, c := range [4][2]int{{0, 0}, {w - 1, 0}, {0, h - 1}, {w - 1, h - 1}} {
+				block(c[0], c[1], 1, 1)
+				if w >= 6 && h >= 6 {
+					dx, dy := 1, 1
+					if c[0] > 0 {
+						dx = -1
+					}
+					if c[1] > 0 {
+						dy = -1
+					}
+					block(c[0]+dx, c[1], 1, 1)
+					block(c[0], c[1]+dy, 1, 1)
+				}
+			}
+		}},
 }
+
+// kindOf is the table's entry that draws s; false for no shape.
+func kindOf(s RoomShape) (shapeKind, bool) {
+	for _, k := range shapeKinds {
+		if slices.Contains(k.shapes, s) {
+			return k, true
+		}
+	}
+	return shapeKind{}, false
+}
+
+// fits reports whether k fits a room of w x h cells.
+func (k shapeKind) fits(w, h int) bool { return w >= k.least.W && h >= k.least.H }
 
 // Fits reports whether a room of w x h cells may take s (R70): an L and cut
 // corners at least 5 x 5, a cross 6 x 6, pillared 7 x 6, a hall; a
 // rectangle anything.
 func (s RoomShape) Fits(w, h int) bool {
-	switch {
-	case s == ShapeRectangle:
-		return true
-	case s.isL(), s == ShapeCutCorners:
-		return w >= 5 && h >= 5
-	case s == ShapeCross:
-		return w >= 6 && h >= 6
-	case s == ShapePillared:
-		return w >= 7 && h >= 6
-	}
-	return false
+	k, ok := kindOf(s)
+	return ok && k.fits(w, h)
 }
 
 // shapeCuts lists the cells s cuts from a w x h room, in the room's own cells,
 // (0, 0) its top-left, row by row (R69). None for a shape the size does not
 // fit.
 func shapeCuts(s RoomShape, w, h int) []Cell {
-	if !s.Fits(w, h) {
+	k, ok := kindOf(s)
+	if !ok || !k.fits(w, h) {
 		return nil
 	}
 	cut := make([]bool, w*h)
-	block := func(x0, y0, bw, bh int) {
+	k.cut(s, w, h, func(x0, y0, bw, bh int) {
 		for y := y0; y < y0+bh; y++ {
 			for x := x0; x < x0+bw; x++ {
 				cut[y*w+x] = true
 			}
 		}
-	}
-	switch {
-	case s.isL():
-		bw, bh := (w-1)/2, (h-1)/2
-		x0, y0 := 0, 0
-		if s == ShapeLNorthEast || s == ShapeLSouthEast {
-			x0 = w - bw
-		}
-		if s == ShapeLSouthWest || s == ShapeLSouthEast {
-			y0 = h - bh
-		}
-		block(x0, y0, bw, bh)
-	case s == ShapeCross:
-		bw, bh := w/3, h/3
-		block(0, 0, bw, bh)
-		block(w-bw, 0, bw, bh)
-		block(0, h-bh, bw, bh)
-		block(w-bw, h-bh, bw, bh)
-	case s == ShapePillared:
-		at := func(side int) [2]int {
-			if side <= 6 {
-				return [2]int{1, side - 2}
-			}
-			return [2]int{2, side - 3}
-		}
-		for _, x := range at(w) {
-			for _, y := range at(h) {
-				block(x, y, 1, 1)
-			}
-		}
-	case s == ShapeCutCorners:
-		for _, c := range [4][2]int{{0, 0}, {w - 1, 0}, {0, h - 1}, {w - 1, h - 1}} {
-			block(c[0], c[1], 1, 1)
-			if w >= 6 && h >= 6 {
-				dx, dy := 1, 1
-				if c[0] > 0 {
-					dx = -1
-				}
-				if c[1] > 0 {
-					dy = -1
-				}
-				block(c[0]+dx, c[1], 1, 1)
-				block(c[0], c[1]+dy, 1, 1)
-			}
-		}
-	}
+	})
 	var out []Cell
 	for i, c := range cut {
 		if c {
@@ -137,27 +142,28 @@ func shapeCuts(s RoomShape, w, h int) []Cell {
 	return out
 }
 
-// drawShape draws a w x h room's shape from those it may take, by weight
-// (R71).
+// drawShape draws a w x h room's shape (R71): a kind from those that fit, by
+// weight, then one of its shapes evenly, an L's corner (a draw only when the
+// kind has more than one).
 func drawShape(rng *rand.Rand, w, h int) RoomShape {
 	total := 0
-	for _, d := range shapeDraw {
-		if d.shape.Fits(w, h) {
-			total += d.weight
+	for _, k := range shapeKinds {
+		if k.fits(w, h) {
+			total += k.weight
 		}
 	}
 	pick := rng.IntN(total)
-	for _, d := range shapeDraw {
-		if !d.shape.Fits(w, h) {
+	for _, k := range shapeKinds {
+		if !k.fits(w, h) {
 			continue
 		}
-		if pick < d.weight {
-			if d.shape.isL() {
-				return lShapes[rng.IntN(len(lShapes))]
+		if pick < k.weight {
+			if len(k.shapes) > 1 {
+				return k.shapes[rng.IntN(len(k.shapes))]
 			}
-			return d.shape
+			return k.shapes[0]
 		}
-		pick -= d.weight
+		pick -= k.weight
 	}
 	return ShapeRectangle
 }
