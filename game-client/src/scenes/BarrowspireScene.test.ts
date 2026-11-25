@@ -38,6 +38,7 @@ vi.mock("phaser", async () => (await import("./phaser.standin")).phaserStandIn()
 
 const { BarrowspireScene, keepBodySize, projectileFlightOf, TOP_RIGHT_EDGE } = await import("./BarrowspireScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
+const { ChunkVisibility } = await import("@/render/world/chunks");
 const { anchorAt, viewport } = await import("@/render/viewport");
 const { EffectsRuntime } = await import("@/render/effects/runtime");
 const { HitFeedback } = await import("@/render/effects/hit");
@@ -61,7 +62,7 @@ const { RIPOSTE_MS } = await import("@/render/effects/riposte");
 const { ArtLibrary } = await import("@/render/art/library");
 const { HoundSet, MonsterRoster, phaserHoundStage } = await import("@/render/creatures");
 const { TRAIL_BED_DEPTH } = await import("@/render/world");
-const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
+const { MARKER_BAR, MARKER_DEPTH, markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
 const { ARRIVAL_CARD } = await import("@/ui/arrivalCard");
@@ -84,6 +85,7 @@ const await_resourceHud = await import("@/ui/ResourceHud");
 const await_partyFramesLayout = await import("@/ui/partyFramesLayout");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
+const { TRAP_FAINT } = await import("@/render/world/sealLooks");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
 const { useGameStore } = await import("@/stores/gameStore");
 const { mountGearPieces } = await import("@/ui/gearPieces");
@@ -1885,6 +1887,15 @@ describe("BarrowspireScene teammate health bars, switched on (FS-8AY7S req 27, 2
     expect(drawn(bar("ally")!.graphics)).not.toContain("fillRect");
   });
 
+  // FS-5FZ4J §J R55 (I-5FZ4J-10)
+  it("should draw a poisoned teammate's health fill in the poison tint while poisoned_for is set, and health's own after", () => {
+    const { run, bar } = barsOnStage();
+    run.handleGameStateUpdate(partyState(undefined, { ...player("ally", "Wenna", 160), poisoned_for: 4 } as ReturnType<typeof player>));
+    expect(bar("ally")!.graphics.last.fillStyle).toEqual([palette.poisoned, 1]);
+    run.handleGameStateUpdate(partyState());
+    expect(bar("ally")!.graphics.last.fillStyle).toEqual([MARKER_BAR.hp, 1]);
+  });
+
   it("should forget every bar on a restart", () => {
     const { run, bars } = barsOnStage();
     run.handleGameStateUpdate(partyState());
@@ -2596,6 +2607,20 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
     expect(label("Mana:")!.args[1] as number).toBeGreaterThan(label("Health:")!.args[1] as number);
   });
 
+  // FS-5FZ4J §J R55 (I-5FZ4J-10)
+  it("should hand the HUD the health bar poisoned while poisoned_for is set, and plain once it runs out", () => {
+    const { run } = barsOnStage();
+    const hud = vi.spyOn((run as unknown as { ui: { hud(m: unknown): void } }).ui, "hud");
+    const healthOf = () => {
+      const bars = hud.mock.calls.map(([m]) => m as { kind: string; bars?: { channel: string; poisoned?: boolean }[] }).filter((m) => m.kind === "bars");
+      return bars.at(-1)?.bars?.find((b) => b.channel === "health");
+    };
+    run.handleGameStateUpdate(withMe({ ...me(), poisoned_for: 3 } as ReturnType<typeof me>));
+    expect(healthOf()?.poisoned).toBe(true);
+    run.handleGameStateUpdate(withMe(me()));
+    expect(healthOf()?.poisoned).toBeUndefined();
+  });
+
   it("should label a stamina resource Stamina:, and parry charges Parry:", () => {
     const { run, labels } = barsOnStage();
     run.handleGameStateUpdate(withMe(me({ resource: { kind: "stamina", current: 5, max: 10, ability_cost: 5 } })));
@@ -2968,7 +2993,8 @@ describe("BarrowspireScene ability bar (FS-Q18Q3 §E, §G, §L)", () => {
     });
     run.handleGameStateUpdate(withMe(me()));
     expect(kinds).toContain("bar");
-    expect(kinds.filter((k) => !["bars", "bar", "progress"].includes(k))).toEqual([]);
+    // the status marks beside the health bar are the HUD's too (FS-5FZ4J §J R55)
+    expect(kinds.filter((k) => !["bars", "bar", "progress", "statusMarks"].includes(k))).toEqual([]);
     expect(JSON.parse(JSON.stringify(bar))).toEqual(bar);
     expect(bar).toMatchObject({ potion: { count: 0, greyed: true } });
   });
@@ -10399,12 +10425,21 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
   function dungeonStage(
     party: Partial<Party> = {},
     extra: Partial<GameState> = {},
-    { late = false, without }: { late?: boolean; without?: string } = {},
+    {
+      late = false,
+      without,
+      map = dungeonMap,
+      arrival = false,
+      spy,
+    }: { late?: boolean; without?: string; map?: typeof dungeonMap; arrival?: boolean; spy?: (run: unknown) => void } = {},
   ) {
     const scene = sceneOnStage();
     const { stage } = scene;
     const run = scene.run as unknown as DungeonRun;
     run.worldLook = WORLD_THEMES.tower;
+    // a start that is an arrival (FS-PQ2TW R8), not a return; and what a test watches before the first broadcast
+    (run as unknown as { arrival: boolean }).arrival = arrival;
+    spy?.(run);
     // `without`: the manifest's sheets whose name starts so are missing (a bake without them)
     const sheets = Object.fromEntries(Object.entries(manifest.sheets).filter(([name]) => !without || !name.startsWith(without)));
     run.art = new ArtLibrary({ ...manifest, sheets }, { warn: () => {} });
@@ -10433,7 +10468,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       (run as unknown as { subscribeFloorMap(): void }).subscribeFloorMap();
       handle({ ...dungeonState(party), ...extra });
     }
-    useGameStore.getState().receiveFloorMap(dungeonMap as never);
+    useGameStore.getState().receiveFloorMap(map as never);
     if (!late) handle({ ...dungeonState(party), ...extra });
     /** Looks at a screen point: the camera's view centred on it, and what stands near it shown. */
     const look = (x: number, y: number) => {
@@ -10561,18 +10596,18 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       const fs = await_iso.worldToScreen(p.x, p.y);
       look(fs.x, fs.y);
       handle({ ...dungeonState(everyRegion()), containers: [chestAt("x1", piece.piece.at), chestAt("x2", p)] });
-      const floor = (run as unknown as { dungeon: { lights: { light: { source: unknown } }[] } }).dungeon;
-      expect(floor.lights.some((l) => flamed.lights.includes(l.light.source))).toBe(false);
+      const floor = (run as unknown as { dungeon: { lights: { all: { light: { source: unknown } }[] } } }).dungeon;
+      expect(floor.lights.all.some((l) => flamed.lights.includes(l.light.source))).toBe(false);
       expect(lights.some((l) => flamed.lights.includes(l))).toBe(false);
     }
   });
 
   it("should light a dungeon floor's interactables in its chunks, under the fog, when its map comes after its first snapshot (review M2)", () => {
     const { run } = dungeonStage(everyRegion(), {}, { late: true });
-    const floor = (run as unknown as { dungeon: { lights: { kind: string }[] }; hallLights: unknown[]; builtFloor?: number }).dungeon;
+    const floor = (run as unknown as { dungeon: { lights: { all: { kind: string }[] } }; hallLights: unknown[]; builtFloor?: number }).dungeon;
     expect((run as unknown as { builtFloor?: number }).builtFloor).toBe(1);
     // the chest's and the switch's pools wait in their chunks with the floor's other fixed lights
-    expect(floor.lights.filter((l) => l.kind === "interactable").length).toBeGreaterThanOrEqual(2);
+    expect(floor.lights.all.filter((l) => l.kind === "interactable").length).toBeGreaterThanOrEqual(2);
     // none was stamped as a light of the halls before the floor stood
     expect((run as unknown as { hallLights: unknown[] }).hallLights).toEqual([]);
   });
@@ -10860,7 +10895,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     type EdgedRun = DungeonRun & {
       currentFloorLook(): { seed: number; walls: import("@/render/world/walls").WallSheets };
       occluders: { size: number; items: { sprite: Made }[] };
-      dungeon: { lights: { kind: string; region: number; light: { at?: Point } }[] };
+      dungeon: { lights: { all: { kind: string; region: number; light: { at?: Point } }[] } };
     };
     /** The floor's walls as the plan cuts them, in the look the staged floor has. */
     const planned = (run: EdgedRun) => {
@@ -10895,7 +10930,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     it("should queue a wall light where its piece stands, for the region its edge faces: only a room's", () => {
       const { run } = dungeonStage();
       const { plan, look } = planned(run as EdgedRun);
-      const lights = (run as EdgedRun).dungeon.lights.filter((l) => l.kind === "sconce");
+      const lights = (run as EdgedRun).dungeon.lights.all.filter((l) => l.kind === "sconce");
       const want: { at: Point; region: number }[] = [];
       for (const edge of plan.runs)
         for (const p of dungeonWalls({ edges: [], runs: [edge], posts: [] }, grid, look.seed, look.walls).pieces) {
@@ -10953,8 +10988,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       dungeon?: {
         seen: Seen;
         fog?: InstanceType<typeof FogClass>;
-        lit: Set<unknown>;
-        lights: { light: { source: unknown }; region: number }[];
+        lights: { all: { light: { source: unknown }; region: number }[]; lit: ReadonlySet<unknown> };
       };
       chests: Map<string, { sprite: Made }>;
       escapeDoors: Map<string, { sprite: Made }>;
@@ -11027,12 +11061,12 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       const { x, y } = await_iso.worldToScreen(2560, 3080);
       look(x, y);
       const dungeon = run.dungeon!;
-      const lit = dungeon.lights.filter((l) => dungeon.lit.has(l.light.source));
+      const lit = dungeon.lights.all.filter((l) => dungeon.lights.lit.has(l.light.source));
       for (const l of lit) expect(l.region === 0 || dungeon.seen.state(l.region) === "visible").toBe(true);
       // the same view with every region visible lights more
       const all = stageIn({ ...inRoom, ...everyRegion() });
       all.look(x, y);
-      expect(all.run.dungeon!.lit.size).toBeGreaterThan(dungeon.lit.size);
+      expect(all.run.dungeon!.lights.lit.size).toBeGreaterThan(dungeon.lights.lit.size);
     });
 
     it("should draw the fog at the blackout's depth, redraw it only when a region's state changes, and take it down with the floor", () => {
@@ -12339,6 +12373,436 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
 
     });
   });
+
+  // FS-5FZ4J §J R51–R53, R56 (I-5FZ4J-9): a sealed floor's pieces, gate and pits, E at them, and its lines
+  describe("a sealed floor (FS-5FZ4J §J)", () => {
+    interface SealedRun {
+      checkBuildingStatus(): void;
+      showNotification(text: string, backing: number): void;
+      bindRunInput(): void;
+      seal: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      ui: { hud(message: unknown): void };
+    }
+    /** This client's player in room 1, at (2560, 3080). */
+    const ME = at(2560, 3080);
+    const inRoom = { current_player: { ...player("me", "Aldric", 0), position: ME } } as Partial<Party>;
+    const cellAt = (x: number, y: number) => at((x + 0.5) * 80, (y + 0.5) * 80);
+    const lever = (active = false) => ({ entity_id: "lever-1", kind: "lever", position: ME, cell: { x: 32, y: 38 }, glyph: "crow", active });
+    /** A mural far off, by the stairs, in a region the party has not seen. */
+    const mural = { entity_id: "mural-1", kind: "mural", position: at(1000, 1200), cell: { x: 12, y: 15 }, active: false };
+    const gate = { entity_id: "gate-1", kind: "gate", cells: [{ x: 30, y: 37 }], open: false };
+    const sealOf = (over: Partial<NonNullable<GameState["seal"]>> = {}) => ({ kind: "lever_order", stage: 1, stages: 1, broken: false, ...over });
+    const sealed = (over: Partial<GameState> = {}): Partial<GameState> => ({
+      seal: sealOf(),
+      seal_pieces: [lever(), mural],
+      barriers: [gate],
+      ...over,
+    });
+    const sealedStage = () => {
+      const staged = dungeonStage(inRoom, sealed());
+      const run = staged.run as unknown as SealedRun;
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      const next = (over: Partial<GameState> = {}) => staged.handle({ ...dungeonState(inRoom), ...sealed(over) });
+      return { ...staged, run, notified, next };
+    };
+
+    it("should draw each piece and gate cell from the sealed sheets in the frame its state names", () => {
+      const { stage, next } = sealedStage();
+      expect(drawn(stage.made, "seal_lever/up/")).toHaveLength(1);
+      expect(drawn(stage.made, "seal_lever/glyph_crow/")).toHaveLength(1);
+      expect(drawn(stage.made, "mural/default/")).toHaveLength(1);
+      const [shut] = drawn(stage.made, "gate_");
+      expect(String(shut.args[3])).toMatch(/^gate_[xy]\/shut\//);
+      const { x, y } = await_iso.worldToScreen(cellAt(30, 37).x, cellAt(30, 37).y);
+      expect(shut.args.slice(0, 2)).toEqual([x, y]);
+      next({ seal_pieces: [lever(true), mural], barriers: [{ ...gate, open: true }] });
+      const [pulled] = drawn(stage.made, "seal_lever/up/");
+      expect(String(pulled.last.setTexture?.[1])).toMatch(/^seal_lever\/down\//);
+      expect(String(shut.last.setTexture?.[1])).toMatch(/^gate_[xy]\/open\//);
+    });
+
+    it("should hide a piece standing in an unexplored region, and show the one where the player stands", () => {
+      const { run } = sealedStage();
+      run.checkBuildingStatus();
+      const shown = run.seal.placed().map(({ sprite, pos }) => [pos.x === ME.x ? "here" : pos.x === 1000 ? "far" : "gate", shownNow(sprite)]);
+      expect(shown).toContainEqual(["here", true]);
+      expect(shown).toContainEqual(["far", false]);
+    });
+
+    it("should send one interact for the lever E reaches", () => {
+      const { run } = sealedStage();
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos: ME,
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+      sent.mockRestore();
+      expect(interacts).toEqual([[ActionType.Interact, { entity_id: "lever-1" }]]);
+    });
+
+    // the review's fix round 1: E reaches the nearest of a seal piece, a respite and a chest
+    it("should send the interact for the nearest in reach of a seal piece, the hallowed altar and a chest", () => {
+      const pressAt = (playerPos: { x: number; y: number }) => {
+        const staged = dungeonStage(inRoom, sealed({ containers: [chestAt("chest-1", at(ME.x + 50, ME.y))], hallowed_altar: { entity_id: "altar-1", position: at(ME.x, ME.y + 50), prayed: false } }));
+        const run = staged.run as unknown as SealedRun;
+        const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+        const keyHandlers: Record<string, () => void> = {};
+        Object.assign(run, {
+          input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+          playerPos,
+        });
+        run.bindRunInput();
+        keyHandlers["keydown-E"]();
+        const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact).map(([, p]) => (p as { entity_id: string }).entity_id);
+        sent.mockRestore();
+        return interacts;
+      };
+      // the lever stands where ME is, the chest 50 px east, the altar 50 px south
+      expect(pressAt(at(ME.x + 40, ME.y))).toEqual(["chest-1"]);
+      expect(pressAt(at(ME.x, ME.y + 40))).toEqual(["altar-1"]);
+      expect(pressAt(at(ME.x + 5, ME.y + 5))).toEqual(["lever-1"]);
+    });
+
+    // the review's fix round 1: floor 1's seal was never said
+    it("should name the floor's seal on an arrival's first broadcast, and nothing on a return's (R53)", () => {
+      const said = (arrival: boolean) => {
+        const lines: unknown[][] = [];
+        dungeonStage(inRoom, sealed({ seal: sealOf({ kind: "weighted_plates" }) }), {
+          arrival,
+          spy: (run) => void vi.spyOn(run as SealedRun, "showNotification").mockImplementation((...a) => void lines.push(a)),
+        });
+        return lines;
+      };
+      expect(said(true)).toEqual([["The stairs are sealed: Weighted Plates.", palette.hudPanel]]);
+      expect(said(false)).toEqual([]);
+    });
+
+    // the review's fix round 1: one owner of the floor's lights, and no flame held for a piece gone
+    it("should light a lit seal brazier among the floor's lights as a brazier, and forget its flame once the piece goes", () => {
+      const brazier = (active: boolean) => ({ entity_id: "brazier-1", kind: "brazier", position: ME, cell: { x: 32, y: 38 }, active });
+      const { run, next } = sealedStage();
+      const floor = run as unknown as { dungeon: { lights: { all: readonly { kind: string; light: { at?: { x: number } } }[] } }; sealLights: Map<unknown, unknown> };
+      next({ seal_pieces: [brazier(true)] });
+      expect(floor.dungeon.lights.all.filter((l) => l.light.at?.x === ME.x).map((l) => l.kind)).toEqual(["brazier"]);
+      expect(floor.sealLights.size).toBe(1);
+      next({ seal_pieces: [] });
+      expect(floor.dungeon.lights.all.filter((l) => l.light.at?.x === ME.x)).toEqual([]);
+      expect(floor.sealLights.size).toBe(0);
+    });
+
+    it("should say the seal breaks on the broadcast it breaks, and nothing on the first", () => {
+      const { notified, next } = sealedStage();
+      expect(notified).not.toHaveBeenCalled();
+      next({ seal: sealOf({ broken: true }) });
+      next({ seal: sealOf({ broken: true }) });
+      expect(notified.mock.calls).toEqual([["The seal breaks.", palette.safe]]);
+    });
+
+    it("should hand the HUD the Braziers window's countdown while it runs, and none once it ends", () => {
+      const { run, next } = sealedStage();
+      const hud = vi.spyOn(run.ui, "hud");
+      next({ seal: sealOf({ kind: "braziers", window_ends_in: 10 }) });
+      next({ seal: sealOf({ kind: "braziers" }) });
+      const windows = hud.mock.calls.map(([m]) => m as { kind: string; window?: unknown }).filter((m) => m.kind === "window");
+      expect(windows.map((m) => m.window)).toEqual([{ seconds: 10, fraction: 1 }, null]);
+    });
+  });
+
+  // FS-5FZ4J §J R51, R52, R54, R56 (I-5FZ4J-10): traps, a secret door and its hidden room, the floor map re-sent
+  describe("traps and a secret door (FS-5FZ4J §J)", () => {
+    type Region = (typeof dungeonMap.regions)[number];
+    interface HiddenRun {
+      bindRunInput(): void;
+      showNotification(text: string, backing: number): void;
+      dungeon: { grid: InstanceType<typeof RegionGrid>; seen: { state(id: number): string }; minimap?: unknown };
+      timedOpen?: { label?: Made };
+    }
+    /** This client's player in room 1, at (2560, 3080). */
+    const ME = at(2560, 3080);
+    const inRoom = (p = ME) => ({ current_player: { ...player("me", "Aldric", 0), position: p } }) as Partial<Party>;
+    /** The hidden room: room 25, and the door the corridor cells next to it (4-adjacent), as the server's barrier. */
+    const HIDDEN = 25;
+    const cellsOf = (r: Region) => r.cells.flatMap((c) => Array.from({ length: c.w * c.h }, (_, i) => ({ x: c.x + (i % c.w), y: c.y + Math.floor(i / c.w) })));
+    const room = dungeonMap.regions.find((r) => r.id === HIDDEN)!;
+    const roomCells = new Set(cellsOf(room).map((c) => `${c.x},${c.y}`));
+    const doorCells = dungeonMap.regions
+      .filter((r) => r.kind === "corridor")
+      .flatMap(cellsOf)
+      .filter((c) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => roomCells.has(`${c.x + dx},${c.y + dy}`)));
+    const doorKeys = new Set(doorCells.map((c) => `${c.x},${c.y}`));
+    /** The floor's map with the door shut: the room left out, the door's cells cut from their corridor (FS-5FZ4J §F R37). */
+    const shutMap = {
+      ...dungeonMap,
+      regions: dungeonMap.regions
+        .filter((r) => r.id !== HIDDEN)
+        .map((r) => (r.kind !== "corridor" ? r : { ...r, cells: cellsOf(r).filter((c) => !doorKeys.has(`${c.x},${c.y}`)).map((c) => ({ ...c, w: 1, h: 1 })) })),
+    };
+    const door = (open = false) => ({ entity_id: "door-1", kind: "secret_door", cells: doorCells, open });
+    const trap = (over: Record<string, unknown> = {}) => ({ entity_id: "trap-1", kind: "spike_plate", cell: { x: 32, y: 38 }, armed: true, revealed: false, ...over });
+    const hiddenStage = (party = inRoom()) => {
+      const staged = dungeonStage(party, { barriers: [door()] }, { map: shutMap });
+      const run = staged.run as unknown as HiddenRun;
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      return { ...staged, run, notified };
+    };
+
+    it("should find the hidden room's door: corridor cells beside the room", () => {
+      expect(doorCells.length).toBeGreaterThan(0);
+    });
+
+    it("should draw a listed trap faint, and play its spring once when armed falls", () => {
+      const { stage, handle } = hiddenStage();
+      handle({ ...dungeonState(inRoom()), traps: [trap()] } as GameState);
+      const [drawnTrap] = drawn(stage.made, "trap_spike_plate/armed/");
+      expect(drawnTrap.last.setAlpha?.[0]).toBe(TRAP_FAINT);
+      handle({ ...dungeonState(inRoom()), traps: [trap({ armed: false })] } as GameState);
+      expect(String(drawnTrap.last.setTexture?.[1])).toMatch(/^trap_spike_plate\/sprung\//);
+      expect(drawnTrap.last.setAlpha?.[0]).toBe(1);
+      handle({ ...dungeonState(inRoom()), traps: [] } as GameState);
+      expect(drawnTrap.destroyed).toBe(true);
+    });
+
+    it("should draw the shut door's cell as wall with the cracks laid over it, and none where the map is whole", () => {
+      const { stage } = hiddenStage();
+      const cracks = drawn(stage.made, "secret_cracks/");
+      expect(cracks.length).toBeGreaterThan(0);
+      for (const c of cracks) {
+        const w = await_iso.screenToWorld(c.args[0] as number, c.args[1] as number);
+        expect(doorKeys.has(`${Math.floor(w.x / 80)},${Math.floor(w.y / 80)}`)).toBe(true);
+      }
+    });
+
+    it("should send one interact for the secret door E reaches, the Search (R52)", () => {
+      const { run } = hiddenStage();
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      // on a corridor cell beside the door's first cell
+      const beside = doorCells
+        .flatMap((c) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: c.x + dx, y: c.y + dy })))
+        .find((c) => run.dungeon.grid.walkable(c.x, c.y))!;
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos: at((beside.x + 0.5) * 80, (beside.y + 0.5) * 80),
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+      sent.mockRestore();
+      expect(interacts).toEqual([[ActionType.Interact, { entity_id: "door-1" }]]);
+    });
+
+    it("should show the search's progress on the open bar over the cracks, labelled Searching… (R54)", () => {
+      const { run, stage, handle } = hiddenStage();
+      const me = { ...player("me", "Aldric", 0), position: ME, timed_open: { entity_id: "door-1", target_kind: "search", elapsed: 1, duration: 2 } };
+      handle({ ...dungeonState({ current_player: me } as Partial<Party>), barriers: [door()] } as GameState);
+      const bar = stage.made.find((m) => m.name === "open-bar" && !m.destroyed);
+      expect(bar).toBeDefined();
+      expect(run.timedOpen?.label?.args[2]).toBe("Searching…");
+      // the door opens: the bar and its label go
+      handle({ ...dungeonState(inRoom()), barriers: [door(true)] } as GameState);
+      expect(bar!.destroyed).toBe(true);
+      expect(stage.made.filter((m) => m.name === "open-bar-label").every((m) => m.destroyed)).toBe(true);
+    });
+
+    it("should draw the floor again from its map re-sent for the same floor: the room in, the door a doorway, what was explored kept (R56)", () => {
+      // the player stands in room 1, then in room 17: room 1 explored
+      const elsewhere = inRoom(at(31 * 80 + 40, 29 * 80 + 40));
+      const { run, stage, handle } = hiddenStage();
+      handle({ ...dungeonState(elsewhere), barriers: [door()] } as GameState);
+      expect(run.dungeon.seen.state(1)).toBe("explored");
+      const before = drawn(stage.made, "tower_wall_");
+      const minimap = run.dungeon.minimap;
+      const [roomCell] = cellsOf(room);
+      expect(run.dungeon.grid.walkable(roomCell.x, roomCell.y)).toBe(false);
+      // the door opened: the server sends the map whole again, then the door open
+      useGameStore.getState().receiveFloorMap({ ...dungeonMap } as never);
+      handle({ ...dungeonState(elsewhere), barriers: [door(true)] } as GameState);
+      expect(run.dungeon.grid.walkable(roomCell.x, roomCell.y)).toBe(true);
+      expect(doorCells.every((c) => run.dungeon.grid.walkable(c.x, c.y))).toBe(true);
+      expect(before.every((m) => m.destroyed)).toBe(true);
+      expect(drawn(stage.made, "tower_wall_").length).toBeGreaterThan(1000);
+      expect(run.dungeon.minimap).toBeDefined();
+      expect(run.dungeon.minimap).not.toBe(minimap);
+      expect(run.dungeon.seen.state(1)).toBe("explored");
+      expect(run.dungeon.seen.state(17)).toBe("visible");
+      expect(run.dungeon.seen.state(HIDDEN)).toBe("unexplored");
+      expect(drawn(stage.made, "secret_cracks/")).toEqual([]);
+    });
+
+    // the review's fix round 1: a redraw makes the chunks again, so whatever registers in them must be laid again
+    it("should register in the redrawn floor's chunks from every site that registered in the first build's (R56)", () => {
+      /** The scene's own code that registered a part: the innermost of the known sites on the stack. */
+      const SITES = ["createGround", "buildDungeonWalls", "standDressing", "Fog"] as const;
+      const siteOf = (stack: string) => {
+        for (const line of stack.split("\n").slice(1)) {
+          if (/\bnew Fog\b/.test(line)) return "Fog";
+          const named = SITES.find((name) => name !== "Fog" && line.includes(`.${name} `));
+          if (named) return named;
+        }
+        return `unknown: ${stack.split("\n").slice(2, 5).join(" | ")}`;
+      };
+      const sites = new Map<unknown, Set<string>>();
+      const add = ChunkVisibility.prototype.add;
+      const spied = vi.spyOn(ChunkVisibility.prototype, "add").mockImplementation(function (this: unknown, ...args) {
+        const own = sites.get(this) ?? new Set<string>();
+        sites.set(this, own);
+        own.add(siteOf(new Error().stack ?? ""));
+        return add.apply(this as InstanceType<typeof ChunkVisibility>, args);
+      });
+      const { handle } = hiddenStage();
+      useGameStore.getState().receiveFloorMap({ ...dungeonMap } as never);
+      handle({ ...dungeonState(inRoom()), barriers: [door(true)] } as GameState);
+      spied.mockRestore();
+      const [first, redrawn] = [...sites.values()].map((own) => [...own].sort());
+      // a new site of registration must be laid again by redrawDungeon, and pinned here
+      expect(first).toEqual([...SITES].sort());
+      expect(redrawn).toEqual(first);
+    });
+
+    it("should draw nothing again for the same map re-sent (a reconnect's ask)", () => {
+      const { stage, handle } = hiddenStage();
+      const walls = drawn(stage.made, "tower_wall_");
+      useGameStore.getState().receiveFloorMap({ ...shutMap } as never);
+      handle({ ...dungeonState(inRoom()), barriers: [door()] } as GameState);
+      expect(walls.some((m) => m.destroyed)).toBe(false);
+    });
+
+    it("should draw the floor again when the re-sent map comes after the snapshot, through the store", () => {
+      const { run, handle } = hiddenStage();
+      (run as unknown as { subscribeFloorMap(): void }).subscribeFloorMap();
+      handle({ ...dungeonState(inRoom()), barriers: [door(true)] } as GameState);
+      useGameStore.getState().receiveFloorMap({ ...dungeonMap } as never);
+      const [roomCell] = cellsOf(room);
+      expect(run.dungeon.grid.walkable(roomCell.x, roomCell.y)).toBe(true);
+      (run as unknown as { floorMapUnsubscribe?: () => void }).floorMapUnsubscribe?.();
+    });
+
+    it("should say Poisoned. once when the player is first poisoned, and not on a first broadcast", () => {
+      const poisoned = (s: number) => ({ current_player: { ...player("me", "Aldric", 0), position: ME, poisoned_for: s } }) as Partial<Party>;
+      const { notified, handle } = hiddenStage(poisoned(5));
+      handle({ ...dungeonState(poisoned(4)) } as GameState);
+      expect(notified).not.toHaveBeenCalled();
+      handle({ ...dungeonState(inRoom()) } as GameState);
+      handle({ ...dungeonState(poisoned(6)) } as GameState);
+      handle({ ...dungeonState(poisoned(5)) } as GameState);
+      expect(notified.mock.calls).toEqual([["Poisoned.", palette.damageBright]]);
+    });
+  });
+
+  // FS-5FZ4J §J R51–R55 (I-5FZ4J-11): the healing fountain, the hallowed altar and Pray, and the Blessing
+  describe("the respites and the Blessing (FS-5FZ4J §J)", () => {
+    interface RespiteRun {
+      bindRunInput(): void;
+      checkBuildingStatus(): void;
+      showNotification(text: string, backing: number): void;
+      respites: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      dungeon: { lights: { all: readonly { kind: string; light: { at?: { x: number; y: number } } }[] } };
+      timedOpen?: { label?: Made };
+      ui: { hud(message: unknown): void };
+    }
+    /** This client's player in room 1, at (2560, 3080). */
+    const ME = at(2560, 3080);
+    const mine = (over: Record<string, unknown> = {}) =>
+      ({ current_player: { ...player("me", "Aldric", 0), position: ME, ...over } }) as Partial<Party>;
+    /** The altar where the player stands; the fountain far off past the stairs, in a region not yet seen. */
+    const altar = (prayed = false) => ({ entity_id: "altar-1", position: ME, prayed });
+    const fountain = (dry = false) => ({ entity_id: "fountain-1", position: at(1400, 1200), dry });
+    const respiteStage = (party = mine(), extra: Partial<GameState> = {}) => {
+      const staged = dungeonStage(party, { fountain: fountain(), hallowed_altar: altar(), ...extra });
+      const run = staged.run as unknown as RespiteRun;
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      const next = (over: Partial<GameState> = {}, me = mine()) =>
+        staged.handle({ ...dungeonState(me), fountain: fountain(), hallowed_altar: altar(), ...over } as GameState);
+      return { ...staged, run, notified, next };
+    };
+    const pressE = (run: RespiteRun, playerPos: { x: number; y: number }) => {
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos,
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+      sent.mockRestore();
+      return interacts;
+    };
+
+    it("should draw the fountain full and the altar dormant from the sealed sheets, then dry and prayed in place (R51)", () => {
+      const { stage, next } = respiteStage();
+      const [basin] = drawn(stage.made, "healing_fountain/full/");
+      const [stone] = drawn(stage.made, "hallowed_altar/dormant/");
+      expect(basin).toBeDefined();
+      expect(stone).toBeDefined();
+      next({ fountain: fountain(true), hallowed_altar: altar(true) });
+      expect(String(basin.last.setTexture?.[1])).toMatch(/^healing_fountain\/dry\//);
+      expect(String(stone.last.setTexture?.[1])).toMatch(/^hallowed_altar\/prayed\//);
+      expect(drawn(stage.made, "hallowed_altar/")).toHaveLength(1);
+    });
+
+    it("should light the altar's candles among the floor's lights while it is dormant, and put them out once prayed", () => {
+      const { run, next } = respiteStage();
+      const candles = () => run.dungeon.lights.all.filter((l) => l.light.at?.x === ME.x && l.light.at?.y === ME.y);
+      expect(candles()).toHaveLength(1);
+      // its own kind of fixed light, never a brazier's (FS-8RBQY §C.6)
+      expect(candles()[0].kind).toBe("hallowed_altar");
+      next({ hallowed_altar: altar(true) });
+      expect(candles()).toHaveLength(0);
+    });
+
+    it("should hide a respite standing in an unexplored region, and show the one where the player stands", () => {
+      const { run } = respiteStage();
+      run.checkBuildingStatus();
+      const shown = run.respites.placed().map(({ sprite, pos }) => [pos.x === ME.x ? "here" : "far", shownNow(sprite)]);
+      expect(shown).toEqual([["far", false], ["here", true]]);
+    });
+
+    it("should send one interact for the dormant altar E reaches, the Pray (R52)", () => {
+      const { run } = respiteStage();
+      expect(pressE(run, ME)).toEqual([[ActionType.Interact, { entity_id: "altar-1" }]]);
+    });
+
+    it("should make neither the fountain nor a prayed altar an E target (R52)", () => {
+      const { run, next } = respiteStage();
+      next({ hallowed_altar: altar(true) });
+      expect(pressE(run, ME)).toEqual([]);
+      expect(pressE(run, at(1400, 1200))).toEqual([]);
+    });
+
+    it("should show the prayer's progress on the open bar over the altar, labelled Praying…, gone when it is prayed (R54)", () => {
+      const { run, stage, next } = respiteStage();
+      next({}, mine({ timed_open: { entity_id: "altar-1", target_kind: "pray", elapsed: 1, duration: 2 } }));
+      const bar = stage.made.find((m) => m.name === "open-bar" && !m.destroyed);
+      expect(bar).toBeDefined();
+      expect(run.timedOpen?.label?.args[2]).toBe("Praying…");
+      next({ hallowed_altar: altar(true) }, mine({ blessed: true }));
+      expect(bar!.destroyed).toBe(true);
+    });
+
+    it("should say Blessed. once when blessed turns true, and nothing on a first broadcast that finds it so (R53)", () => {
+      const first = respiteStage(mine({ blessed: true }));
+      first.next({}, mine({ blessed: true }));
+      expect(first.notified).not.toHaveBeenCalled();
+      const { notified, next } = respiteStage();
+      next({ hallowed_altar: altar(true) }, mine({ blessed: true }));
+      next({ hallowed_altar: altar(true) }, mine({ blessed: true }));
+      expect(notified.mock.calls).toEqual([["Blessed.", palette.safe]]);
+    });
+
+    it("should hand the UI scene the Blessing mark while blessed, and none without it (R55)", () => {
+      const { run, next } = respiteStage();
+      const hud = vi.spyOn(run.ui, "hud");
+      next({}, mine({ blessed: true }));
+      next({}, mine());
+      const marks = hud.mock.calls.map(([m]) => m as { kind: string; marks?: unknown }).filter((m) => m.kind === "statusMarks");
+      expect(marks.map((m) => m.marks)).toEqual([["blessed"], []]);
+    });
+  });
 });
 
 // FS-PQ2TW §A R2, R5, R9; §B R11–R14; §C R19, R21, R22; FS-KE075 §H.41. I-PQ2TW-3: entering a run
@@ -13244,5 +13708,59 @@ describe("BarrowspireScene the class book's world effects and states (FS-X2CMM �
     run.handleGameStateUpdate(partyState(player("me", "Aldric", 130), player("ally", "Wenna", 160)));
     expect(named("book:self:afloat:").every((m) => m.destroyed)).toBe(true);
     expect(named("book:ally:hardened:").every((m) => m.destroyed)).toBe(true);
+  });
+});
+
+// FS-5FZ4J §I R49, §J R53 (I-5FZ4J-9): a sealed floor's replies are HUD notices in their tones, never lore lines.
+describe("BarrowspireScene a sealed floor's replies (FS-5FZ4J §J R53)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function replying() {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+    vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      connectToServer(): void;
+      showNotification(text: string, backing: number): void;
+      lastGameState?: Partial<GameState>;
+    };
+    run.init({ sessionID: "run-a" });
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    const said = loreOf(run).said;
+    run.connectToServer();
+    return { run, notified, said, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
+  }
+
+  it("should say a sealed stair's refusal by the seal's kind as a refused notice, and no lore line", () => {
+    const { run, notified, said, reply } = replying();
+    run.lastGameState = { seal: { kind: "hidden_key", stage: 1, stages: 1, broken: false } };
+    reply({ success: false, message: "the stairs are sealed", reason: "stairs_sealed" });
+    expect(notified.mock.calls).toEqual([["Sealed. The Hidden Key holds it.", palette.damageBright]]);
+    expect(said).not.toHaveBeenCalled();
+  });
+
+  // FS-5FZ4J §G R43 (I-5FZ4J-11)
+  it("should say nothing, notice or lore, for a hallowed altar already prayed at", () => {
+    const { notified, said, reply } = replying();
+    reply({ success: false, message: "the altar has been prayed at", reason: "altar_prayed" });
+    expect(notified).not.toHaveBeenCalled();
+    expect(said).not.toHaveBeenCalled();
+  });
+
+  it("should read the mural's glyphs, and turn the shrine's line with each reading", () => {
+    const { notified, reply } = replying();
+    reply({ success: true, reason: "mural", glyphs: ["eye", "key"] });
+    reply({ success: true, reason: "shrine" });
+    reply({ success: true, reason: "shrine" });
+    const [mural, first, second] = notified.mock.calls;
+    expect(mural).toEqual(["The mural shows: Eye, Key.", palette.hudPanel]);
+    expect(first[0]).not.toBe(second[0]);
   });
 });

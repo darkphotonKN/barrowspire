@@ -154,7 +154,7 @@ func TestBookSystemAdvanceCasts_LevitateOnAnAllyWhoWalkedOff(t *testing.T) {
 			require.NoError(t, books.Cast(cast))
 
 			castTicks(books, em, 20)
-			at, _ := centreOf(ally)
+			at, _ := bodyCentre(ally)
 			at.X = tt.to
 			castTicks(books, em, 26)
 

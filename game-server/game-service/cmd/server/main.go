@@ -47,6 +47,7 @@ var (
 		Auth:      commonhelpers.GetEnvString("AUTH_ADDR", "localhost:7116"),
 		Items:     commonhelpers.GetEnvString("ITEMS_ADDR", "localhost:7126"),
 		Character: commonhelpers.GetEnvString("CHARACTER_ADDR", "localhost:7123"),
+		Wallet:    commonhelpers.GetEnvString("WALLET_ADDR", "localhost:7128"),
 	}
 
 	// rabbit mq

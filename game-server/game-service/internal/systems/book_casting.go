@@ -52,7 +52,7 @@ func startCasting(cast BookCast, book *components.BookComponent) {
 		TargetY:  cast.TargetY,
 		CellSize: cast.CellSize,
 	}
-	if at, ok := centreOf(cast.Caster); ok {
+	if at, ok := bodyCentre(cast.Caster); ok {
 		casting.FromX, casting.FromY = at.X, at.Y
 	}
 	if hc, ok := cast.Caster.GetComponent(ecs.ComponentTypeHealth); ok {
@@ -115,7 +115,7 @@ func (s *BookSystem) castBroken(caster *ecs.Entity, casting *components.BookCast
 	if _, stands := s.em.GetEntity(caster.ID); !stands {
 		return true
 	}
-	if at, ok := centreOf(caster); ok && (at.X != casting.FromX || at.Y != casting.FromY) {
+	if at, ok := bodyCentre(caster); ok && (at.X != casting.FromX || at.Y != casting.FromY) {
 		return true
 	}
 	if hc, ok := caster.GetComponent(ecs.ComponentTypeHealth); ok &&

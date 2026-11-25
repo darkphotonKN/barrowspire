@@ -34,6 +34,36 @@ function bottle(M, liquid, glowTone) {
   return g;
 }
 
+/**
+ * The antidote (FS-9JV5K §G R26): a slim, straight-sided vial on a flat foot, where the potions
+ * are round-bellied flasks, so it parts from them by its outline before its colour: a pale, milky
+ * draught (vellum warmed toward brass, none of the potions' oxblood, teal or green) under a tall
+ * cork stopper, a cord tied round its neck and a wax seal on the cork.
+ */
+function antidote(M) {
+  const g = new THREE.Group();
+  const prof = [
+    [0, 0],
+    [0.058, 0],
+    [0.062, 0.012],
+    [0.06, 0.24],
+    [0.04, 0.268],
+    [0.03, 0.29],
+    [0.038, 0.3],
+  ].map(([r, y]) => new THREE.Vector2(r, y));
+  const draught = mix("vellum", "brass", 0.3);
+  g.add(
+    part(
+      new THREE.LatheGeometry(prof, 18),
+      new THREE.MeshStandardMaterial({ color: color(draught), emissive: color(shade("brass", 0.3)), roughness: 0.2, metalness: 0.05 }),
+    ),
+  );
+  g.add(part(new THREE.CylinderGeometry(0.03, 0.026, 0.08, 10), M.wood, { y: 0.335 }));
+  g.add(part(new THREE.CylinderGeometry(0.034, 0.032, 0.014, 10), M.crimson, { y: 0.378 }));
+  g.add(part(new THREE.TorusGeometry(0.034, 0.008, 6, 14), M.leather, { y: 0.272, rx: Math.PI / 2 }));
+  return g;
+}
+
 export const ICONS = {
   ...gearIcons(),
   potion_health: () => scaled(bottle(materials(), "oxblood", shade("oxblood", 0.5)), 2.4),
@@ -94,4 +124,5 @@ export const ICONS = {
     g.add(part(new THREE.TorusGeometry(0.055, 0.012, 6, 14), M.crimson, { y: 0.235, rx: Math.PI / 2 }));
     return scaled(g, 2.2);
   },
+  antidote: () => scaled(antidote(materials()), 2.2),
 };

@@ -53,7 +53,7 @@ func longNights(dst []longNight, entities []*ecs.Entity) []longNight {
 			continue
 		}
 		nc, hasReach := entity.GetComponent(ecs.ComponentTypeLongNight)
-		if at, ok := centreOf(entity); ok && hasReach {
+		if at, ok := bodyCentre(entity); ok && hasReach {
 			dst = append(dst, longNight{quarry: quarry{id: entity.ID, at: at}, reach: nc.(*components.LongNightComponent).Reach})
 		}
 	}

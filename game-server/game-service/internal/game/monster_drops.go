@@ -2,6 +2,7 @@ package game
 
 import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
@@ -11,7 +12,8 @@ import (
 // record and lays what drops in a drop pile where the monster fell.
 // FS-4R9M9 §Requirements 44–46. It runs on the run's tick (KillConsumer), so it
 // changes the world without the session lock and never blocks. The killer's
-// own state does not matter: the loot still lands.
+// own state does not matter, the loot still lands, but for a blessed killer's
+// better chance (FS-5FZ4J §G R44).
 type monsterDrops struct {
 	s *Session
 	r lootRand // the chance, count and type rolls
@@ -27,13 +29,33 @@ func (m *monsterDrops) ConsumeKill(record systems.KillRecord) {
 		return
 	}
 
-	chance := min(table.Chance*floorFactor(record.Floor), 1) // FS-M8CSE §F R29
+	chance := table.Chance * floorFactor(record.Floor) // FS-M8CSE §F R29
+	// a blessed killer's kill rolls a better chance (FS-5FZ4J §G R44)
+	if m.killerBlessed(record.KillerMemberID) {
+		chance *= BlessingDropFactor
+	}
+	chance = min(chance, 1)
 	itemIDs := m.s.rollKillDrop(m.r, table, chance, fabledChanceFor(record), record.Level)
 	if len(itemIDs) == 0 {
 		return
 	}
 
 	CreateDropPileEntity(m.s.EntityManager, record.X, record.Y, itemIDs)
+}
+
+// killerBlessed is whether the member credited with a kill carries the
+// Blessing; a killer who died since has lost it.
+func (m *monsterDrops) killerBlessed(memberID uuid.UUID) bool {
+	if memberID == uuid.Nil {
+		return false
+	}
+	for _, entity := range m.s.EntityManager.GetAllEntities() {
+		pc, ok := entity.GetComponent(ecs.ComponentTypePlayer)
+		if ok && pc.(*components.PlayerComponent).MemberID == memberID {
+			return systems.Blessed(entity)
+		}
+	}
+	return false
 }
 
 /**

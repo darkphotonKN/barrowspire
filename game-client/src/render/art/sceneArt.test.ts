@@ -9,6 +9,7 @@ import { RESIDENT_ART_PAGES, shippedManifest } from "./artLoader.standin";
 import { sheetAtlases, type ArtManifest } from "./manifest";
 import {
   FLOOR_SCOPED_GROUPS,
+  NPC_ART,
   ON_DEMAND_ART,
   RESIDENT_ART,
   VARIANT_ART,
@@ -17,6 +18,7 @@ import {
   SPEC_LOOK_ART,
   atlasGroup,
   fieldArt,
+  npcArtFor,
   onDemandFor,
   poolGroups,
   sceneAtlases,
@@ -61,7 +63,7 @@ describe("the scene art table (FS-C4JWH §A)", () => {
 
   it("should take the scene-scoped groups from the table, and only those (R2)", () => {
     expect(sorted(SCENE_SCOPED_GROUPS)).toEqual(
-      sorted(["blood_demon", "boss", "creatures", "fodder", "folk", "wildlife", ...VARIANT_GROUPS, ...SPEC_LOOK_GROUPS]),
+      sorted(["blood_demon", "boss", "creatures", "fodder", "folk", "merchant", "wildlife", ...VARIANT_GROUPS, ...SPEC_LOOK_GROUPS]),
     );
   });
 
@@ -91,8 +93,8 @@ describe("the scene art table (FS-C4JWH §A)", () => {
 
 describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
   // the archer's hound (FS-X2CMM R47) is a group no table names, so resident (§A R3)
-  it("should hold the 21 resident pages and no scene-scoped one at boot", () => {
-    expect(RESIDENT_ART_PAGES).toHaveLength(21);
+  it("should hold the 22 resident pages and no scene-scoped one at boot", () => {
+    expect(RESIDENT_ART_PAGES).toHaveLength(22);
     expect(sorted(sceneAtlases(manifest, RESIDENT_ART))).toEqual([...RESIDENT_ART_PAGES]);
   });
 
@@ -101,6 +103,11 @@ describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
     expect(boot).toContain("summoning");
     expect(SCENE_SCOPED_GROUPS.has("summoning")).toBe(false);
     for (const group of VARIANT_GROUPS) expect(boot).not.toContain(group);
+  });
+
+  it("should keep the sealed floor's props resident, so the run draws them on any floor (FS-5FZ4J §K R57)", () => {
+    expect(sceneAtlases(manifest, RESIDENT_ART).map(atlasGroup)).toContain("sealed");
+    expect(SCENE_SCOPED_GROUPS.has("sealed")).toBe(false);
   });
 
   it.each([
@@ -191,6 +198,52 @@ describe("the on-demand groups (FS-VHGE7 §F, ADR-0071)", () => {
       .map(([name]) => name);
     expect(onBoss).toEqual(["creature_demon_base"]);
     expect(manifest.sheets.creature_demon_base.animations.claw).toBeDefined();
+  });
+});
+
+describe("the wandering merchant's group (FS-9JV5K §G R26, ADR-0071 Decision 6)", () => {
+  const preloaded = [
+    SCENE_ART.MainMenuScene,
+    SCENE_ART.CharacterCreationScene,
+    SCENE_ART.HubScene,
+    ...Object.values(SCENE_ART.FieldScene),
+    SCENE_ART.BarrowspireScene,
+  ].flat() as string[];
+  const merchantPages = () => Object.keys(manifest.atlases).filter((a) => atlasGroup(a) === "merchant");
+
+  it("should name his group, the state key that fetches it, his sheet and what he draws meanwhile", () => {
+    expect(NPC_ART).toEqual([
+      {
+        group: "merchant",
+        stateKey: "merchant",
+        sheet: "npc_merchant",
+        standIn: { sheet: "char_mercenary_base", tint: palette.merchantStandIn },
+      },
+    ]);
+    expect(npcArtFor("merchant")?.group).toBe("merchant");
+    expect(npcArtFor("npcs")).toBeUndefined();
+  });
+
+  it("should bake his sheet idle only, in eight facings, on his group's pages alone", () => {
+    const sheet = manifest.sheets.npc_merchant;
+    expect(sheet.directions).toBe(8);
+    expect(Object.keys(sheet.animations)).toEqual(["idle"]);
+    expect(new Set(sheetAtlases(sheet).map(atlasGroup))).toEqual(new Set(["merchant"]));
+    expect(merchantPages().length).toBeGreaterThan(0);
+  });
+
+  it("should keep his group scene-scoped, in no scene's preload set, out of boot and the run's preload", () => {
+    expect(SCENE_SCOPED_GROUPS.has("merchant")).toBe(true);
+    expect(preloaded).not.toContain("merchant");
+    for (const groups of [RESIDENT_ART, SCENE_ART.BarrowspireScene])
+      for (const page of merchantPages()) expect(sceneAtlases(manifest, groups)).not.toContain(page);
+  });
+
+  it("should draw a stand-in on a resident group meanwhile, so the run holds it on any floor", () => {
+    for (const { standIn } of NPC_ART) {
+      expect(manifest.sheets[standIn.sheet]).toBeDefined();
+      expect(outsideScene(manifest, RESIDENT_ART, [standIn.sheet])).toEqual([]);
+    }
   });
 });
 

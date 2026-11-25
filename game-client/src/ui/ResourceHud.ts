@@ -49,6 +49,16 @@ export const HUD_BAR_FILL: Readonly<Record<HudChannel, number>> = {
   unknown: palette.hudResourceOther,
 };
 
+/** The colour a bar fills in: its channel's, or the poison tint on a poisoned player's health (FS-5FZ4J §J R55). */
+export function hudBarFill(bar: Pick<HudBar, "channel" | "poisoned">): number {
+  return bar.poisoned ? palette.poisoned : HUD_BAR_FILL[bar.channel];
+}
+
+/** The screen y of row `row`'s middle (0 is Health) on a panel whose top is `top`: what the status marks line up with. */
+export function resourceHudRowMiddle(top: number, row: number): number {
+  return top + PAD_Y + row * ROW_H + ROW_H / 2;
+}
+
 /** The panel's height for `rows` bars: what the party frames measure from. */
 export function resourceHudHeight(rows: number): number {
   return rows * ROW_H + PAD_Y * 2;
@@ -105,7 +115,7 @@ export class ResourceHud {
           barW,
           BAR_H,
           bar.fill,
-          HUD_BAR_FILL[bar.channel],
+          hudBarFill(bar),
         );
     });
   }

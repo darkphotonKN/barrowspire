@@ -15,15 +15,19 @@ import (
 const timedOpenEpsilon = 1e-9
 
 // CompletedTimedOpen is one timed open whose time has passed: the delver's
-// body and the container it was opening.
+// body, the target it was working and what completing it does.
 type CompletedTimedOpen struct {
 	DelverEntityID uuid.UUID
-	ContainerID    uuid.UUID
+	TargetID       uuid.UUID
+	TargetKind     components.TimedTargetKind
 }
 
 /*
 TimedOpenSystem counts each delver's timed open, and cancels it.
-FS-MQYEX §Requirements 2, 4–14, 16, 28–33.
+FS-MQYEX §Requirements 2, 4–14, 16, 28–33. A timed open is any timed interact:
+its target kind says what completing it does (opening a container, searching a
+secret door, FS-5FZ4J §F R38), and every kind counts and cancels by the same
+rules; "container" below is whatever its target is.
 
 A timed open starts at zero on the reach. Every tick from the one that applied
 the reach counts the tick's simulation time on it, and the first tick to find
@@ -52,15 +56,15 @@ func NewTimedOpenSystem(em *ecs.EntityManager) *TimedOpenSystem {
 	return &TimedOpenSystem{em: em}
 }
 
-// Start begins the delver's timed open on the container, from zero, where the
-// body stands now. It takes the place of one the delver had on another
-// container; on the container they are already opening it changes nothing, so
-// a second reach neither restarts nor shortens the time (§Requirements 12).
-func (s *TimedOpenSystem) Start(delver *ecs.Entity, containerID uuid.UUID, duration float64) {
-	if oc, ok := delver.GetComponent(ecs.ComponentTypeTimedOpen); ok && oc.(*components.TimedOpenComponent).ContainerID == containerID {
+// Start begins the delver's timed open of kind on the target, from zero,
+// where the body stands now. It takes the place of one the delver had on
+// another target; on the target they are already working it changes nothing,
+// so a second reach neither restarts nor shortens the time (§Requirements 12).
+func (s *TimedOpenSystem) Start(delver *ecs.Entity, targetID uuid.UUID, kind components.TimedTargetKind, duration float64) {
+	if oc, ok := delver.GetComponent(ecs.ComponentTypeTimedOpen); ok && oc.(*components.TimedOpenComponent).TargetID == targetID {
 		return
 	}
-	open := &components.TimedOpenComponent{ContainerID: containerID, Duration: duration}
+	open := &components.TimedOpenComponent{TargetID: targetID, TargetKind: kind, Duration: duration}
 	if tc, ok := delver.GetComponent(ecs.ComponentTypeTransform); ok {
 		at := tc.(*components.TransformComponent)
 		open.FromX, open.FromY = at.X, at.Y
@@ -112,8 +116,8 @@ func (s *TimedOpenSystem) Update(deltaTime float64, entities []*ecs.Entity, atta
 			entity.RemoveComponent(ecs.ComponentTypeTimedOpen)
 			// two that complete on one tick open the container once: the
 			// first in the tick's order is the one reported (§Requirements 16)
-			if !completedOn(completed, open.ContainerID) {
-				completed = append(completed, CompletedTimedOpen{DelverEntityID: entity.ID, ContainerID: open.ContainerID})
+			if !completedOn(completed, open.TargetID) {
+				completed = append(completed, CompletedTimedOpen{DelverEntityID: entity.ID, TargetID: open.TargetID, TargetKind: open.TargetKind})
 			}
 			continue
 		}
@@ -125,7 +129,7 @@ func (s *TimedOpenSystem) Update(deltaTime float64, entities []*ecs.Entity, atta
 	if len(completed) > 0 {
 		for _, entity := range entities {
 			oc, ok := entity.GetComponent(ecs.ComponentTypeTimedOpen)
-			if ok && completedOn(completed, oc.(*components.TimedOpenComponent).ContainerID) {
+			if ok && completedOn(completed, oc.(*components.TimedOpenComponent).TargetID) {
 				entity.RemoveComponent(ecs.ComponentTypeTimedOpen)
 			}
 		}
@@ -133,10 +137,10 @@ func (s *TimedOpenSystem) Update(deltaTime float64, entities []*ecs.Entity, atta
 	return completed
 }
 
-// completedOn is whether one of the completed timed opens was on the container.
-func completedOn(completed []CompletedTimedOpen, containerID uuid.UUID) bool {
+// completedOn is whether one of the completed timed opens was on the target.
+func completedOn(completed []CompletedTimedOpen, targetID uuid.UUID) bool {
 	for _, done := range completed {
-		if done.ContainerID == containerID {
+		if done.TargetID == targetID {
 			return true
 		}
 	}
@@ -176,7 +180,7 @@ func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOp
 	}
 	// the container is out of reach, by the reach's own measure, or gone from
 	// the world, as it is after a floor change
-	container, ok := s.em.GetEntity(open.ContainerID)
+	container, ok := s.em.GetEntity(open.TargetID)
 	if !ok {
 		return true
 	}
@@ -184,7 +188,9 @@ func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOp
 }
 
 // withinInteractRange is whether the two stand within the interact range of
-// each other; a thing with no place is in reach of nothing.
+// each other; a thing with no place is in reach of nothing. A door-shaped
+// target, a secret door, is measured to its rect's nearest point, as its
+// reach is (FS-5FZ4J §F R38); a container to its centre, as ever.
 func withinInteractRange(a, b *ecs.Entity) bool {
 	ac, aok := a.GetComponent(ecs.ComponentTypeTransform)
 	bc, bok := b.GetComponent(ecs.ComponentTypeTransform)
@@ -192,7 +198,12 @@ func withinInteractRange(a, b *ecs.Entity) bool {
 		return false
 	}
 	from, to := ac.(*components.TransformComponent), bc.(*components.TransformComponent)
-	return WithinInteractRange(from.X, from.Y, to.X, to.Y)
+	x, y := to.X, to.Y
+	if dc, isDoor := b.GetComponent(ecs.ComponentTypeDoor); isDoor {
+		door := dc.(*components.DoorComponent)
+		x, y = min(max(from.X, to.X), to.X+door.Width), min(max(from.Y, to.Y), to.Y+door.Height)
+	}
+	return WithinInteractRange(from.X, from.Y, x, y)
 }
 
 // WithinInteractRange is whether two places are within the interact range of

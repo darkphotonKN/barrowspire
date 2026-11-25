@@ -69,6 +69,16 @@ export interface PublicPlayerState {
    * `other_players` entry alike; absent when none. Mirrors Go types.PublicPlayerState.BookStates.
    */
   book_states?: BookTimedState[];
+  /**
+   * Seconds of poison left (FS-5FZ4J §I R47): on every player's entry, so a teammate's bar can
+   * show it; absent when not poisoned, and always in the hub.
+   */
+  poisoned_for?: number;
+  /**
+   * True while the player carries the hallowed altar's Blessing (FS-5FZ4J §I R47): on every player's
+   * entry, as poison is; absent when not, and always in the hub.
+   */
+  blessed?: boolean;
 }
 
 /**
@@ -205,13 +215,21 @@ export interface CooldownState {
  * and how far along the server's own timer is. The client draws it and never times it.
  */
 export interface TimedOpenState {
-  /** The container being opened. */
+  /** The target being worked: a shut container, or a detected secret door (FS-5FZ4J §I R49). */
   entity_id: UUID;
+  /**
+   * What the timed interact is for (FS-5FZ4J §I R49): `open` a container, `search` a secret door,
+   * `pray` at the hallowed altar. Absent from a server before FS-5FZ4J, which only opened.
+   */
+  target_kind?: TimedTargetKind | (string & {});
   /** Simulation time counted so far, in seconds. */
   elapsed: number;
   /** The time it takes, in seconds. */
   duration: number;
 }
+
+/** What a timed interact does to its target (FS-5FZ4J §I R49). */
+export type TimedTargetKind = "open" | "search" | "pray";
 
 /** What a class resource is (FS-8AY7S req 17): mage mana, warrior/archer stamina, mercenary parry charges. */
 export type ResourceKind = "mana" | "stamina" | "parry_charges";
@@ -379,6 +397,133 @@ export interface AltarState {
   entity_id: UUID;
   position: Position;
   burned: boolean;
+}
+
+/** A floor's healing fountain, sent whole on its floor; `dry` once its pool is spent (FS-5FZ4J §I R46). */
+export interface FountainState {
+  entity_id: UUID;
+  position: Position;
+  dry: boolean;
+}
+
+/**
+ * The hallowed altar on its floor, sent whole once reachable (listed only once its hidden room, if it
+ * stands in one, is open); `prayed` once a prayer at it completed (FS-5FZ4J §I R46). Never the Altar
+ * of Consecration's {@link AltarState}.
+ */
+export interface HallowedAltarState {
+  entity_id: UUID;
+  position: Position;
+  prayed: boolean;
+}
+
+/** A cell's column and row on the floor map's grid (FS-5FZ4J §I R46). */
+export interface CellState {
+  x: number;
+  y: number;
+}
+
+/** What a seal is broken by (FS-5FZ4J §B R9, §I R46). Read off the wire as a string: a newer kind is named as sent. */
+export type SealKind = "lever_order" | "weighted_plates" | "hidden_key" | "chasm" | "braziers";
+
+/**
+ * A sealed floor's seal (FS-5FZ4J §I R46): the current, first unbroken seal's kind and 1-based
+ * stage, or the last one's once all are broken; `broken` once every seal of the floor is. Absent in
+ * the hub, a field, the top floor and on a floor of buildings.
+ */
+export interface SealState {
+  kind: SealKind | (string & {});
+  stage: number;
+  stages: number;
+  broken: boolean;
+  /** Seconds left while a Braziers window runs; absent otherwise (and from a server that has no Braziers yet). */
+  window_ends_in?: number;
+  /** Set while the party carries the floor's stair key; absent otherwise. */
+  key_carried?: boolean;
+}
+
+/** What a seal piece is (FS-5FZ4J §I R46). */
+export type SealPieceKind = "lever" | "plate" | "block" | "brazier" | "stair_key" | "bridge_lever" | "mural" | "shrine";
+
+const SEAL_PIECE_KINDS: readonly string[] = [
+  "lever",
+  "plate",
+  "block",
+  "brazier",
+  "stair_key",
+  "bridge_lever",
+  "mural",
+  "shrine",
+] satisfies SealPieceKind[];
+
+/**
+ * One seal piece (FS-5FZ4J §I R46): `active` a lever down, a plate held, a brazier lit, a bridge
+ * lowered, false for the others; `glyph` on a lever only. A stair key is listed while it lies, a
+ * shrine once its hidden room is open. `kind` may be one this client does not know: read it through
+ * {@link knownSealPiece}.
+ */
+export interface SealPieceState {
+  entity_id: UUID;
+  kind: SealPieceKind | (string & {});
+  position: Position;
+  cell: CellState;
+  glyph?: string;
+  active: boolean;
+}
+
+/** What a barrier is (FS-5FZ4J §I R46). */
+export type BarrierKind = "gate" | "secret_door" | "pit";
+
+const BARRIER_KINDS: readonly string[] = ["gate", "secret_door", "pit"] satisfies BarrierKind[];
+
+/**
+ * One barrier and the cells it covers (FS-5FZ4J §I R46): a gate and the pits always listed, a
+ * secret door only once detected. `open` a gate raised, a pit's lane bridged, a door found open.
+ */
+export interface BarrierState {
+  entity_id: UUID;
+  kind: BarrierKind | (string & {});
+  cells: CellState[];
+  open: boolean;
+}
+
+/** What a trap is (FS-5FZ4J §D R27, §I R46), by the server's names. */
+export type TrapKind = "spike_plate" | "dart_wall" | "fire_jet" | "tripwire" | "gas_vent";
+
+const TRAP_KINDS: readonly string[] = ["spike_plate", "dart_wall", "fire_jet", "tripwire", "gas_vent"] satisfies TrapKind[];
+
+/**
+ * One detected trap (FS-5FZ4J §I R46): an undetected one is sent to no one. `armed` is false while
+ * a fired trap waits to re-arm and for a spent tripwire; a gas vent is always armed, and its puff
+ * is `puffed_at`, the floor's simulation time of its last, absent before its first (R48).
+ * `revealed` is a book page's (FS-X2CMM), always false for now.
+ */
+export interface TrapState {
+  entity_id: UUID;
+  kind: TrapKind | (string & {});
+  cell: CellState;
+  armed: boolean;
+  revealed: boolean;
+  puffed_at?: number;
+}
+
+/** A trap's kind as this client draws it, or `null` for one it does not know, which draws nothing. */
+export function knownTrap(kind: string): TrapKind | null {
+  return TRAP_KINDS.includes(kind) ? (kind as TrapKind) : null;
+}
+
+/**
+ * A seal piece's kind as this client draws it, or `null` for one it does not know, which draws
+ * nothing: a newer server never breaks an older client's world (unlike a container, there is no
+ * kind to stand in for it).
+ */
+export function knownSealPiece(kind: string): SealPieceKind | null {
+  return SEAL_PIECE_KINDS.includes(kind) ? (kind as SealPieceKind) : null;
+}
+
+/** A barrier's kind as this client draws it, or `null` for one it does not know, which draws nothing. */
+export function knownBarrier(kind: string): BarrierKind | null {
+  return BARRIER_KINDS.includes(kind) ? (kind as BarrierKind) : null;
 }
 
 // Wall state
@@ -582,6 +727,18 @@ export interface ClientGameState {
   tome_carried?: boolean;
   /** The run's book effects on the floor (witchlights, runes, draughts), for every recipient; absent when none (FS-X2CMM §F R34). */
   book_effects?: BookEffectState[];
+  /** A sealed floor's seal; absent anywhere else (FS-5FZ4J §I R46). */
+  seal?: SealState;
+  /** A sealed floor's pieces, sent whole; absent anywhere else (R46). */
+  seal_pieces?: SealPieceState[];
+  /** A sealed floor's gate and pits, and its detected secret doors, sent whole; absent anywhere else (R46). */
+  barriers?: BarrierState[];
+  /** A dungeon floor's detected traps, sent whole; absent with none detected and anywhere else (R46). */
+  traps?: TrapState[];
+  /** A floor's healing fountain; absent with none and anywhere else (R46). */
+  fountain?: FountainState;
+  /** The hallowed altar on its floor once reachable; absent anywhere else (R46). */
+  hallowed_altar?: HallowedAltarState;
   escaped_count: number; // Number of players who have escaped
 }
 

@@ -471,3 +471,42 @@ func BenchmarkPath_Floor1_Farthest(b *testing.B) {
 		buf, _ = g.Path(buf[:0], from, to)
 	}
 }
+
+// A barrier's cells are rock to a path while it stands and ground again once
+// it opens, on the same grid (FS-5FZ4J §D R22).
+func TestGrid_SetWalkable_ShutsAndOpensAPath(t *testing.T) {
+	g, cols := gridOf(t,
+		"#####",
+		"#...#",
+		"#####",
+	)
+	from, to := at(cols, 1, 1), at(cols, 3, 1)
+
+	g.SetWalkable(2, 1, false)
+	_, found := g.Path(nil, from, to)
+	assert.False(t, found, "the shut cell cuts the only way")
+	_, onGround := g.Cell(2*cell+1, 1*cell+1)
+	assert.False(t, onGround)
+
+	g.SetWalkable(2, 1, true)
+	path, found := g.Path(nil, from, to)
+	assert.True(t, found, "opened, the way is back")
+	assert.Equal(t, []int{from, at(cols, 2, 1), to}, path)
+
+	g.SetWalkable(-1, 9, false) // off the grid: ignored
+}
+
+// FS-5FZ4J §C R19: whether a cell is walkable is read by its column and row,
+// as a shut barrier or a stone block left it; a cell off the grid is not.
+func TestGrid_Walkable_ReadsTheCellByColumnAndRow(t *testing.T) {
+	g, _ := gridOf(t,
+		"#..",
+		"...",
+	)
+	assert.False(t, g.Walkable(0, 0), "rock")
+	assert.True(t, g.Walkable(1, 0))
+	g.SetWalkable(1, 0, false)
+	assert.False(t, g.Walkable(1, 0), "shut by a block")
+	assert.False(t, g.Walkable(-1, 0), "off the grid")
+	assert.False(t, g.Walkable(3, 1), "off the grid")
+}

@@ -31,6 +31,7 @@ export const MARKER_INKS = {
   "elite prefix": palette.markerElite,
   "gate name": palette.markerGate,
   "HP fill": palette.markerHp,
+  "HP fill, poisoned": palette.poisoned,
   "HP damage chip": palette.markerHpChip,
 } as const;
 

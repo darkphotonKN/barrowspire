@@ -39,7 +39,7 @@ const (
 // resolveBrew sets a draught down at the archer's feet, where they stand as
 // the cast completes.
 func resolveBrew(world *ecs.EntityManager, cast BookCast) {
-	at, ok := centreOf(cast.Caster)
+	at, ok := bodyCentre(cast.Caster)
 	if !ok {
 		return
 	}
@@ -66,11 +66,11 @@ func (s *BookSystem) DrinkDraught(drinker, draught *ecs.Entity) error {
 	if !ok {
 		return ErrDrinkerOutOfPlay
 	}
-	from, ok := centreOf(drinker)
+	from, ok := bodyCentre(drinker)
 	if !ok {
 		return ErrDraughtOutOfReach
 	}
-	at, ok := centreOf(draught)
+	at, ok := bodyCentre(draught)
 	if !ok || !WithinInteractRange(from.X, from.Y, at.X, at.Y) {
 		return ErrDraughtOutOfReach
 	}

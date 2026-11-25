@@ -26,6 +26,17 @@ export function isDungeon<M extends { cell_size?: number; regions?: readonly Flo
   return !!map.cell_size && (map.regions?.length ?? 0) > 0;
 }
 
+/**
+ * Whether two floor maps' regions are the same, each region's id, kind and cells alike, in any
+ * order: a map re-sent with the same regions draws nothing new (FS-5FZ4J §J R56).
+ */
+export function sameRegions(a: readonly FloorRegion[], b: readonly FloorRegion[]): boolean {
+  if (a.length !== b.length) return false;
+  const key = (r: FloorRegion) => `${r.id}:${r.kind}:${r.cells.map((c) => `${c.x},${c.y},${c.w},${c.h}`).join(";")}`;
+  const keys = new Set(a.map(key));
+  return b.every((r) => keys.has(key(r)));
+}
+
 /** The floor's cells, each with the region it lies in (0: none, a shell or void cell). */
 export class RegionGrid {
   /** World px per cell side. */
@@ -262,7 +273,14 @@ export function dungeonWalls(
   return planEdgeWalls(plan, seed, sheets, (run, at) => edgeLit({ ...grid.cellOf(at), wallSide: run.wallSide }, grid));
 }
 
-/** The map wall each wall cell is in, keyed `cx,cy`. */
+/**
+ * The map wall each wall cell is in, keyed `cx,cy`. A shut secret door's cells are wall too: the
+ * floor map cuts them from their corridor while the server's walls stay the whole floor's shell
+ * (FS-5FZ4J §F R37), so they are cells no map wall covers that face a walkable cell, in a straight
+ * line of such cells capped by map walls at both ends (the corridor's own walls). Each is owned by
+ * a cap, so it draws as plain rock until the map is re-sent with its cells walkable. A cell left
+ * uncovered any other way is not wall.
+ */
 function wallOwners(walls: readonly WallState[], grid: RegionGrid): Map<string, string> {
   const c = grid.cell;
   const owners = new Map<string, string>();
@@ -270,6 +288,27 @@ function wallOwners(walls: readonly WallState[], grid: RegionGrid): Map<string, 
     for (let cx = Math.round(w.position.x / c); cx < Math.round((w.position.x + w.width) / c); cx++)
       for (let cy = Math.round(w.position.y / c); cy < Math.round((w.position.y + w.height) / c); cy++)
         owners.set(`${cx},${cy}`, w.entity_id);
+  const inside = (cx: number, cy: number) => cx >= 0 && cy >= 0 && cx < grid.cols && cy < grid.rows;
+  const rock = (cx: number, cy: number) => inside(cx, cy) && !grid.walkable(cx, cy) && !owners.has(`${cx},${cy}`);
+  /** The map wall a line of uncovered rock from (cx, cy) ends at, stepping (dx, dy); none at the edge or the floor. */
+  const capOf = (cx: number, cy: number, dx: number, dy: number): string | undefined => {
+    let [x, y] = [cx + dx, cy + dy];
+    while (rock(x, y)) [x, y] = [x + dx, y + dy];
+    return owners.get(`${x},${y}`);
+  };
+  const cut: [string, string][] = [];
+  for (let cx = 0; cx < grid.cols; cx++)
+    for (let cy = 0; cy < grid.rows; cy++) {
+      if (!rock(cx, cy)) continue;
+      if (!EDGE_SIDES.some((side) => grid.walkable(cx - TOWARDS_WALL[side][0], cy - TOWARDS_WALL[side][1]))) continue;
+      for (const [dx, dy] of [[1, 0], [0, 1]]) {
+        const ends = [capOf(cx, cy, dx, dy), capOf(cx, cy, -dx, -dy)];
+        if (ends[0] === undefined || ends[1] === undefined) continue;
+        cut.push([`${cx},${cy}`, ends[0]]);
+        break;
+      }
+    }
+  for (const [key, id] of cut) owners.set(key, id);
   return owners;
 }
 

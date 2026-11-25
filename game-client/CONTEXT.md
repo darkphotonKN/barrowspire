@@ -793,6 +793,51 @@ What the client draws of the Spire's roster and its bosses. The server owns the 
 - **Summon**: burning the tome at the altar after the client's "Burn tome?" confirm, which brings
   Vorsk. The screen's lines for it are the client's own copy.
 
+## Spire floor terms (FS-5FZ4J, FS-9JV5K, FS-4EC7Z)
+
+What the client draws and says of a sealed floor, its respites, the merchant and the encounters.
+The server owns every rule ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md)
+"Sealed floors", "The wandering merchant", "Encounters"); these are the words for the screen.
+
+- **Seal**: what keeps the stairs shut. The screen names the floor's seal by its kind (Lever
+  Order, Weighted Plates, The Hidden Key, The Chasm, Braziers) and says when it **breaks** ("The
+  seal breaks."). Sealed stairs refuse with a line, never silently. *Avoid*: "locked stairs".
+- **Seal piece**: a lever, pressure plate, stair key, bridge lever or brazier, drawn as a run
+  fixture. A lever shows up or down; a plate shows pressed; a brazier lit or cold.
+- **Stone block**: the pushable block drawn on the cell grid; it slides a cell when pushed.
+- **Trap**: a hazard drawn only once the server sends it (that is, once the party has detected
+  it): faint when first detected, then its **spring** (spikes up, darts, a fire jet, a gas puff)
+  when it fires. Never drawn from a guess. Kinds keep the server's names: spike plate, dart wall,
+  fire jet, tripwire, gas vent.
+- **Poison**: the delver status, shown as the **poison tint** (a sour bile-olive, `palette.poisoned`)
+  on the poisoned delver's own health bar and on a teammate's overhead bar; it has no status mark.
+  Never "venom" or "toxic" in copy.
+- **Status mark**: a small mark on the UI scene beside the delver's own health bar, one per lasting
+  status, with a hover line. The Blessing is the first and, for now, the only one. *Avoid*: "mark"
+  bare, which is the contract's target (**Mark**).
+- **Secret door**: a wall cell drawn as plain wall until detected, then with **faint cracks**;
+  **Search** is the hold-interact on it ("Searching…", the same bar as a timed open). Opened, it
+  draws as a doorway into the **hidden room**, which joins the minimap only then.
+- **Healing fountain**: a stone basin with clear water; **dry** once its pool is spent (still
+  drawn, no water, no prompt).
+- **Hallowed altar**: the Altar of Consecration's model in warm gold, pale stone and candlelight;
+  **Pray** is its 2 s hold-interact. Never "the altar" bare where the Altar of Consecration could
+  be meant.
+- **Blessing**: the delve-long buff a prayer grants the party, shown as a status mark with its
+  line ("Blessed: better finds, quicker resource"). Gone on death.
+- **Wandering merchant**: the run NPC with a pack and lantern; talking to him opens the **wares
+  panel**: each ware's icon, name, price in gold and count left, and the buyer's purse line. A
+  buy waits on the server ("Paying…") and then lands in the bag or says why it did not.
+- **Antidote**: the bag item that ends poison, drunk from the bag (**Drink**).
+- **Encounter NPC**: a pilgrim, captive or cutthroat drawn from the town cast's looks with a
+  variant tint, gear and face; speaks with a short **over-head line**. *Avoid*: "monster" for one
+  until it turns hostile, and "mob" in copy.
+- **Hired ally**: an encounter NPC on the party's side, drawn with an ally plate (a party-coloured
+  name and health bar over the head).
+- **Mark**: the contract's target, drawn as a humanoid in its own variant look; never on the
+  minimap. The mercenary sees its **heading** ("last seen to the east") and the contract's end:
+  **Contract Settled** (the buff) or **Contract lost**.
+
 ## Dev gallery terms (FS-1819Q)
 
 - **Tracked family**: a kind of visual piece the dev gallery must show in full. Listed once in

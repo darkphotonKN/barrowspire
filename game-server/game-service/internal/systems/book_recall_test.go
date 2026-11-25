@@ -45,7 +45,7 @@ func recallThrough(s *BookSystem, em *ecs.EntityManager, ground BookGround) {
 
 func at(t *testing.T, e *ecs.Entity) (float64, float64) {
 	t.Helper()
-	tc, ok := centreOf(e)
+	tc, ok := bodyCentre(e)
 	require.True(t, ok)
 	return tc.X, tc.Y
 }
@@ -156,7 +156,7 @@ func TestBookSystemCast_RecallBreaksWhatTheTeammateWasDoing(t *testing.T) {
 	em := ecs.NewEntityManager()
 	mage, cast := recallCast(em)
 	mate := recallBody(em, "warrior", 9, 1000, 500, components.PageHardened)
-	mate.AddComponent(&components.TimedOpenComponent{ContainerID: uuid.New(), Duration: 1.5, FromX: 1000, FromY: 500, HealthBeforeCombat: 100})
+	mate.AddComponent(&components.TimedOpenComponent{TargetID: uuid.New(), Duration: 1.5, FromX: 1000, FromY: 500, HealthBeforeCombat: 100})
 	mate.AddComponent(&components.DashComponent{DirX: 1, Speed: 600, Remaining: 100})
 	var endedAt [2]float64
 	ground := recallGround
@@ -223,7 +223,7 @@ func TestBookSystemCast_RecallWithNowhereToLandLeavesTheTeammate(t *testing.T) {
 	em := ecs.NewEntityManager()
 	mage, cast := recallCast(em)
 	mate := recallBody(em, "warrior", 1, 1300, 500)
-	mate.AddComponent(&components.TimedOpenComponent{ContainerID: uuid.New(), Duration: 1.5, FromX: 1300, FromY: 500})
+	mate.AddComponent(&components.TimedOpenComponent{TargetID: uuid.New(), Duration: 1.5, FromX: 1300, FromY: 500})
 	ground := recallGround
 	ground.Ground = groundNowhere{}
 	cast.BookGround = ground

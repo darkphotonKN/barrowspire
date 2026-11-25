@@ -16,6 +16,7 @@ import {
 import { RegionGrid, dressingRooms, dungeonWalls, wallPlan, type DungeonMap } from "./dungeon";
 import fixture from "./dungeon.fixture.json";
 import pinned from "./runDressing.fixture.json";
+import pinnedFloor from "./runDressing.floor.fixture.json";
 import { MASONRY_WALLS, thicknessPx } from "./walls";
 import { TOWER_BANDS } from "./worldTheme";
 
@@ -266,11 +267,16 @@ describe("planRoomDressing: a dungeon floor's dressing, room by room (FS-KE075 �
   });
 
   it("should plan the same dressing as before the walls moved to their edges, piece for piece (FS-XK2B6 §D.14)", () => {
-    // the plan for this floor, look and seed as it stood before FS-XK2B6, one piece per line in
+    // the plan for the floor, look and seed as it stood before FS-XK2B6, one piece per line in
     // runDressing.fixture.json, so a change shows which pieces moved: 24 px off every wall cell
-    // was already the distance from the cell's edge, where the wall now stands
+    // was already the distance from the cell's edge, where the wall now stands. The floor is the
+    // levelgen golden of that time, frozen in runDressing.floor.fixture.json: the golden has since
+    // moved (FS-5FZ4J's sealed floors), and the pin is of the dressing, not of the generator
+    const floor = pinnedFloor as DungeonMap & { walls: NonNullable<ClientGameState["walls"]> };
+    const on = new RegionGrid(floor);
+    const at = dressingStatics({ walls: floor.walls, doors: [], containers: [], escape_doors: [], switches: [], stairs: [] }, floor.width, floor.height);
     expect(pinned).toHaveLength(77);
-    expect(plan).toEqual(pinned);
+    expect(planRoomDressing(lean, 41, at, dressingRooms(on))).toEqual(pinned);
   });
 
   it("should keep every footprint 24 px or more from the face of every wall as it is drawn on its edge (FS-XK2B6 §D.14)", () => {

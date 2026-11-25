@@ -45,7 +45,7 @@ func gateSomeoneToPull(world *ecs.EntityManager, cast BookCast) error {
 // resolveRecall stands each teammate on the nearest free spot round the mage,
 // the nearest teammate first.
 func resolveRecall(world *ecs.EntityManager, cast BookCast) {
-	from, ok := centreOf(cast.Caster)
+	from, ok := bodyCentre(cast.Caster)
 	if !ok {
 		return
 	}
@@ -64,7 +64,7 @@ func resolveRecall(world *ecs.EntityManager, cast BookCast) {
 // teammatesOf is every delver in play but the caster, the nearest first, ties
 // by entity id so a Recall lands the same way every time.
 func teammatesOf(entities []*ecs.Entity, caster *ecs.Entity) []*ecs.Entity {
-	from, ok := centreOf(caster)
+	from, ok := bodyCentre(caster)
 	if !ok {
 		return nil
 	}
@@ -75,7 +75,7 @@ func teammatesOf(entities []*ecs.Entity, caster *ecs.Entity) []*ecs.Entity {
 		}
 	}
 	away := func(e *ecs.Entity) float64 {
-		at, _ := centreOf(e)
+		at, _ := bodyCentre(e)
 		return math.Hypot(at.X-from.X, at.Y-from.Y)
 	}
 	slices.SortFunc(mates, func(a, b *ecs.Entity) int {
@@ -133,7 +133,7 @@ func bodyOn(entities []*ecs.Entity, mate *ecs.Entity, x, y float64) bool {
 		if entity.HasComponent(ecs.ComponentTypePlayer) && !InPlay(entity) {
 			continue
 		}
-		at, ok := centreOf(entity)
+		at, ok := bodyCentre(entity)
 		if ok && math.Hypot(at.X-x, at.Y-y) < 2*constants.PlayerRadius-bodyEpsilon {
 			return true
 		}
@@ -152,6 +152,6 @@ func pull(mate *ecs.Entity, x, y float64, endCharge func(*ecs.Entity)) {
 	if book, ok := bookOf(mate); ok {
 		book.Casting = nil
 	}
-	at, _ := centreOf(mate)
+	at, _ := bodyCentre(mate)
 	at.X, at.Y = x, y
 }

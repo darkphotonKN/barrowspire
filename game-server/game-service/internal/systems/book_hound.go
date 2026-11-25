@@ -128,7 +128,7 @@ func (s *MonsterAISystem) runHounds(deltaTime float64, entities []*ecs.Entity) {
 		if !ok || !standingHound(entity) {
 			continue
 		}
-		at, hasPlace := centreOf(entity)
+		at, hasPlace := bodyCentre(entity)
 		vc, hasVelocity := entity.GetComponent(ecs.ComponentTypeVelocity)
 		if !hasPlace || !hasVelocity {
 			continue
@@ -154,13 +154,13 @@ func (s *MonsterAISystem) runHounds(deltaTime float64, entities []*ecs.Entity) {
 // its heel. False when it has neither.
 func (s *MonsterAISystem) houndGoal(entity *ecs.Entity, hound *components.HoundComponent, at *components.TransformComponent, entities []*ecs.Entity) (*components.TransformComponent, float64, bool) {
 	if prey, ok := nearestMonster(at, hound.Sight, entities); ok {
-		to, _ := centreOf(prey)
+		to, _ := bodyCentre(prey)
 		return to, hound.Reach, true
 	}
 	archer := archerOf(entity)
 	for _, other := range entities {
 		if other.ID == archer && InPlay(other) {
-			to, ok := centreOf(other)
+			to, ok := bodyCentre(other)
 			return to, hound.Heel, ok
 		}
 	}
@@ -199,7 +199,7 @@ func nearestMonster(at *components.TransformComponent, radius float64, entities 
 		if !entity.HasComponent(ecs.ComponentTypeEnemy) || !alive(entity) {
 			continue
 		}
-		to, ok := centreOf(entity)
+		to, ok := bodyCentre(entity)
 		if !ok {
 			continue
 		}
@@ -226,7 +226,7 @@ func (s *CombatSystem) houndsBite(deltaTime float64, entities []*ecs.Entity) {
 		if hound.BiteIn = max(hound.BiteIn-deltaTime, 0); hound.BiteIn > castEpsilon {
 			continue
 		}
-		at, ok := centreOf(entity)
+		at, ok := bodyCentre(entity)
 		if !ok {
 			continue
 		}

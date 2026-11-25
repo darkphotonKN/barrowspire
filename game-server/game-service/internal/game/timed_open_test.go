@@ -116,7 +116,7 @@ func TestTimedOpen_AShutRunContainerOpensOnThe45thTickAfterTheReach(t *testing.T
 			require.NoError(t, reachErr)
 			open := timedOpenOf(delver)
 			require.NotNil(t, open, "the reach starts a timed open")
-			assert.Equal(t, container.ID, open.ContainerID)
+			assert.Equal(t, container.ID, open.TargetID)
 			assert.Equal(t, TimedOpenDuration, open.Duration)
 			assert.Equal(t, [2]float64{500, 500}, [2]float64{open.FromX, open.FromY}, "where the body stood")
 			assert.False(t, openable(t, container).IsOpen, "the reach leaves it shut")
@@ -242,8 +242,9 @@ func TestTimedOpen_RidesTheOwnersStateAlone(t *testing.T) {
 
 		timedOpen, ok := me()["timed_open"].(map[string]any)
 		require.True(t, ok, "tick %d: the owner is told their timed open", n)
-		assert.Len(t, timedOpen, 3)
+		assert.Len(t, timedOpen, 4)
 		assert.Equal(t, chest.ID.String(), timedOpen["entity_id"])
+		assert.Equal(t, "open", timedOpen["target_kind"], "a container's timed open (FS-5FZ4J §I R49)")
 		assert.InDelta(t, float64(n)*dt, timedOpen["elapsed"], 1e-9, "tick %d: elapsed rises with the tick", n)
 		assert.Equal(t, 1.5, timedOpen["duration"])
 	}
@@ -603,7 +604,7 @@ func TestTimedOpen_AReachForAnotherContainerReplacesIt(t *testing.T) {
 
 	open := timedOpenOf(delver)
 	require.NotNil(t, open)
-	assert.Equal(t, second.ID, open.ContainerID)
+	assert.Equal(t, second.ID, open.TargetID)
 	assert.InDelta(t, dt, open.Elapsed, 1e-9, "from zero")
 
 	ticks(s, timedOpenTicks()-1)

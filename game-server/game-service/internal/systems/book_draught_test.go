@@ -60,7 +60,7 @@ func TestBookSystemAdvanceCasts_BrewSetsADraughtAtTheArchersFeet(t *testing.T) {
 
 	archer, draught := brewedDraught(t, em)
 
-	at, _ := centreOf(draught)
+	at, _ := bodyCentre(draught)
 	assert.Equal(t, 500.0, at.X)
 	assert.Equal(t, 500.0, at.Y)
 	assert.Equal(t, 70, pool(archer), "100 - 30 stamina")

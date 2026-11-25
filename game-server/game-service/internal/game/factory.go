@@ -303,6 +303,108 @@ func CreateStairsEntity(em *ecs.EntityManager, config StairsConfig) *ecs.Entity 
 	return entity
 }
 
+// BarrierConfig places a shut barrier: its rect in px by its top-left corner,
+// as a door's, and the floor cells it covers.
+type BarrierConfig struct {
+	Kind                components.BarrierKind
+	X, Y, Width, Height float64
+	Cells               []components.Cell
+}
+
+// CreateBarrierEntity stands a shut barrier, a gate or a secret door, on its
+// cells (FS-5FZ4J §A R4). It is a door to the walk, so its rect blocks every
+// body while it is shut, read live; it carries no Interactable, which would
+// have the interaction system flip it every tick. A floor entity.
+func CreateBarrierEntity(em *ecs.EntityManager, config BarrierConfig) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(&components.BarrierComponent{Kind: config.Kind, Cells: config.Cells})
+	entity.AddComponent(components.NewDoorComponent(config.Width, config.Height))
+	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
+	entity.AddComponent(components.NewOpenableComponent(false))
+	return entity
+}
+
+// CreateSealEntity makes one of a floor's seals, stage its 1-based place in
+// the floor's chain (FS-5FZ4J §B R9). A floor entity with no position.
+func CreateSealEntity(em *ecs.EntityManager, kind components.SealKind, stage int) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(components.NewSealComponent(kind, stage))
+	return entity
+}
+
+// SealPieceConfig places one seal piece: whose it is, what, where and on
+// which cell; a lever's glyph and turn; whether its first work wakes an
+// ambush.
+type SealPieceConfig struct {
+	Seal  uuid.UUID
+	Kind  components.SealPieceKind
+	X, Y  float64
+	Cell  components.Cell
+	Glyph string
+	Turn  int
+	Wakes bool
+}
+
+// CreateSealPieceEntity stands one seal piece, worked by interact (FS-5FZ4J
+// §C R15-R16). It has no Openable, so the interaction system never flips it.
+func CreateSealPieceEntity(em *ecs.EntityManager, config SealPieceConfig) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(&components.SealPieceComponent{
+		Seal:  config.Seal,
+		Kind:  config.Kind,
+		Cell:  config.Cell,
+		Glyph: config.Glyph,
+		Turn:  config.Turn,
+	})
+	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
+	entity.AddComponent(components.NewInteractableComponent(commonconstants.DefaultInteractableRange))
+	if config.Wakes {
+		entity.AddComponent(&components.AmbushComponent{})
+	}
+	return entity
+}
+
+// LorePieceConfig is one lore piece: its kind, the seal a mural tells, where
+// it stands and the cell that holds it.
+type LorePieceConfig struct {
+	Kind  components.LoreKind
+	Tells uuid.UUID
+	X, Y  float64
+	Cell  components.Cell
+}
+
+// CreateLorePieceEntity stands a mural or a lore shrine, read by interact; a
+// piece of no seal, it wakes nothing (FS-5FZ4J §C R15, §F R39). It has no
+// Openable, so the interaction system never flips it.
+func CreateLorePieceEntity(em *ecs.EntityManager, config LorePieceConfig) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(&components.LorePieceComponent{Kind: config.Kind, Tells: config.Tells, Cell: config.Cell})
+	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
+	entity.AddComponent(components.NewInteractableComponent(commonconstants.DefaultInteractableRange))
+	return entity
+}
+
+// TrapConfig is one trap: its kind, the cell it lies on and that cell's
+// centre in px.
+type TrapConfig struct {
+	Kind components.TrapKind
+	Cell components.Cell
+	X, Y float64
+}
+
+// CreateTrapEntity lays one armed, undetected trap (FS-5FZ4J §D R23-R30). It
+// is no interact target. A tripwire carries the one ambush it wakes.
+func CreateTrapEntity(em *ecs.EntityManager, config TrapConfig) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(&components.TrapComponent{Kind: config.Kind, Cell: config.Cell, Armed: true})
+	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
+	entity.AddComponent(&components.DetectableComponent{Spots: []components.Spot{{X: config.X, Y: config.Y}}})
+	if config.Kind == components.TrapTripwire {
+		entity.AddComponent(&components.AmbushComponent{})
+	}
+	return entity
+}
+
 // CreateFunctionNPCEntity places an NPC who opens something.
 //
 // They never move, so they carry no velocity: only who they are, where they

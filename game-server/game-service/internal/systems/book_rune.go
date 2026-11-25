@@ -44,7 +44,7 @@ func (s *BookSystem) catchOnRune(entity *ecs.Entity, entities []*ecs.Entity) boo
 		return false
 	}
 	ring := rc.(*components.RuneComponent)
-	at, ok := centreOf(entity)
+	at, ok := bodyCentre(entity)
 	if !ok {
 		return false
 	}
@@ -92,7 +92,7 @@ func uncaughtInside(ring *components.RuneComponent, at *components.TransformComp
 		if !ok || !alive(entity) || slices.Contains(ring.Caught, entity.ID) {
 			continue
 		}
-		centre, ok := centreOf(entity)
+		centre, ok := bodyCentre(entity)
 		if !ok {
 			continue
 		}

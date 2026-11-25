@@ -120,6 +120,17 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
     expect(live("4")).toBe(true);
   });
 
+  // FS-5FZ4J §J R55 (I-5FZ4J-11): the Blessing mark, beside the run's own health bar
+  it("should draw the status marks the run hands, and take them down as the run leaves", () => {
+    const { scene, bridge, report, standing } = onScene();
+    mountHud(scene, bridge, hudPieces(scene));
+    report("run");
+    bridge.hud({ world: "run", kind: "statusMarks", marks: ["blessed"] });
+    expect(standing().filter((m) => m.kind === "zone")).toHaveLength(1);
+    bridge.left("run");
+    expect(standing()).toEqual([]);
+  });
+
   it("should take every piece down, and hear nothing more, with the scene", () => {
     const { scene, bridge, report, standing, events } = onScene();
     mountHud(scene, bridge, hudPieces(scene));
@@ -148,6 +159,8 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
       bar: () => ({ ...piece("bar")(), top: () => 612 }),
       bars: piece("bars"),
       progress: () => ({ ...piece("progress")(), cueOver: () => {} }),
+      window: piece("window"),
+      statusMarks: piece("statusMarks"),
     };
     mountHud(scene, bridge, build);
     report("run");

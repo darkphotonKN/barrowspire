@@ -92,7 +92,7 @@ func TestBookSystemUpdate_AWitchlightGoesAfter20Seconds(t *testing.T) {
 			light = e
 		}
 	}
-	at, _ := centreOf(light)
+	at, _ := bodyCentre(light)
 	assert.Equal(t, components.TransformComponent{X: 5 * testCell, Y: 0}, *at, "at the aimed point")
 
 	castTicks(books, em, 20*30-2)
@@ -111,7 +111,7 @@ func TestBookSystemAdvanceCasts_BreaksWithNothingSpent(t *testing.T) {
 		breakIt func(em *ecs.EntityManager, mage *ecs.Entity) []uuid.UUID
 	}{
 		{"moved", func(_ *ecs.EntityManager, mage *ecs.Entity) []uuid.UUID {
-			at, _ := centreOf(mage)
+			at, _ := bodyCentre(mage)
 			at.Y += 0.5
 			return nil
 		}},
@@ -247,7 +247,7 @@ func TestBookSystemAdvanceCasts_AnAllyWithinRangePlusOneCellStillCounts(t *testi
 			cast := BookCast{Caster: mage, Page: BookPage{Target: TargetAlly, RangeCells: 6}, Target: ally, CellSize: testCell}
 			require.NoError(t, gateTarget(cast, nil))
 
-			at, _ := centreOf(ally)
+			at, _ := bodyCentre(ally)
 			at.X = tt.to
 			recheck := cast
 			recheck.Page.RangeCells += castRangeSlackCells

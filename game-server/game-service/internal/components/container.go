@@ -33,6 +33,10 @@ type ContainerComponent struct {
 	// first open, back to 0 as it restocks (FS-3QHQZ §Requirements 19); the
 	// field's tick advances it. Always 0 on a pile and in a run.
 	OpenedFor float64
+	// Better marks a hidden room's better chest: its contents roll one
+	// rarity step up from a chest's (FS-5FZ4J §F R39). On the wire it is a
+	// chest.
+	Better bool
 }
 
 func (d *ContainerComponent) Type() ecs.ComponentType {

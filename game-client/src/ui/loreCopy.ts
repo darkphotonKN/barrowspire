@@ -10,6 +10,7 @@
 import { lootRefusalCopy } from "@/scenes/fieldRefusals";
 import { CONTAINER_GUARDED, type InteractReply } from "./floor";
 import type { LoreLine } from "./loreLine";
+import { SEAL_REPLY_REASONS } from "./sealLines";
 
 /** The reason the server gives when the stairs refuse a party that has not gathered (FS-F6F88 req 22). */
 export const PARTY_NOT_GATHERED = "party_not_gathered";
@@ -38,6 +39,10 @@ const REPLY_LINES: Record<string, ((reply: InteractReply) => LoreLine | null) | 
   tome_taken: () => ({ text: "Wonder if I can burn it.", tone: "lore" }),
   altar_without_tome: () => ({ text: "A tome was burned here once, they say, to insult a demon.", tone: "lore" }),
   altar_burned: null,
+  // FS-5FZ4J §G R43: a hallowed altar already prayed at is refused quietly
+  altar_prayed: null,
+  // FS-5FZ4J §J R53: a sealed floor's replies are the HUD notice's (`sealLines.ts`), never a lore line
+  ...Object.fromEntries(SEAL_REPLY_REASONS.map((reason) => [reason, null])),
 };
 
 /**

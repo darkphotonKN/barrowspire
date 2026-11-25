@@ -104,11 +104,11 @@ func fixSpireHeight(t *testing.T, s *Session) {
 
 // newRun builds a run the way the server does, without starting its loops, so
 // the test is the only thing touching the world. Its chest point holds a chest.
-func newRun(t *testing.T, client *countingItemsClient) *Session {
+func newRun(t *testing.T, client *countingItemsClient, opts ...sessionOption) *Session {
 	t.Helper()
 
 	em := ecs.NewEntityManager()
-	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, client, RunBounds())
+	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, em, &mockEventEmitter{}, client, RunBounds(), opts...)
 	s.containerKindRand = chestsOnly
 	s.InitialMapObjects(nil)
 	s.InitialSystems()
@@ -230,11 +230,12 @@ func TestNewRun_StartsOnTheFirstFloor(t *testing.T) {
 
 	assert.Equal(t, 1, currentFloor(t, s).Depth)
 
-	// floor 1 is a dungeon: its fixtures, and no buildings (FS-KE075 §B R10)
-	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor), 1)
-	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeSwitch), 1)
+	// floor 1 is a dungeon: its stairs, no escape door or switch (FS-5FZ4J
+	// §A R6), and no buildings (FS-KE075 §B R10)
+	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor))
+	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeSwitch))
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeStairs), 1)
-	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeDoor), "a dungeon floor has no doors")
+	assert.Empty(t, buildingDoorIDs(s), "a dungeon floor has no building doors, only its gate")
 }
 
 // party is a run with two delvers on it: one carrying a weapon from their
@@ -369,7 +370,7 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 	}
 
 	// counted by kind
-	doors := len(entityIDsWith(s, ecs.ComponentTypeDoor))
+	doors := len(buildingDoorIDs(s))
 	walls := len(entityIDsWith(s, ecs.ComponentTypeWall))
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypePlayer), 2, "delvers")
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeItem), len(p.carriedItemIDs), "only carried items")
@@ -403,9 +404,25 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 
 	// a tome run (FS-3103M, 2% of runs) also lays its tome or altar on the floor
 	tomeAndAltar := len(entityIDsWith(s, ecs.ComponentTypeTome)) + len(entityIDsWith(s, ecs.ComponentTypeAltar))
+	// and a floor's respites: a fountain on half of floors 2+, the hallowed
+	// altar in 30% of runs (FS-5FZ4J §G R40, R42), the wandering merchant on
+	// a third of floors 2+ (FS-9JV5K §A R1)
+	respites := len(entityIDsWith(s, ecs.ComponentTypeFountain)) + len(entityIDsWith(s, ecs.ComponentTypeHallowedAltar)) +
+		len(entityIDsWith(s, ecs.ComponentTypeMerchant))
 
 	total := len(s.EntityManager.GetAllEntities())
-	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs + tomeAndAltar
+	// a sealed floor's gate, seals, their pieces and its lore pieces, a mural
+	// or a shrine (FS-5FZ4J §B, §C R15, §F R39)
+	sealed := len(entityIDsWith(s, ecs.ComponentTypeBarrier)) + len(entityIDsWith(s, ecs.ComponentTypeSeal)) +
+		len(entityIDsWith(s, ecs.ComponentTypeSealPiece)) + len(entityIDsWith(s, ecs.ComponentTypeLorePiece))
+	// a dungeon floor's traps (FS-5FZ4J §D R23); a floor of buildings has none
+	traps := len(entityIDsWith(s, ecs.ComponentTypeTrap))
+	if s.dungeon != nil {
+		assert.Equal(t, trapCount(currentFloor(t, s).Depth), traps, "the new floor's own traps")
+	} else {
+		assert.Zero(t, traps, "a floor of buildings has no traps")
+	}
+	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs + tomeAndAltar + respites + sealed + traps
 	assert.Equal(t, len(keep)+floorKinds, total, "nothing else is in the world")
 }
 

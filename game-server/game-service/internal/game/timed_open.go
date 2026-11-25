@@ -74,28 +74,43 @@ func (s *Session) openContainer(container *ecs.Entity, openable *components.Open
 /**
 * advanceTimedOpens is a run's timed opens on its tick, after the tick's
 * movement and combat: one its delver moved, was hit, attacked or left reach
-* of is cancelled, the rest count the tick, and one whose time has passed opens
-* its container (FS-MQYEX §Requirements 4–10, 28). attackers is the bodies whose
-* attack or cast went off in the tick's combat. The first to finish on a container
-* opens it, rolled once, for every delver who was opening it: the others'
-* timed opens end on the same tick (§Requirements 16–17). Nothing is sent, for
-* a cancel either: the next state shows the container open, or no timed open.
+* of is cancelled, the rest count the tick, and one whose time has passed does
+* what its target kind says: opens its container, opens the secret door it
+* searched, or ends a prayer at the hallowed altar (FS-MQYEX §Requirements
+* 4–10, 28; FS-5FZ4J §F R38, §G R43). attackers is
+* the bodies whose attack or cast went off in the tick's combat. The first to
+* finish on a target completes it, once, for every delver who was working it:
+* the others' timed opens end on the same tick (§Requirements 16–17). Nothing
+* is sent, for a cancel either: the next state shows the target open, or no
+* timed open.
 **/
 func (s *Session) advanceTimedOpens(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID) {
 	for _, done := range systems.NewTimedOpenSystem(s.EntityManager).Update(deltaTime, entities, attackers) {
-		container, ok := s.EntityManager.GetEntity(done.ContainerID)
+		target, ok := s.EntityManager.GetEntity(done.TargetID)
 		if !ok {
 			continue
 		}
-		oc, ok := container.GetComponent(ecs.ComponentTypeOpenable)
-		if !ok {
-			continue
+		switch done.TargetKind {
+		case components.TimedTargetSearch:
+			s.openSecretDoor(target)
+		case components.TimedTargetPray:
+			s.completePrayer(target)
+		default:
+			s.completeTimedContainerOpen(target, done.DelverEntityID)
 		}
-		if err := s.openContainer(container, oc.(*components.OpenableComponent)); err != nil {
-			slog.Error("Failed to open a container at the end of its timed open",
-				"container_entity_id", done.ContainerID,
-				"delver_entity_id", done.DelverEntityID,
-				"error", err)
-		}
+	}
+}
+
+// completeTimedContainerOpen opens the container a timed open finished on.
+func (s *Session) completeTimedContainerOpen(container *ecs.Entity, delverID uuid.UUID) {
+	oc, ok := container.GetComponent(ecs.ComponentTypeOpenable)
+	if !ok {
+		return
+	}
+	if err := s.openContainer(container, oc.(*components.OpenableComponent)); err != nil {
+		slog.Error("Failed to open a container at the end of its timed open",
+			"container_entity_id", container.ID,
+			"delver_entity_id", delverID,
+			"error", err)
 	}
 }

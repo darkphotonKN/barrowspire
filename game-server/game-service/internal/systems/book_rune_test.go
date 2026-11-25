@@ -77,7 +77,7 @@ func TestBookSystemCast_BindingGlyphLaysARuneAfterItsCastTime(t *testing.T) {
 	pool, _ := bookPool(mage)
 	assert.Equal(t, 60, pool.Current, "40 mana")
 	assert.Equal(t, components.BookCooldown{Remaining: 60, Total: 60}, bookOfT(t, mage).Cooldowns[components.PageBindingGlyph])
-	at, _ := centreOf(r)
+	at, _ := bodyCentre(r)
 	assert.Equal(t, components.TransformComponent{X: runePoint, Y: 0}, *at)
 	effect, _ := r.GetComponent(ecs.ComponentTypeBookEffect)
 	assert.Equal(t, 30.0, effect.(*components.BookEffectComponent).Remaining)
@@ -144,7 +144,7 @@ func TestBookSystemUpdate_ARuneCatchesTheFirstThreeThenGoes(t *testing.T) {
 	r := layRune(t, em, books)
 
 	for i, m := range walkers {
-		at, _ := centreOf(m)
+		at, _ := bodyCentre(m)
 		at.Y = 0 // walks onto the rune
 		books.Update(castTick, em.GetAllEntities())
 		if i < 3 {

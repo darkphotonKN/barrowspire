@@ -35,7 +35,28 @@ import {
   WINDOW_GLASS,
 } from "./models/architecture.js";
 import { brazier, lampPost, table, chair, barrel, BRAZIER_FLAME, LAMP_GLASS } from "./models/props.js";
-import { door, escapeDoor, lever, chest, sack, tome, altar } from "./models/interactables.js";
+import { door, escapeDoor, lever, chest, sack, tome, altar, HALLOWED_CANDLES } from "./models/interactables.js";
+import {
+  GAS_PUFF,
+  GLYPHS,
+  bridgeCell,
+  bridgeLever,
+  dartWall,
+  fireJet,
+  fountain,
+  gasVent,
+  gate,
+  loreShrine,
+  mural,
+  pitCell,
+  pressurePlate,
+  sealLever,
+  secretCracks,
+  spikePlate,
+  stairKey,
+  stoneBlock,
+  tripwire,
+} from "./models/sealed.js";
 import { ICONS } from "./models/items.js";
 import {
   AWNINGS,
@@ -123,7 +144,7 @@ import {
   chapelWall,
 } from "./models/chapelBuilding.js";
 import { CAST } from "./characters/cast.js";
-import { FOLK } from "./characters/folk.js";
+import { FOLK, MERCHANT } from "./characters/folk.js";
 
 export const LICENCE = "Barrowspire original work (procedural, no third-party assets)";
 const src = (file, fn) => `procedural: tools/bake/page/${file}#${fn}`;
@@ -441,6 +462,22 @@ function characterSheets() {
  */
 function folkSheets() {
   return FOLK.map((c) => ({
+    name: c.sheet,
+    group: c.group,
+    kind: "character",
+    build: c.build,
+    animations: c.animations,
+    source: `authored: tools/bake/page/characters/folk.js#${c.fn}`,
+  }));
+}
+
+/**
+ * The wandering merchant (FS-9JV5K §G R26): a townsfolk build on the same rig, idle only in eight
+ * facings, packed on a group of his own that the run fetches on demand the first time a state
+ * carries him (ADR-0071 Decision 6; src/render/art/sceneArt.ts `NPC_ART`).
+ */
+function merchantSheets() {
+  return MERCHANT.map((c) => ({
     name: c.sheet,
     group: c.group,
     kind: "character",
@@ -863,6 +900,73 @@ function chapelBuildingSheets() {
   return [...walls, ...roof];
 }
 
+/**
+ * The sealed floor's props (FS-5FZ4J §K R57), authored in code (ADR-0020, ADR-0021) and packed on
+ * their own atlas, `sealed`, so every committed atlas keeps its bytes. Resident: no scene in
+ * SCENE_ART names it, so the run draws it on any floor without a fetch. Each prop's states are
+ * framed together (a swap never moves the sprite) and named as the client plays them. Reused, not
+ * copied: the seal's brazier is the run's `brazier` with a `cold` state (models/props.js), and the
+ * hallowed altar is the Altar of Consecration's `altar` in its `hallowed` look
+ * (models/interactables.js). How the client lays the cell pieces:
+ *  - `seal_lever`: `up`/`down`, and a `glyph_<glyph>` frame per GLYPHS (only the brass glyph in the
+ *    lever's panels), drawn over the lever at the same spot: the lever's glyph is on the wire.
+ *  - `gate_x`/`gate_y`: one piece per gate cell, at each cell's centre, `_x` for a gate running
+ *    along world x (across a corridor that runs along y); the corridor walls are its jambs.
+ *  - `pit_cell`: ground, one per pit cell: `open`, or `n`/`w`/`nw` where that neighbour is floor.
+ *  - `bridge_cell`: ground, one per lowered lane cell in place of its pit, `x` for a crossing
+ *    along world x.
+ *  - `secret_cracks`: a decal at a masonry wall piece's own spot, over it, on every piece of the
+ *    door's face: `x`/`y` on a back piece, `front_x`/`front_y` on a cut-away one.
+ *  - `trap_*`: `armed`/`sprung`; the gas vent's `puff` is its short effect (GAS_PUFF, not looped).
+ */
+function sealedSheets() {
+  const sheet = (name, file, fn, animations, opts = {}) => ({
+    name,
+    group: "sealed",
+    kind: "prop",
+    animations,
+    source: src(file, fn),
+    ...opts,
+  });
+  const states = (list, build) => Object.fromEntries(list.map((s) => [s, still(() => build(s))]));
+  const S = "models/sealed.js";
+  const GROUND = { shadow: false, pad: 0.04 };
+  return [
+    sheet("seal_lever", S, "sealLever", states(["up", "down", ...GLYPHS.map((g) => `glyph_${g}`)], sealLever)),
+    sheet("pressure_plate", S, "pressurePlate", states(["up", "pressed"], pressurePlate), { pad: 0.06 }),
+    sheet("stone_block", S, "stoneBlock", { default: still(stoneBlock) }),
+    sheet("seal_brazier", "models/props.js", "brazier", states(["cold", "lit"], brazier), {
+      light: { at: BRAZIER_FLAME, radius: 300, color: "amber", flicker: 0.7 },
+    }),
+    sheet("stair_key", S, "stairKey", { default: still(stairKey) }),
+    sheet("bridge_lever", S, "bridgeLever", states(["up", "down"], bridgeLever)),
+    sheet("mural", S, "mural", { default: still(mural) }),
+    sheet("lore_shrine", S, "loreShrine", { default: still(loreShrine) }),
+    ...["x", "y"].map((axis) => sheet(`gate_${axis}`, S, "gate", states(["shut", "open"], (s) => gate(s, axis)))),
+    sheet("pit_cell", S, "pitCell", states(["open", "n", "w", "nw"], pitCell), GROUND),
+    sheet("bridge_cell", S, "bridgeCell", states(["x", "y"], bridgeCell), GROUND),
+    sheet("secret_cracks", S, "secretCracks", states(["x", "y", "front_x", "front_y"], secretCracks), { shadow: false, pad: 0.04 }),
+    sheet("trap_spike_plate", S, "spikePlate", states(["armed", "sprung"], spikePlate), { pad: 0.06 }),
+    sheet("trap_dart_wall", S, "dartWall", states(["armed", "sprung"], dartWall), { pad: 0.06 }),
+    sheet("trap_fire_jet", S, "fireJet", states(["armed", "sprung"], fireJet), { pad: 0.06 }),
+    sheet("trap_tripwire", S, "tripwire", states(["armed", "sprung"], tripwire), { pad: 0.06 }),
+    sheet(
+      "trap_gas_vent",
+      S,
+      "gasVent",
+      {
+        ...states(["armed", "sprung"], gasVent),
+        puff: { fps: 10, loop: false, frames: GAS_PUFF.map((_, i) => () => gasVent("puff", i)) },
+      },
+      { pad: 0.06 },
+    ),
+    sheet("healing_fountain", S, "fountain", states(["full", "dry"], fountain)),
+    sheet("hallowed_altar", "models/interactables.js", "altar", states(["dormant", "prayed"], (s) => altar(s, "hallowed")), {
+      light: { at: HALLOWED_CANDLES, radius: 140, color: "amberBright", flicker: 0.3 },
+    }),
+  ];
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
@@ -870,10 +974,12 @@ export const CATALOGUE = [
   ...propSheets(),
   ...containerSheets(),
   ...summoningSheets(),
+  ...sealedSheets(),
   ...townSheets(),
   ...iconSheets(),
   ...characterSheets(),
   ...folkSheets(),
+  ...merchantSheets(),
   ...fxSheets(),
   ...towerSheets(),
   ...spireSheets(),

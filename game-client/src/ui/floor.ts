@@ -74,6 +74,8 @@ export interface InteractReply {
   reason?: string;
   /** Living players not yet in range of the stairs, on a `party_not_gathered` refusal. */
   missing?: number;
+  /** The mural's glyphs, in the order the levers are pulled, on a `mural` reply (FS-5FZ4J §I R49). */
+  glyphs?: string[];
 }
 
 /**

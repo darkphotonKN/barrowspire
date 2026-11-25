@@ -139,6 +139,9 @@ type bootOptions struct {
 	mailBus mailArrivalBus
 	// whether this pod builds the dev test room; the zero value is off (FS-BDRTJ R1)
 	devTestRoom bool
+	// what every run's purchases are paid from; nil, and every buy is refused
+	// wallet_unavailable (FS-9JV5K §B R7, ADR-0093)
+	wallet game.WalletDebiter
 }
 
 // newBootOptions are the defaults with opts applied: a fresh seed, the
@@ -165,6 +168,12 @@ func WithVisitSettler(settler VisitSettler) Option {
 **/
 func WithBootSeed(seed uint64) Option {
 	return func(o *bootOptions) { o.seed = seed }
+}
+
+// WithWallet has every run pay its purchases from wallet, wallet-service's
+// debit in production. FS-9JV5K §B R7, ADR-0093.
+func WithWallet(wallet game.WalletDebiter) Option {
+	return func(o *bootOptions) { o.wallet = wallet }
 }
 
 // WithDevTestRoom builds the dev test room and its hub gate when on. main decides

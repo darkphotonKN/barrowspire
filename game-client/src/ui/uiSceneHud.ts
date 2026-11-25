@@ -15,6 +15,8 @@ import type { AbilityBarView } from "./abilityBarView";
 import type { Progress } from "./progress";
 import { RESOURCE_HUD_AT } from "./ResourceHud";
 import type { HudBar } from "./resources";
+import type { SealWindowView } from "./sealWindow";
+import { STATUS_MARKS_AT, type StatusMark } from "./statusMarks";
 import type { UiBridge, World, WorldReport } from "./uiBridge";
 
 /**
@@ -27,6 +29,10 @@ export type HudMessage = { readonly world: World } & (
   | { readonly kind: "bar"; readonly bar: AbilityBarView | null }
   | { readonly kind: "bars"; readonly bars: HudBar[] }
   | { readonly kind: "progress"; readonly progress: Progress }
+  // a Braziers window's countdown while one runs, none between (FS-5FZ4J §J R53)
+  | { readonly kind: "window"; readonly window: SealWindowView | null }
+  // the player's lasting statuses beside their own health bar: the Blessing (FS-5FZ4J §J R55)
+  | { readonly kind: "statusMarks"; readonly marks: StatusMark[] }
 );
 
 export type HudKind = HudMessage["kind"];
@@ -63,6 +69,10 @@ export interface HudBuild {
   bars(at: HudPoint): HudPiece<HudBar[]>;
   /** The level bar places itself, along the bottom middle of every world (FS-77DVN §A, `xpBarLayout`). */
   progress(): ProgressPiece;
+  /** The Braziers window's countdown places itself, at the top centre (FS-5FZ4J §J R53, `sealWindowFrame`). */
+  window(): HudPiece<SealWindowView | null>;
+  /** The status marks, from their first one's top-left (FS-5FZ4J §J R55, `statusMarkRects`). */
+  statusMarks(at: HudPoint): HudPiece<StatusMark[]>;
 }
 
 interface HudPlaces {
@@ -71,6 +81,10 @@ interface HudPlaces {
   readonly bars?: HudPoint;
   /** The level bar stands in this world: where, its own layout says (FS-77DVN §A). */
   readonly progress?: true;
+  /** A sealed floor's Braziers window counts down in this world: a run's alone. */
+  readonly window?: true;
+  /** The player's status marks stand here, beside the health bar: a run's alone, as the Blessing is. */
+  readonly statusMarks?: HudPoint;
 }
 
 /**
@@ -82,13 +96,15 @@ interface HudPlaces {
 export const HUD_PLACES: Readonly<Record<World, HudPlaces>> = {
   hub: { progress: true },
   field: { progress: true, bars: RESOURCE_HUD_AT.field, bar: true },
-  run: { progress: true, bars: RESOURCE_HUD_AT.run, bar: true },
+  run: { progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, statusMarks: STATUS_MARKS_AT },
 };
 
 interface HudStanding {
   bar?: AbilityBarPiece;
   bars?: HudPiece<HudBar[]>;
   progress?: ProgressPiece;
+  window?: HudPiece<SealWindowView | null>;
+  statusMarks?: HudPiece<StatusMark[]>;
 }
 
 /**
@@ -151,6 +167,16 @@ export class UiHudSlot {
           this.tellCue();
         }
         pieces.progress.show(message.progress);
+        return;
+      case "window":
+        // built on the first window, never for none
+        if (!places.window || (!pieces.window && !message.window)) return;
+        (pieces.window ??= this.build.window()).show(message.window);
+        return;
+      case "statusMarks":
+        // built on the first mark, never for none
+        if (!places.statusMarks || (!pieces.statusMarks && message.marks.length === 0)) return;
+        (pieces.statusMarks ??= this.build.statusMarks(places.statusMarks)).show(message.marks);
         return;
     }
   }

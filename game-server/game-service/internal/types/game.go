@@ -64,6 +64,12 @@ type PublicPlayerState struct {
 	// BookStates are the timed book states on the delver; absent when none.
 	// FS-X2CMM §F R34.
 	BookStates []BookTimedState `json:"book_states,omitempty"`
+	// PoisonedFor is the seconds of poison left, absent when not poisoned:
+	// public, so teammates' bars can show it. FS-5FZ4J §I R47.
+	PoisonedFor float64 `json:"poisoned_for,omitempty"`
+	// Blessed is true while the delver carries the hallowed altar's Blessing,
+	// absent when not: public, as poison is. FS-5FZ4J §I R47.
+	Blessed bool `json:"blessed,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole
@@ -100,9 +106,11 @@ type ParryState struct {
 }
 
 // TimedOpenState is a delver's timed open as its owner is told it: the
-// container being opened and how far along it is. FS-MQYEX §Requirements 18.
+// target being worked, what for, and how far along it is. FS-MQYEX
+// §Requirements 18; target_kind open, search or pray, FS-5FZ4J §I R49.
 type TimedOpenState struct {
-	EntityID uuid.UUID `json:"entity_id"`
+	EntityID   uuid.UUID `json:"entity_id"`
+	TargetKind string    `json:"target_kind"`
 	// Elapsed is the seconds of simulation time counted so far.
 	Elapsed float64 `json:"elapsed"`
 	// Duration is the seconds it takes.
@@ -436,6 +444,110 @@ type AltarState struct {
 	Burned   bool      `json:"burned"`
 }
 
+// FountainState is a floor's healing fountain: where it stands and whether
+// its pool is spent. FS-5FZ4J §I R46.
+type FountainState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+	Dry      bool      `json:"dry"`
+}
+
+// HallowedAltarState is the hallowed altar on its floor, once reachable:
+// prayed once a prayer at it completed. Never the Altar of Consecration's
+// AltarState. FS-5FZ4J §I R46.
+type HallowedAltarState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+	Prayed   bool      `json:"prayed"`
+}
+
+// MerchantState is the wandering merchant on his floor and his wares, sent
+// whole; absent in the hub, a field and on a floor without him. FS-9JV5K §A R4.
+type MerchantState struct {
+	EntityID uuid.UUID            `json:"entity_id"`
+	Position *Position            `json:"position"`
+	Wares    []*MerchantWareState `json:"wares"`
+}
+
+// MerchantWareState is one of his wares: what it is, its price in gold, how
+// many are neither sold nor reserved, and the item the client draws, absent
+// for the tome.
+type MerchantWareState struct {
+	Ware  string            `json:"ware"`
+	Price int64             `json:"price"`
+	Left  int               `json:"left"`
+	Item  *MerchantWareItem `json:"item,omitempty"`
+}
+
+// MerchantWareItem is a ware's display data: its name, rarity and the stats
+// the client's icon resolver keys on (item type, healing, mana), since the
+// catalogue carries no icon or item code.
+type MerchantWareItem struct {
+	Name          string   `json:"name"`
+	ItemType      ItemType `json:"item_type"`
+	Rarity        string   `json:"rarity,omitempty"`
+	HealingAmount int      `json:"healing_amount,omitempty"`
+	ManaAmount    int      `json:"mana_amount,omitempty"`
+}
+
+// CellState is a cell's column and row on the floor map's grid.
+type CellState struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+// SealState is a sealed floor's seal: the current, first unbroken seal's kind
+// and stage, or the last one's once all are broken; stages is how many the
+// floor chains; broken is set once every one is. FS-5FZ4J §I R46, R48.
+type SealState struct {
+	Kind   string `json:"kind"`
+	Stage  int    `json:"stage"`
+	Stages int    `json:"stages"`
+	Broken bool   `json:"broken"`
+	// KeyCarried is true while the party carries the floor's stair key and
+	// its seal is unbroken (§E R32; amended 2026-11-25: false once the key
+	// has turned the gate), absent otherwise
+	KeyCarried bool `json:"key_carried,omitempty"`
+	// WindowEndsIn is the seconds left of a Braziers window while one runs
+	// (§E R34), absent otherwise
+	WindowEndsIn float64 `json:"window_ends_in,omitempty"`
+}
+
+// SealPieceState is one seal piece: a lever's glyph, absent on the others;
+// active a lever down, a plate held, a brazier lit, a bridge lowered.
+// FS-5FZ4J §I R46.
+type SealPieceState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Kind     string    `json:"kind"`
+	Position *Position `json:"position"`
+	Cell     CellState `json:"cell"`
+	Glyph    string    `json:"glyph,omitempty"`
+	Active   bool      `json:"active"`
+}
+
+// BarrierState is one barrier, a gate, a secret door or a pit, and the cells
+// it covers. FS-5FZ4J §I R46.
+type BarrierState struct {
+	EntityID uuid.UUID   `json:"entity_id"`
+	Kind     string      `json:"kind"`
+	Cells    []CellState `json:"cells"`
+	Open     bool        `json:"open"`
+}
+
+// TrapState is one detected trap (FS-5FZ4J §I R46): armed false while a
+// fired trap waits to re-arm and for a spent tripwire, a gas vent always
+// armed; revealed by a book page (FS-X2CMM), always false in v1. PuffedAt is
+// a gas vent's last puff, in seconds of the floor's simulation time, absent
+// before its first; the client reads a puff off it rising (R48).
+type TrapState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Kind     string    `json:"kind"`
+	Cell     CellState `json:"cell"`
+	Armed    bool      `json:"armed"`
+	Revealed bool      `json:"revealed"`
+	PuffedAt *float64  `json:"puffed_at,omitempty"`
+}
+
 // GateState is a hub gate as the client sees it: where it goes, where it
 // stands and how close counts. Its arrival point is server-only. FS-0XMCP
 // §Requirements 6.
@@ -541,6 +653,16 @@ const (
 	// ItemTypeRing has no base stats: its power is its affixes. FS-4R9M9 §Requirements 5.
 	ItemTypeRing ItemType = "ring"
 )
+
+// AntidoteName is the antidote's catalogue name. The template data the session
+// loads carries no item code, so the name is how the game knows an antidote:
+// a consumable keeps its base name whatever rarity it rolls. FS-9JV5K §D R16.
+const AntidoteName = "Antidote"
+
+// IsAntidote is whether an item of itemType named name is an antidote.
+func IsAntidote(itemType ItemType, name string) bool {
+	return itemType == ItemTypeConsumable && name == AntidoteName
+}
 
 type ArmorSlot string
 

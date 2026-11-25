@@ -335,6 +335,11 @@ const SCORCH = mix("pitch", "charcoal", 0.5);
 const ASH = mix(mix("slateLight", "vellumDark", 0.3), "charcoal", 0.25);
 const WAX = mix("vellum", "vellumDark", 0.4);
 
+// the hallowed altar's (FS-5FZ4J §G R42, §K R57): the same altar made holy, its stone a pale warm
+// limestone, gold let into it, its candles burning
+const HALLOWED_STONE = mix(mix("vellumDark", "vellum", 0.4), "brass", 0.14);
+const HALLOWED_WAX = mix("vellum", "amberBright", 0.15);
+
 let RITES = null;
 function riteMaterials() {
   if (RITES) return RITES;
@@ -362,6 +367,35 @@ function riteMaterials() {
   };
   return RITES;
 }
+
+let HALLOWS = null;
+/** The hallowed look's materials: the rites' set with its stone and wax made holy, and gold. */
+function hallowedMaterials() {
+  if (HALLOWS) return HALLOWS;
+  const M = materials();
+  const R = riteMaterials();
+  HALLOWS = {
+    ...R,
+    stone: textured(
+      pixelTexture(128, 128, (x, y) =>
+        shade(HALLOWED_STONE, (0.74 + 0.32 * fbm(x / 16, y / 16, 83)) * (0.93 + 0.12 * fbm(x / 4, y / 4, 84)) * (Math.abs(vnoise(x / 14, y / 14, 85) - 0.5) < 0.016 ? 0.7 : 1)),
+      ),
+      { bump: 0.6, rough: 0.85 },
+    ),
+    wax: plain(HALLOWED_WAX, { rough: 0.55 }),
+    gold: M.gold,
+    flame: M.flame,
+    // holy water in the basin, the candlelight caught in it
+    water: plain(mix("slate", "pitch", 0.4), { rough: 0.1, emissive: mix("amberBright", "vellum", 0.4), ei: 0.35 }),
+  };
+  return HALLOWS;
+}
+
+/** The altar's looks: the Altar of Consecration's (FS-3103M), and the hallowed altar's (FS-5FZ4J). */
+export const ALTAR_LOOKS = ["consecration", "hallowed"];
+
+/** The hallowed altar's candle flames, model space (for the manifest light). */
+export const HALLOWED_CANDLES = [0, 0.66, 0.21];
 
 /**
  * The Tome of Filth (R23): a small, thick, grimy book lying shut on the floor, a little askew, its
@@ -393,10 +427,17 @@ export function tome() {
  * slab, a sunken panel cut in its face, a shallow basin in the slab between two candle stubs.
  * `dormant`: clean, cold, the candles whole. `burned`: the slab scorched black round a heap of
  * ash in the basin, soot streaked down its face, the candles melted to stubs.
+ *
+ * `look` `hallowed` is the hallowed altar (FS-5FZ4J §G R42, §K R57): the same altar in pale warm
+ * stone, gold banding its slab and gold in its cross, holy water in its basin. `dormant`: its
+ * candles burn and the water holds their light; `prayed`: spent, the candles burned down to cold
+ * stubs in pools of wax, the water dark.
  */
-export function altar(state) {
-  const T = riteMaterials();
+export function altar(state, look = "consecration") {
+  const hallowed = look === "hallowed";
+  const T = hallowed ? hallowedMaterials() : riteMaterials();
   const burned = state === "burned";
+  const spent = burned || state === "prayed";
   const g = new THREE.Group();
   const W = 0.78;
   const D = 0.5;
@@ -413,10 +454,26 @@ export function altar(state) {
   g.add(part(new THREE.BoxGeometry(0.12, 0.035, 0.024), burned ? T.scorched : T.stone, { y: 0.26, z: D / 2 }));
   // the candle stubs at the slab's two front corners
   for (const sx of [-1, 1]) {
-    const hgt = burned ? 0.035 : 0.11;
+    const hgt = spent ? 0.035 : hallowed ? 0.17 : 0.11;
     g.add(part(new THREE.CylinderGeometry(0.028, 0.034, hgt, 10), T.wax, { x: sx * (W / 2 - 0.02), y: top + 0.035 + hgt / 2, z: D / 2 - 0.04 }));
-    if (burned) g.add(part(new THREE.CylinderGeometry(0.06, 0.07, 0.01, 12), T.wax, { x: sx * (W / 2 - 0.02), y: top + 0.04, z: D / 2 - 0.04 }));
+    if (spent) g.add(part(new THREE.CylinderGeometry(0.06, 0.07, 0.01, 12), T.wax, { x: sx * (W / 2 - 0.02), y: top + 0.04, z: D / 2 - 0.04 }));
     else g.add(part(new THREE.CylinderGeometry(0.003, 0.003, 0.02, 4), T.dark, { x: sx * (W / 2 - 0.02), y: top + 0.035 + hgt + 0.01, z: D / 2 - 0.04 }));
+    if (hallowed) {
+      // a gold dish under each candle, and on the dormant altar its flame
+      g.add(part(new THREE.CylinderGeometry(0.055, 0.045, 0.018, 12), T.gold, { x: sx * (W / 2 - 0.02), y: top + 0.04, z: D / 2 - 0.04 }));
+      if (!spent) {
+        const flame = part(new THREE.ConeGeometry(0.03, 0.1, 8), T.flame, { x: sx * (W / 2 - 0.02), y: top + 0.035 + hgt + 0.05, z: D / 2 - 0.04 });
+        flame.userData.noShadow = true;
+        g.add(flame);
+      }
+    }
+  }
+  if (hallowed) {
+    // gold banding the slab's edge and inlaid in the cross, and the basin's water
+    g.add(part(new THREE.BoxGeometry(W + 0.13, 0.018, D + 0.11), T.gold, { y: top - 0.022 }));
+    g.add(part(new THREE.BoxGeometry(0.03, 0.12, 0.012), T.gold, { y: 0.23, z: D / 2 + 0.013 }));
+    g.add(part(new THREE.BoxGeometry(0.1, 0.022, 0.012), T.gold, { y: 0.26, z: D / 2 + 0.013 }));
+    g.add(part(new THREE.CylinderGeometry(0.135, 0.135, 0.01, 20), spent ? T.dark : T.water, { y: top + 0.034 }));
   }
   if (burned) {
     // ash heaped in the basin, a charred scrap of the tome's board in it

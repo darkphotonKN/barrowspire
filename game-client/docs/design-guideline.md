@@ -963,7 +963,24 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   `src/ui/openBar.ts`, never by hand. Bright brass because it is progress, never amber. Only the
   player's own is drawn, never another player's and never while spectating. It goes with no
   notice, sound or effect, whether the container opened or the timed open was cancelled.
-  *(Added by [FS-MQYEX](../../docs/specs/MQYEX-timed-container-opening.md), 2026-11-11.)*
+  *(Added by [FS-MQYEX](../../docs/specs/MQYEX-timed-container-opening.md), 2026-11-11.)* The
+  same bar shows a sealed floor's other timed interacts, over what they work, with a label just
+  over it in 11 px vellum body type on a dark stroke: **"Searching…"** over a secret door's cracks
+  and **"Praying…"** over the hallowed altar; a container's open carries no label, as it never
+  did. *(Added by [FS-5FZ4J](../../docs/specs/5FZ4J-sealed-floors.md) §J R54, 2026-11-25.)*
+- **Statuses.** A poisoned delver's health fill, on their own bar and on a teammate's overhead
+  bar, takes the **poison tint** (`palette.poisoned`): the gas vent's sour bile-olive, arcane green
+  warmed toward bright brass and dulled toward vellum, so it never reads as arcane green's safe
+  and friendly, nor as health's oxblood. A lasting boon shows as a **status mark** beside the own
+  health bar on the UI scene; the Blessing's is the hallowed altar's gold (`palette.blessed`,
+  bright brass paled toward vellum), never amber, since the mark is only hovered. Poison has no
+  mark: the tint says it. *(Added by [FS-5FZ4J](../../docs/specs/5FZ4J-sealed-floors.md) §J R55,
+  2026-11-25.)*
+- **Traps.** A detected trap waits drawn **faint**: its baked armed frame at alpha 0.45
+  (`TRAP_FAINT`), a thing spotted and not yet set off. Its spring (spikes up, darts, a fire jet, a
+  gas puff) plays at full strength, and a gas vent settles back to faint after its puff. Never on
+  the minimap. *(Added by [FS-5FZ4J](../../docs/specs/5FZ4J-sealed-floors.md) §J R51,
+  2026-11-25.)*
 - **Health bars.** Every monster's HP bar, over its head or in the target frame, wears one look,
   drawn in code by the shared `paintHealthBar` (`src/render/markers/healthBar.ts`), never by hand:
   no rim; a deep-red trough (`markerHpTrough`, oxblood taken toward pitch), so the health missing

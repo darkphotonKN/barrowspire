@@ -3,6 +3,7 @@ module github.com/darkphotonKN/barrowspire-server/wallet-service
 go 1.24.2
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.40.0
 )

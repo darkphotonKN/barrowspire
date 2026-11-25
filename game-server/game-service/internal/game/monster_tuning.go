@@ -46,9 +46,11 @@ const (
 // mix, levels, elite chance and demon above stay the floor's own.
 const (
 	// the floor's monsters besides a demon, held to [min, max] by topping up
-	// ordinary rooms and trimming ordinary rooms, then corridors
-	DungeonMonstersMin = 30
-	DungeonMonstersMax = 45
+	// ordinary rooms and trimming ordinary rooms, then corridors, then hall-pack
+	// fodder, then treasure-guard packs: a sealed floor's fewer monsters
+	// (FS-5FZ4J §D R21, from 30-45)
+	DungeonMonstersMin = 15
+	DungeonMonstersMax = 25
 
 	// a hall is a room at least this many cells wide and tall (width × height,
 	// as the generator draws rooms: up to 10 × 8)

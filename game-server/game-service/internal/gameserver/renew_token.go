@@ -93,6 +93,11 @@ func (s *Server) RenewToken(ctx context.Context, conn *websocket.Conn, token str
 	for _, record := range s.everyRecordOf(base) {
 		record.Token = types.BearerToken(token)
 	}
+	// the world they are in keeps it too, for a purchase there (FS-9JV5K §B
+	// R8); its token lock is a leaf, safe under this one
+	if world, ok := s.sessions[base.CurrentGameSessionId]; ok {
+		world.KeepToken(memberID, types.BearerToken(token))
+	}
 	return nil
 }
 

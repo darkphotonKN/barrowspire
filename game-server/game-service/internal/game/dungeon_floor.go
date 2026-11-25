@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -27,11 +28,15 @@ import (
 **/
 
 // dungeonParams is the generator's parameter set for a run floor built as a
-// dungeon. Every Spire floor is one, on floor 1's set (FS-M8CSE §C R12-13); a
-// floor that needs its own set is a new parameter set here (ADR-0061 Decision
-// 2). A floor of buildings is now only what a failed generation leaves.
-func dungeonParams(_ int) (levelgen.DungeonParams, bool) {
-	return levelgen.DungeonFloor1Params, true
+// dungeon. Every Spire floor is one, on floor 1's set (FS-M8CSE §C R12-13), and
+// a sealed one: its stairs in a dead end (FS-5FZ4J §A). Floor 1 has no escape
+// door and no switch, floors 2+ have both (§A R6-R7). A floor that needs its
+// own set is a new parameter set here (ADR-0061 Decision 2). A floor of
+// buildings is now only what a failed generation leaves.
+func dungeonParams(depth int) (levelgen.DungeonParams, bool) {
+	p := levelgen.DungeonFloor1Params
+	p.EscapeDoor = depth > firstFloor
+	return p, true
 }
 
 // dungeonGenerator is the dungeon generator the floor build calls. A session
@@ -66,14 +71,27 @@ func dungeonContainers(rooms int) int {
 
 // dungeonFloor is one dungeon floor's layout as the floor build and the
 // placements read it: the generator's output, plus each cell's region and
-// whether it is a doorway. It is built once per floor and never written
-// after, so any goroutine may read it.
+// whether it is a doorway, and where its seals stand. It is built once per
+// floor, its seals found before it is published, and never written after, so
+// any goroutine may read it.
 type dungeonFloor struct {
 	layout levelgen.DungeonLayout
 	// region is each cell's region id, row by row; 0 is rock.
 	region []int
 	// doorway marks a room's cells 4-adjacent to a corridor.
 	doorway []bool
+	// hidden is what each of the layout's hidden rooms holds, by its place
+	// in layout.Hidden, as the floor drew it (FS-5FZ4J §F R35, R39)
+	hidden []hiddenUse
+	// seals are the floor's seals in chain order, where their pieces stand:
+	// a later stage's pieces are laid when the stage before it breaks
+	// (FS-5FZ4J §B R9)
+	seals []sealPlan
+	// chasm is where a Chasm lies in the stairs room, nil with none (§E R33)
+	chasm *chasmGround
+	// respites are the floor's respite rooms and where their fixtures stand,
+	// held while it is planned (§G R40)
+	respites []respite
 }
 
 func newDungeonFloor(layout levelgen.DungeonLayout) *dungeonFloor {
@@ -98,11 +116,20 @@ func newDungeonFloor(layout levelgen.DungeonLayout) *dungeonFloor {
 * plays (ADR-0061 Decision 13, FS-M8CSE §C R15). Nothing is laid yet; a seed
 * that fails leaves nothing behind.
 **/
-func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixtures) {
+func (s *Session) generateDungeonFloor(depth, arriving int) (*dungeonFloor, dungeonFixtures) {
 	params, isDungeon := dungeonParams(depth)
 	if !isDungeon {
 		return nil, dungeonFixtures{}
 	}
+	// the floor's seals and hidden rooms are drawn once, before its layout,
+	// for the delvers alive at its build, the members still arriving among
+	// them: the generator is asked for as many hidden rooms as were drawn
+	// (FS-5FZ4J §F R35, §B R10)
+	alive := s.delversInPlay() + arriving
+	// the hallowed altar, standing hidden on this floor, asks for one more
+	// hidden room (FS-5FZ4J §G R42)
+	draw := s.drawFloor(depth, alive, s.hiddenAltarUses(depth)...)
+	params.HiddenRooms = len(draw.hidden)
 
 	for try := range dungeonGenerations {
 		// drawn from the session's spawn source, so a seeded run builds the
@@ -114,14 +141,38 @@ func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixture
 				"sessionID", s.ID, "floor", depth, "seed", seed, "try", try+1, "error", err)
 			continue
 		}
+		if draw.chasmMisfits(layout, s.tuning.forcedSealKind != "") {
+			// a stairs room too small for its drawn Chasm: the Chasm is drawn
+			// again (FS-5FZ4J §E R33); a Hidden Key in its place asks for its
+			// key's room, on a layout of the same seed
+			draw = s.redrawChasm(alive, draw)
+			if len(draw.hidden) != params.HiddenRooms {
+				params.HiddenRooms = len(draw.hidden)
+				if layout, err = s.generateDungeon(params, seed); err != nil {
+					slog.Error("Dungeon floor not generated",
+						"sessionID", s.ID, "floor", depth, "seed", seed, "try", try+1, "error", err)
+					continue
+				}
+			}
+		}
 		d := newDungeonFloor(layout)
-		fixtures, err := s.placeFixtures(depth, d)
+		d.hidden = draw.hidden
+		fixtures, err := s.placeFixtures(depth, d, draw.seals)
 		if err != nil {
 			// the next seed's floor is placed on empty ground again
 			s.objectOccupiedPlaceAreas = nil
 			slog.Error("Dungeon floor not laid",
 				"sessionID", s.ID, "floor", depth, "seed", seed, "try", try+1, "error", err)
 			continue
+		}
+		// the fountain's room is held after the seals', so it is none of
+		// theirs (FS-5FZ4J §G R40, §H R45)
+		if draw.fountain {
+			s.planRespite(d, respiteFountain, constants.ContainerWidthRadius, constants.ContainerHeightRadius, nil)
+		}
+		// the merchant's after the fountain's, in a room of its own (FS-9JV5K §A R1)
+		if draw.merchant {
+			s.planRespite(d, respiteMerchant, constants.ContainerWidthRadius, constants.ContainerHeightRadius, d.merchantRoomOpen)
 		}
 		slog.Debug("Dungeon floor generated",
 			"sessionID", s.ID, "floor", depth, "seed", seed, "attempt", layout.Attempt, "rooms", len(layout.Rooms))
@@ -133,10 +184,14 @@ func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixture
 	return nil, dungeonFixtures{}
 }
 
-// dungeonFixtures is where a dungeon floor's escape door, switch and stairs
-// stand, found before anything is laid. stairs is unset on the top floor.
+// dungeonFixtures is where a dungeon floor's escape door, switch, stairs and
+// seals stand, found before anything is laid. stairs and seals are unset on
+// the top floor, the escape door and switch on floor 1 (hasEscapeDoor false).
 type dungeonFixtures struct {
 	exitDoor, exitSwitch, stairs point
+	hasEscapeDoor                bool
+	// seals are the floor's seals, in chain order (FS-5FZ4J §B R9)
+	seals []sealPlan
 }
 
 // isTopFloor is whether depth is the floor the run's Spire height names (FS-M8CSE
@@ -151,29 +206,64 @@ func (s *Session) isTopFloor(depth int) bool {
 func (s *Session) hasStairs(depth int) bool { return !s.isTopFloor(depth) }
 
 // placeFixtures finds the escape door's, the switch's and the stairs' spots in
-// their rooms, each through the occupied-area check. An error when a room has
-// none: the layout cannot be laid (FS-KE075 §B R14).
-func (s *Session) placeFixtures(depth int, d *dungeonFloor) (dungeonFixtures, error) {
+// their rooms, each through the occupied-area check; a floor whose roles have
+// no escape door (floor 1, FS-5FZ4J §A R6) places neither it nor the switch. A
+// floor with stairs is sealed by seals, its drawn kinds: their pieces are found
+// last (FS-5FZ4J §A R1, §H R45). An error when a room has none: the layout
+// cannot be laid (FS-KE075 §B R14).
+func (s *Session) placeFixtures(depth int, d *dungeonFloor, seals []components.SealKind) (dungeonFixtures, error) {
 	roles := d.layout.Roles
-	var f dungeonFixtures
+	f := dungeonFixtures{hasEscapeDoor: roles.HasEscapeDoor()}
 	var ok bool
-	if f.exitDoor, ok = s.placeFixture(d, roles.EscapeDoor, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
-		return f, fmt.Errorf("the escape door's room %d has no spot off its doorways", roles.EscapeDoor)
-	}
-	if f.exitSwitch, ok = s.placeFixture(d, roles.Switch, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
-		return f, fmt.Errorf("the switch's room %d has no spot off its doorways", roles.Switch)
+	if f.hasEscapeDoor {
+		if f.exitDoor, ok = s.placeFixture(d, roles.EscapeDoor, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
+			return f, fmt.Errorf("the escape door's room %d has no spot off its doorways", roles.EscapeDoor)
+		}
+		if f.exitSwitch, ok = s.placeFixture(d, roles.Switch, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
+			return f, fmt.Errorf("the switch's room %d has no spot off its doorways", roles.Switch)
+		}
 	}
 	if s.hasStairs(depth) {
-		if f.stairs, ok = s.placeFixture(d, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius); !ok {
-			return f, fmt.Errorf("the stairs' room %d has no spot off its doorways", roles.Stairs)
+		var err error
+		if f.stairs, err = s.placeStairs(d, seals); err != nil {
+			return f, err
 		}
+		if f.seals, err = s.planSeals(depth, d, seals); err != nil {
+			return f, err
+		}
+		d.seals = f.seals
 	}
 	return f, nil
 }
 
-// layDungeon lays a dungeon floor out: its shell walls, then the switch,
-// escape door and stairs where they were found, then its containers. The party
-// and the monsters come after, as on every floor.
+// placeStairs finds the stairs' spot in their room; past the chasm when a
+// seal of the floor is a Chasm, which is found first (FS-5FZ4J §E R33).
+func (s *Session) placeStairs(d *dungeonFloor, seals []components.SealKind) (point, error) {
+	room := d.layout.Roles.Stairs
+	if !slices.Contains(seals, components.SealChasm) {
+		at, ok := s.placeFixture(d, room, constants.StairsWidthRadius, constants.StairsHeightRadius)
+		if !ok {
+			return at, fmt.Errorf("the stairs' room %d has no spot off its doorways", room)
+		}
+		return at, nil
+	}
+	var err error
+	if d.chasm, err = s.digChasm(d); err != nil {
+		return point{}, err
+	}
+	at, ok := s.placeOnStairsSide(d, d.chasm, constants.StairsWidthRadius, constants.StairsHeightRadius)
+	if !ok {
+		return at, fmt.Errorf("the stairs' room %d has no spot past its chasm", room)
+	}
+	return at, nil
+}
+
+// layDungeon lays a dungeon floor out: its shell walls, then the switch and
+// escape door (floors 2+), the stairs, and the gate and seal pieces of a
+// sealed floor where they were found, its secret doors and hidden rooms'
+// contents, its fountain, then its containers, the tome and altars, and its
+// traps. The party
+// and the monsters come after, as on every floor (FS-5FZ4J §H R45).
 func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixtures) {
 	// the shell walls belong to no building: a floor map carries them with no
 	// house (FS-KE075 §F R31); a wall's top-left is its position, as WallState's
@@ -181,23 +271,38 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixture
 		CreateWallEntity(s.EntityManager, WallConfig{X: wall.X, Y: wall.Y, Width: wall.W, Height: wall.H}, uuid.Nil)
 	}
 
-	exitDoor := CreateEscapeDoorEntity(s.EntityManager, EscapeConfig{X: fixtures.exitDoor.x, Y: fixtures.exitDoor.y})
-	switchEntity := CreateSwitchEntity(s.EntityManager, SwitchConfig{X: fixtures.exitSwitch.x, Y: fixtures.exitSwitch.y, SwitchID: 1})
+	// floor 1 has neither (FS-5FZ4J §A R6): the switch handler then finds no
+	// door to unlock, and no floor's ids outlive it
+	exitDoorID, switchIDs := uuid.Nil, []uuid.UUID(nil)
+	if fixtures.hasEscapeDoor {
+		exitDoorID = CreateEscapeDoorEntity(s.EntityManager, EscapeConfig{X: fixtures.exitDoor.x, Y: fixtures.exitDoor.y}).ID
+		switchIDs = []uuid.UUID{CreateSwitchEntity(s.EntityManager, SwitchConfig{X: fixtures.exitSwitch.x, Y: fixtures.exitSwitch.y, SwitchID: 1}).ID}
+	}
 
 	// the switch handler reads these from the message goroutine
 	s.mu.Lock()
-	s.exitDoorEntityID = exitDoor.ID
-	s.switchEntityIDs = []uuid.UUID{switchEntity.ID}
+	s.exitDoorEntityID = exitDoorID
+	s.switchEntityIDs = switchIDs
 	s.mu.Unlock()
 
 	if s.hasStairs(depth) {
 		CreateStairsEntity(s.EntityManager, StairsConfig{X: fixtures.stairs.x, Y: fixtures.stairs.y})
 	}
+	s.laySeals(d, fixtures.seals)
+	s.layHiddenRooms(d)
+	// the fountain and the merchant, before the containers (FS-5FZ4J §H R45)
+	s.layFountain(d)
+	s.layMerchant(depth, d)
 
 	s.layDungeonContainers(d)
 
-	// a tome run's tome or altar, after the containers (FS-3103M §C R8-R9)
+	// a tome run's tome or altar, and the hallowed altar when it stands in
+	// the open, after the containers (FS-3103M §C R8-R9, FS-5FZ4J §G R42)
 	s.layTomeAndAltar(depth, d)
+	s.layHallowedAltar(depth, d)
+
+	// the traps, last of the ground (FS-5FZ4J §H R45)
+	s.layTraps(depth, d)
 }
 
 /**
@@ -226,8 +331,8 @@ func (s *Session) placeFixture(d *dungeonFloor, room int, rw, rh float64) (point
 /**
 * layDungeonContainers places the floor's containers (FS-KE075 §B R15): a
 * chest in each treasure room, then one per room, a chest or at today's sack
-* share a sack, in rooms drawn from those that are neither the start nor a
-* treasure room, until the floor holds clamp(round(rooms / 2), 10, 14). A room
+* share a sack, in rooms drawn from those that are neither the start, a
+* treasure room nor a quiet room (FS-5FZ4J §C R17), until the floor holds clamp(round(rooms / 2), 10, 14). A room
 * with no free spot is passed over for the next one drawn.
 **/
 func (s *Session) layDungeonContainers(d *dungeonFloor) {
@@ -241,7 +346,8 @@ func (s *Session) layDungeonContainers(d *dungeonFloor) {
 		}
 	}
 
-	taken := map[int]bool{roles.Start: true}
+	taken := s.quietRooms(d)
+	taken[roles.Start] = true
 	for _, room := range roles.Treasure {
 		taken[room] = true
 	}

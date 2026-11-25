@@ -109,6 +109,32 @@ const (
 	ComponentTypeLongNight ComponentType = "LongNight"
 	// a drunk draught's heal while it runs, on the drinker (FS-X2CMM §E R27)
 	ComponentTypeDraughtHeal ComponentType = "DraughtHeal"
+	// a sealed floor's seals, their pieces, what a piece's first work wakes
+	// and the barriers the seals hold shut (FS-5FZ4J §B, §C, §A R4)
+	ComponentTypeSeal      ComponentType = "Seal"
+	ComponentTypeSealPiece ComponentType = "SealPiece"
+	// a lore piece, a mural or a shrine: read, part of no seal (FS-5FZ4J §C
+	// R15, §F R39)
+	ComponentTypeLorePiece ComponentType = "LorePiece"
+	ComponentTypeAmbush    ComponentType = "Ambush"
+	ComponentTypeBarrier   ComponentType = "Barrier"
+	// a stone block's push and slide, beside its seal piece (FS-5FZ4J §C R19)
+	ComponentTypeStoneBlock ComponentType = "StoneBlock"
+	// what the party has not seen yet, a secret door or a trap, and what a
+	// shut secret door hides (FS-5FZ4J §F R37-R38, §D R30)
+	ComponentTypeDetectable ComponentType = "Detectable"
+	ComponentTypeConcealed  ComponentType = "Concealed"
+	// a floor's traps and a delver's poison (FS-5FZ4J §D R23-R29)
+	ComponentTypeTrap   ComponentType = "Trap"
+	ComponentTypePoison ComponentType = "Poison"
+	// the respites: a floor's healing fountain, a run's hallowed altar plan,
+	// the altar itself and a delver's Blessing (FS-5FZ4J §G R40-R44)
+	ComponentTypeFountain          ComponentType = "Fountain"
+	ComponentTypeHallowedAltarPlan ComponentType = "HallowedAltarPlan"
+	ComponentTypeHallowedAltar     ComponentType = "HallowedAltar"
+	ComponentTypeBlessed           ComponentType = "Blessed"
+	// the wandering merchant and his wares (FS-9JV5K §A R1-R4)
+	ComponentTypeMerchant ComponentType = "Merchant"
 )
 
 type Entity struct {

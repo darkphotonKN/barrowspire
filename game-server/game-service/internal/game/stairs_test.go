@@ -166,9 +166,19 @@ type climb struct {
 	delvers []uuid.UUID // player ids
 }
 
+// Its floor's seals are broken (FS-5FZ4J §B R11), so the stairs answer the
+// climb; newSealedClimb keeps them.
 func newClimb(t *testing.T) *climb {
 	t.Helper()
-	s := newRun(t, &countingItemsClient{})
+	c := newSealedClimb(t)
+	breakSeals(t, c.s)
+	return c
+}
+
+// newSealedClimb is a climb whose floor's seals still hold.
+func newSealedClimb(t *testing.T, opts ...sessionOption) *climb {
+	t.Helper()
+	s := newRun(t, &countingItemsClient{}, opts...)
 	sender := &recordingSender{}
 	s.sender = sender
 	c := &climb{s: s, sender: sender}
@@ -377,9 +387,10 @@ func TestStairs_RefusalDoesNotLockTheStairs(t *testing.T) {
 	assert.Equal(t, 2, currentFloor(t, c.s).Depth)
 }
 
-// The party climbs to the top without the run ending, and on every floor the
-// switch unlocks that floor's escape door and the door lets a delver out.
-// FS-F6F88 §Requirements 23, 24; AC "Escape and run end".
+// The party climbs to the top without the run ending, and on every floor but
+// floor 1, which has neither (FS-5FZ4J §A R6), the switch unlocks that floor's
+// escape door and the door lets a delver out. FS-F6F88 §Requirements 23, 24;
+// AC "Escape and run end".
 func TestStairs_ClimbingNeverEndsTheRun_AndEscapeWorksOnEveryFloor(t *testing.T) {
 	for escapeFloor := 1; escapeFloor <= testSpireHeight; escapeFloor++ {
 		c := newClimb(t)
@@ -387,6 +398,7 @@ func TestStairs_ClimbingNeverEndsTheRun_AndEscapeWorksOnEveryFloor(t *testing.T)
 		s.endSessionCh = make(chan bool, 1)
 
 		for depth := 1; depth < escapeFloor; depth++ {
+			breakSeals(t, s)
 			for _, playerID := range c.delvers {
 				c.standAtStairs(t, playerID)
 			}
@@ -399,6 +411,12 @@ func TestStairs_ClimbingNeverEndsTheRun_AndEscapeWorksOnEveryFloor(t *testing.T)
 		}
 		if escapeFloor == testSpireHeight {
 			assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeStairs), "no way up from the top")
+		}
+
+		if escapeFloor == firstFloor {
+			assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeSwitch), "no switch on floor 1")
+			assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor), "no escape door on floor 1")
+			continue
 		}
 
 		wren := c.delvers[0]

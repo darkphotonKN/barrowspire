@@ -119,6 +119,23 @@ type ClientGameState struct {
 	// BookEffects are a run's book effects on the floor (witchlights), cut
 	// by distance on a dungeon floor; absent when none. FS-X2CMM §F R34.
 	BookEffects []*BookEffectState `json:"book_effects,omitempty"`
+	// Seal, SealPieces and Barriers are a sealed floor's, sent whole every
+	// tick; absent in the hub, a field, on the top floor and on a floor of
+	// buildings, which have none. FS-5FZ4J §I R46.
+	Seal       *SealState        `json:"seal,omitempty"`
+	SealPieces []*SealPieceState `json:"seal_pieces,omitempty"`
+	Barriers   []*BarrierState   `json:"barriers,omitempty"`
+	// Traps are a dungeon floor's detected traps, sent whole to every
+	// member; an undetected one is sent to no one. FS-5FZ4J §D R30, §I R46.
+	Traps []*TrapState `json:"traps,omitempty"`
+	// Fountain is the floor's healing fountain and HallowedAltar the hallowed
+	// altar on its floor once reachable, both sent whole; absent where there
+	// is none. FS-5FZ4J §I R46.
+	Fountain      *FountainState      `json:"fountain,omitempty"`
+	HallowedAltar *HallowedAltarState `json:"hallowed_altar,omitempty"`
+	// Merchant is the floor's wandering merchant and his wares, sent whole;
+	// absent where there is none. FS-9JV5K §A R4.
+	Merchant *MerchantState `json:"merchant,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -222,6 +239,17 @@ type BackendGameState struct {
 	TomeCarried bool
 	// BookEffects are the floor's book effects (FS-X2CMM §F R34)
 	BookEffects []*BookEffectState
+	// Seal, SealPieces and Barriers are a sealed floor's (FS-5FZ4J §I R46)
+	Seal       *SealState
+	SealPieces []*SealPieceState
+	Barriers   []*BarrierState
+	// Traps are a dungeon floor's detected traps (FS-5FZ4J §I R46)
+	Traps []*TrapState
+	// Fountain and HallowedAltar are a floor's respites (FS-5FZ4J §I R46)
+	Fountain      *FountainState
+	HallowedAltar *HallowedAltarState
+	// Merchant is the floor's wandering merchant (FS-9JV5K §A R4)
+	Merchant *MerchantState
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.
@@ -326,6 +354,34 @@ func (m *Message) ParsePayload() (interface{}, error) {
 
 		return parsedPayload, nil
 
+	case constants.ActionUseItem:
+		// FS-9JV5K §D R17: the bag item to use
+		itemEntityID, err := m.requireString("item_entity_id")
+		if err != nil {
+			return nil, fmt.Errorf("parsing use_item payload: %w", err)
+		}
+
+		parsedPayload := PlayerUseItemPayload{
+			ItemEntityID: itemEntityID,
+		}
+
+		slog.Debug("payload of action use_item", "payload", parsedPayload)
+
+		return parsedPayload, nil
+
+	case constants.ActionBuy:
+		// FS-9JV5K §B R5: the merchant and the ware
+		merchantID, err := m.requireString("merchant_id")
+		if err != nil {
+			return nil, fmt.Errorf("parsing buy payload: %w", err)
+		}
+		ware, err := m.requireString("ware")
+		if err != nil {
+			return nil, fmt.Errorf("parsing buy payload: %w", err)
+		}
+
+		return PlayerBuyPayload{MerchantID: merchantID, Ware: ware}, nil
+
 	case constants.ActionCastSkill:
 		// Skill fields stay optional, as they were before: SkillSystem is a stub
 		// and nothing consumes them yet.
@@ -368,6 +424,17 @@ type PlayerSectionAttackPayload struct {
 }
 
 type PlayerEquipPayload struct {
+	ItemEntityID string `json:"item_entity_id"`
+}
+
+// PlayerBuyPayload names the merchant bought from and the ware. FS-9JV5K §B R5.
+type PlayerBuyPayload struct {
+	MerchantID string `json:"merchant_id"`
+	Ware       string `json:"ware"`
+}
+
+// PlayerUseItemPayload names the bag item to use. FS-9JV5K §D R17.
+type PlayerUseItemPayload struct {
 	ItemEntityID string `json:"item_entity_id"`
 }
 

@@ -66,6 +66,11 @@ describe("loreForReply (FS-XWHZP R16-R18)", () => {
     expect(loreForReply({ success: false, message: "the altar is burned", reason: "altar_burned" })).toBeNull();
   });
 
+  // FS-5FZ4J §G R43, §I R49 (I-5FZ4J-11): a spent hallowed altar is refused quietly
+  it("should say nothing for a hallowed altar already prayed at, whatever the server wrote", () => {
+    expect(loreForReply({ success: false, message: "the altar has been prayed at", reason: "altar_prayed" })).toBeNull();
+  });
+
   it("should keep the server's words, as lore, for a reply with no reason it knows (R17)", () => {
     expect(loreForReply({ success: false, message: "too far away to interact" })).toEqual({
       text: "too far away to interact",

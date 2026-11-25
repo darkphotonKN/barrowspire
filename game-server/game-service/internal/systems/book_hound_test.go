@@ -147,7 +147,7 @@ func TestBookSystemAdvanceCasts_CallTheHoundSetsAHoundAtThePoint(t *testing.T) {
 
 	assert.Equal(t, 60, pool(archer), "100 - 40 stamina")
 	assert.Equal(t, components.BookCooldown{Remaining: 180, Total: 180}, bookOfT(t, archer).Cooldowns[components.PageCallTheHound])
-	at, _ := centreOf(hound)
+	at, _ := bodyCentre(hound)
 	assert.Equal(t, houndHome+3*testCell, at.X)
 	assert.Equal(t, houndHome, at.Y)
 	ec, _ := hound.GetComponent(ecs.ComponentTypeBookEffect)
@@ -179,10 +179,10 @@ func TestHound_FollowsTheArcherToWithinTwoCells(t *testing.T) {
 
 	killDelver(archer)
 	moveTo(t, archer, houndHome+8*testCell, houndHome)
-	before, _ := centreOf(hound)
+	before, _ := bodyCentre(hound)
 	x := before.X
 	floor.run(ticksOf(1))
-	after, _ := centreOf(hound)
+	after, _ := bodyCentre(hound)
 	assert.Equal(t, x, after.X, "the archer out of play, it stands")
 }
 
@@ -276,8 +276,8 @@ func TestCanHit_NoDelversHitLandsOnAHound(t *testing.T) {
 // distanceOf is how far apart two bodies stand.
 func distanceOf(t *testing.T, a, b *ecs.Entity) float64 {
 	t.Helper()
-	at, _ := centreOf(a)
-	to, _ := centreOf(b)
+	at, _ := bodyCentre(a)
+	to, _ := bodyCentre(b)
 	return math.Hypot(to.X-at.X, to.Y-at.Y)
 }
 

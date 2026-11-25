@@ -475,6 +475,7 @@ func TestEveryDeclaredUseCaseIsAssigned(t *testing.T) {
 		DepositGoldUC:   &usecase.DepositGoldUC{},
 		WithdrawGoldUC:  &usecase.WithdrawGoldUC{},
 		CreditUC:        &usecase.CreditUC{},
+		DebitUC:         &usecase.DebitUC{},
 		AccountReader:   reader,
 	})
 
@@ -483,6 +484,7 @@ func TestEveryDeclaredUseCaseIsAssigned(t *testing.T) {
 	assert.NotNil(t, h.depositGoldUC, "depositGoldUC")
 	assert.NotNil(t, h.withdrawGoldUC, "withdrawGoldUC")
 	assert.NotNil(t, h.creditUC, "creditUC")
+	assert.NotNil(t, h.debitUC, "debitUC")
 	assert.NotNil(t, h.accountReader, "accountReader")
 }
 
@@ -651,6 +653,94 @@ func TestListStaleReservedHolds_BadRequest_IsInvalidArgumentAndReadsNothing(t *t
 
 			assert.Equal(t, codes.InvalidArgument, status.Code(err))
 			assert.Zero(t, reader.calls)
+		})
+	}
+}
+
+// ========================= DEBIT  =========================
+
+// stubDebitor records the command the handler built, so tests can prove the
+// debit is taken from the authenticated member and carries the caller's key.
+type stubDebitor struct {
+	applied bool
+	err     error
+
+	calls  int
+	gotCmd *usecase.DebitCommand
+}
+
+func (s *stubDebitor) Handle(ctx context.Context, cmd *usecase.DebitCommand) (bool, error) {
+	s.calls++
+	s.gotCmd = cmd
+	return s.applied, s.err
+}
+
+// FS-9JV5K R13: the request names no account, so the only member a debit can
+// reach is the one in the forwarded token.
+func TestDebit_DebitsTheAuthenticatedMemberWithTheCallersKey(t *testing.T) {
+	memberID := uuid.New()
+	debitor := &stubDebitor{applied: true}
+	h := NewHandler(Deps{DebitUC: debitor})
+
+	res, err := h.Debit(authedCtx(t, memberID), &pb.DebitRequest{Amount: 120, IdempotencyKey: "purchase:R:M:1"})
+
+	require.NoError(t, err)
+	assert.True(t, res.GetApplied())
+	require.Equal(t, 1, debitor.calls)
+	assert.Equal(t, memberID, debitor.gotCmd.MemberID)
+	assert.Equal(t, 120, debitor.gotCmd.Amount)
+	assert.Equal(t, "purchase:R:M:1", debitor.gotCmd.IdempotencyKey)
+	assert.False(t, debitor.gotCmd.Now.IsZero(), "the debit is stamped with the time it applies")
+}
+
+// ADR-0093: a retried purchase whose debit already committed is success with
+// applied = false, never an error the run would have to interpret.
+func TestDebit_AlreadyApplied_IsSuccessReportingNotApplied(t *testing.T) {
+	h := NewHandler(Deps{DebitUC: &stubDebitor{applied: false}})
+
+	res, err := h.Debit(authedCtx(t, uuid.New()), &pb.DebitRequest{Amount: 120, IdempotencyKey: "purchase:R:M:1"})
+
+	require.NoError(t, err)
+	assert.False(t, res.GetApplied())
+}
+
+// R15: no member in the context is refused before the use case is reached.
+func TestDebit_WithoutAnIdentity_IsUnauthenticatedAndDebitsNothing(t *testing.T) {
+	debitor := &stubDebitor{applied: true}
+	h := NewHandler(Deps{DebitUC: debitor})
+
+	res, err := h.Debit(context.Background(), &pb.DebitRequest{Amount: 120, IdempotencyKey: "purchase:R:M:1"})
+
+	assert.Nil(t, res)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	assert.Zero(t, debitor.calls)
+}
+
+// R15: the run tells a refusal it reports to the buyer (not enough gold) from a
+// request it built wrong and from a missing account by these codes.
+func TestDebit_MapsUseCaseErrorsToStatusCodes(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+	}{
+		{"empty key", fmt.Errorf("wrapped: %w", usecase.ErrMissingDebitKey), codes.InvalidArgument},
+		{"non-positive amount", fmt.Errorf("wrapped: %w", account.ErrInvalidGold), codes.InvalidArgument},
+		{"not enough available gold", fmt.Errorf("wrapped: %w", account.ErrHoldsExceedBalance), codes.FailedPrecondition},
+		{"no account", fmt.Errorf("wrapped: %w", commonconstants.ErrNotFound), codes.NotFound},
+		{"raced out", fmt.Errorf("wrapped: %w", usecase.ErrMaxRetries), codes.Aborted},
+		{"transient", fmt.Errorf("wrapped: %w", commonconstants.ErrTransient), codes.Unavailable},
+		{"unexpected", errors.New("boom"), codes.Internal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHandler(Deps{DebitUC: &stubDebitor{err: tt.err}})
+
+			res, err := h.Debit(authedCtx(t, uuid.New()), &pb.DebitRequest{Amount: 120, IdempotencyKey: "purchase:R:M:1"})
+
+			assert.Nil(t, res)
+			assert.Equal(t, tt.wantCode, status.Code(err))
 		})
 	}
 }

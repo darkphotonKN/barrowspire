@@ -14,8 +14,11 @@ movement system's.
 Cells are numbered row by row, y*cols + x. A cell's walls are whole cells of
 rock (ADR-0061), so a body that overlaps only walkable cells touches no wall.
 
-The walkable cells never change, but Path reuses one search's scratch: a Grid
-is used by one goroutine at a time, the tick's.
+A cell's walkability changes only where a barrier stands on it, a shut gate
+or a secret door, or a stone block, and only through SetWalkable (FS-5FZ4J §D
+R22). Path reuses
+one search's scratch, and SetWalkable writes the cells: a Grid is used by one
+goroutine at a time, the tick's.
 */
 type Grid struct {
 	cols, rows int
@@ -33,6 +36,19 @@ func NewGrid(cols, rows int, size float64, walkable []bool) *Grid {
 	g.search = newSearch(cols * rows)
 	return g
 }
+
+// SetWalkable makes the cell at column x, row y walkable or rock: a barrier
+// shut over it or opened (FS-5FZ4J §D R22). A cell off the grid is ignored.
+func (g *Grid) SetWalkable(x, y int, walkable bool) {
+	if x < 0 || y < 0 || x >= g.cols || y >= g.rows {
+		return
+	}
+	g.walkable[y*g.cols+x] = walkable
+}
+
+// Walkable is whether the cell at column x, row y is on the grid and ground:
+// neither rock nor shut by a barrier or a stone block (FS-5FZ4J §C R19).
+func (g *Grid) Walkable(x, y int) bool { return g.ground(x, y) }
 
 // Cell is the walkable cell holding (x, y); false on rock or off the grid. A
 // point on a shared edge is in the cell right of it or below it.

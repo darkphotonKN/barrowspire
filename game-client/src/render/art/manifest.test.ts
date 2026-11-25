@@ -609,6 +609,141 @@ describe("the baked manifest (public/art/manifest.json)", () => {
 
   });
 
+  describe("the wandering merchant and the antidote's icon (FS-9JV5K §G R26)", () => {
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+
+    it("bakes the merchant idle only, four frames at the folk's pace, looping, in eight facings", () => {
+      const sheet = baked.sheets.npc_merchant;
+      expect(sheet.directions).toBe(8);
+      expect(Object.keys(sheet.animations)).toEqual(["idle"]);
+      expect(sheet.animations.idle).toMatchObject({ fps: 3, loop: true });
+      expect(sheet.animations.idle.frames).toHaveLength(8);
+      for (const facing of sheet.animations.idle.frames) expect(facing).toHaveLength(4);
+      expect(sheet.source).toBe("authored: tools/bake/page/characters/folk.js#merchant");
+    });
+
+    it("packs him alone on a group of his own, scene-scoped, so no committed atlas reflows", () => {
+      expect(atlasGroup(baked.sheets.npc_merchant.atlas)).toBe("merchant");
+      expect(SCENE_SCOPED_GROUPS.has("merchant")).toBe(true);
+      const onGroup = Object.entries(baked.sheets as Record<string, { atlas: string }>)
+        .filter(([, s]) => atlasGroup(s.atlas) === "merchant")
+        .map(([n]) => n);
+      expect(onGroup).toEqual(["npc_merchant"]);
+    });
+
+    it("bakes the antidote's icon on the resident icons atlas, one still frame like the potions'", () => {
+      const icon = baked.sheets.icon_antidote;
+      const potion = baked.sheets.icon_potion_health;
+      expect(atlasGroup(icon.atlas)).toBe("icons");
+      expect([icon.frameWidth, icon.frameHeight]).toEqual([potion.frameWidth, potion.frameHeight]);
+      expect(icon.animations.default.frames).toEqual([[expect.any(Object)]]);
+      expect(icon.source).toBe("procedural: tools/bake/page/models/items.js#antidote");
+    });
+  });
+
+  describe("the sealed floor's props (FS-5FZ4J §K R57)", () => {
+    type PropSheet = {
+      atlas: string;
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { fps: number; loop: boolean; frames: unknown[][] }>;
+      light?: { color: string };
+      source: string;
+      licence: string;
+    };
+    const prop = (name: string): PropSheet => baked.sheets[name];
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+    const GLYPHS = ["crow", "key", "flame", "eye", "serpent", "moon"];
+    /** Every prop of R57 and the states the client plays, in bake order. */
+    const SEALED: [string, string[]][] = [
+      ["seal_lever", ["up", "down", ...GLYPHS.map((g) => `glyph_${g}`)]],
+      ["pressure_plate", ["up", "pressed"]],
+      ["stone_block", ["default"]],
+      ["seal_brazier", ["cold", "lit"]],
+      ["stair_key", ["default"]],
+      ["bridge_lever", ["up", "down"]],
+      ["mural", ["default"]],
+      ["lore_shrine", ["default"]],
+      ["gate_x", ["shut", "open"]],
+      ["gate_y", ["shut", "open"]],
+      ["pit_cell", ["open", "n", "w", "nw"]],
+      ["bridge_cell", ["x", "y"]],
+      ["secret_cracks", ["x", "y", "front_x", "front_y"]],
+      ["trap_spike_plate", ["armed", "sprung"]],
+      ["trap_dart_wall", ["armed", "sprung"]],
+      ["trap_fire_jet", ["armed", "sprung"]],
+      ["trap_tripwire", ["armed", "sprung"]],
+      ["trap_gas_vent", ["armed", "sprung", "puff"]],
+      ["healing_fountain", ["full", "dry"]],
+      ["hallowed_altar", ["dormant", "prayed"]],
+    ];
+
+    it("bakes every prop with the states the client plays, framed together on one sheet", () => {
+      for (const [name, states] of SEALED) {
+        expect(prop(name), name).toBeDefined();
+        expect(Object.keys(prop(name).animations), name).toEqual(states);
+        expect(prop(name).directions, name).toBe(1);
+      }
+    });
+
+    it("bakes each state as one still frame, and the gas vent's puff as a short effect that does not loop", () => {
+      for (const [name, states] of SEALED)
+        for (const state of states.filter((s) => s !== "puff")) {
+          expect(prop(name).animations[state].frames[0], `${name}/${state}`).toHaveLength(1);
+          expect(prop(name).animations[state].fps, `${name}/${state}`).toBe(0);
+        }
+      const puff = prop("trap_gas_vent").animations.puff;
+      expect(puff.frames[0].length).toBeGreaterThan(3);
+      expect(puff.fps).toBeGreaterThan(0);
+      expect(puff.loop).toBe(false);
+    });
+
+    it("packs them on a resident atlas of their own, so no committed atlas reflows", () => {
+      for (const [name] of SEALED) expect(atlasGroup(prop(name).atlas), name).toBe("sealed");
+      expect(SCENE_SCOPED_GROUPS.has("sealed")).toBe(false);
+      expect(
+        Object.entries(baked.sheets as Record<string, PropSheet>)
+          .filter(([, s]) => atlasGroup(s.atlas) === "sealed")
+          .map(([n]) => n)
+          .sort(),
+      ).toEqual(SEALED.map(([n]) => n).sort());
+    });
+
+    it("reuses the run's brazier and the Altar of Consecration rather than copies of them", () => {
+      expect(prop("seal_brazier").source).toBe(baked.sheets.brazier.source);
+      expect(prop("hallowed_altar").source).toBe(baked.sheets.altar.source);
+      expect(prop("seal_brazier").light).toEqual(baked.sheets.brazier.light);
+      // the hallowed altar's candlelight, from a BARROW token
+      expect(prop("hallowed_altar").light?.color).toBe("amberBright");
+    });
+
+    it("draws the hallowed altar on the Altar of Consecration's frame: recoloured, not resized", () => {
+      const altar = prop("altar");
+      const hallowed = prop("hallowed_altar");
+      expect(Math.abs(hallowed.frameWidth - altar.frameWidth)).toBeLessThanOrEqual(4);
+      expect(Math.abs(hallowed.frameHeight - altar.frameHeight)).toBeLessThanOrEqual(4);
+    });
+
+    it("lays a gate piece, a pit cell and a bridge cell one floor cell (80 world px) wide", () => {
+      // a cell's diamond: 80 world px is two 64 px tiles across, so 128 screen px, padded a little
+      const cell = 2 * baked.tile.width;
+      for (const name of ["pit_cell", "bridge_cell"]) {
+        expect(prop(name).frameWidth, name).toBeGreaterThanOrEqual(cell);
+        expect(prop(name).frameWidth, name).toBeLessThanOrEqual(cell + 12);
+        expect(prop(name).anchor, name).toEqual({ x: 0.5, y: expect.closeTo(0.5, 1) });
+      }
+    });
+
+    it("is modelled in code, under the project's licence", () => {
+      for (const [name] of SEALED) {
+        expect(prop(name).source, name).toMatch(/^procedural: tools\/bake\/page\/models\/(sealed|props|interactables)\.js#/);
+        expect(prop(name).licence, name).toBe(baked.sheets.brazier.licence);
+      }
+    });
+  });
+
   it("records the measured mean colour of every ground sheet, for lighting (FS-2325V §C.9)", () => {
     const ground = Object.keys(baked.sheets).filter((n) =>
       n.startsWith("ground_"),

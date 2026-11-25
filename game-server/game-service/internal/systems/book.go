@@ -330,7 +330,7 @@ func gateTarget(cast BookCast, _ *components.BookComponent) error {
 	default:
 		return ErrBadPageTarget
 	}
-	at, ok := centreOf(cast.Target)
+	at, ok := bodyCentre(cast.Target)
 	if !ok || !inPageRange(cast, at.X, at.Y) {
 		return ErrBadPageTarget
 	}
@@ -339,7 +339,7 @@ func gateTarget(cast BookCast, _ *components.BookComponent) error {
 
 // inPageRange is whether (x, y) lies within the page's range of the caster.
 func inPageRange(cast BookCast, x, y float64) bool {
-	from, ok := centreOf(cast.Caster)
+	from, ok := bodyCentre(cast.Caster)
 	if !ok {
 		return false
 	}
@@ -417,7 +417,7 @@ func bookPool(entity *ecs.Entity) (*components.ResourceComponent, bool) {
 	return rc.(*components.ResourceComponent), true
 }
 
-func centreOf(entity *ecs.Entity) (*components.TransformComponent, bool) {
+func bodyCentre(entity *ecs.Entity) (*components.TransformComponent, bool) {
 	tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)
 	if !ok {
 		return nil, false

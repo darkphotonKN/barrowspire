@@ -301,6 +301,96 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **Spire Wraith** — the Spire's bone-white recolour of the Forest's ghost: its own archetype in
   the Spire's standard mix, dropping on the ghoul row. A "ghost" is only ever the Forest's.
 
+### Sealed floors (FS-5FZ4J, ADR-0092)
+
+- **Seal** — what stops a floor's stairs from being climbed until the party breaks it: one puzzle
+  rolled per floor from a pool (**Lever Order**, **Weighted Plates**, **Hidden Key**, **Chasm**,
+  **Braziers**), two **chained** on floors 8–10 (the second's pieces appear once the first
+  breaks). A seal is **broken** once, for the whole party, and stays broken. The top floor has no
+  stairs and no seal. Never blocks the escape door. *Avoid*: "lock" (a lock is what Pick the Lock
+  opens and a key fits), "puzzle" for the seal itself (the puzzle is how a seal is broken).
+- **Seal piece** — one interactable a seal is broken through: a lever, a pressure plate, the stair
+  key, the bridge lever, a brazier. Stands on a branch other than the stairs'.
+- **Solvable by one** — every seal, gap and hidden room the way up depends on can be passed by one
+  living delver of any class with no book page (ADR-0092). A shortcut (a book page, an ally, a
+  second delver) is faster, never required.
+- **Stone block** — a pushable block on the floor's 80 px cell grid, placed by Weighted Plates
+  (always at least one per plate). Walking into it pushes it one cell, slowly; it never moves into
+  a wall, another block or a covered plate. A block on a plate holds it.
+- **Pressure plate** — a seal piece held down by a body (a delver, a hired ally) or a stone block
+  standing on it. Monsters do not hold plates.
+- **Trap** — a hazard on a floor cell: **spike plate**, **dart wall**, **fire jet**, **tripwire**
+  (wakes an ambush, fires once) or **gas vent** (poisons). Fires when a delver or a hired ally steps
+  on it; monsters never trigger one. **Detected** per party: until a party member has detected it,
+  the server never sends it to that party's clients. *Avoid*: "hazard" as a code name.
+- **Detected** — a trap or secret door one party member has seen (within 2 cells, or revealed):
+  from then on it is sent to every member of that party. A detection never un-happens on that
+  floor.
+- **Poison** — a delver status: 1% of max health a second for 60 s, lethal, refreshed (never
+  stacked) by a second poisoning, carried across floors until it runs out or is cured. Cured by
+  an **antidote** (FS-9JV5K) or the archer's Brew (FS-X2CMM). Not a monster ability's damage over
+  time.
+- **Secret door** — a wall cell that opens into a **hidden room**. Shows faint cracks to a delver
+  within 2 cells (that is its detection); opened by a **search**. Sent only once detected, as a
+  trap is.
+- **Hidden room** — a room reached only through a secret door: off the minimap and out of the
+  floor map's open regions until its door opens. Holds a better chest (one rarity step up), a lore
+  shrine, the hallowed altar or the Hidden Key's key.
+- **Search** — holding interact 2 s on a detected secret door: a timed interact (the FS-MQYEX
+  rule: moving or taking damage breaks it). Completing it opens the door for everyone.
+- **Ambush** — a pack of 2–4 monsters from the floor's pool, **dormant** in a shut alcove or room
+  until a **wake** (pulling a lever, lifting the key, lighting a brazier, a wrong lever order, a
+  tripwire) sends it at the delver who woke it. Not a top-up and not a guard.
+- **Respite** — a moment on a floor where the party can recover: the **healing fountain**, the
+  **hallowed altar**, and the wandering merchant (FS-9JV5K).
+- **Healing fountain** — a fixture in a room where no monster spawns, on about half of floors 2+:
+  heals each delver within 2 cells 4% of max health a second from one shared **pool** (150% of one
+  delver's max health), and is **dry** once the pool is spent.
+- **Hallowed altar** — the holy recolour of the Altar of Consecration's model (FS-3103M), in about
+  30% of delves, at most once: one delver **prays** (a 2 s timed interact) and every living party
+  member on the floor gains the **Blessing**. Never the Altar of Consecration: they share a model,
+  not a name, a rule or a wire kind.
+- **Blessing** — a delve-long delver buff from the hallowed altar: +10% item drop chance and +5%
+  class-resource regen. Lost on death, never stacked, never carried out of the run.
+
+### The wandering merchant (FS-9JV5K, ADR-0093)
+
+- **Wandering merchant** — a friendly NPC met on about a third of floors 2+ (never the top), in a
+  room where no monster spawns, selling **wares** for account gold. Never attacked, never
+  targeted. Not a hub function NPC: he lives in a run and his stock is the run's.
+- **Ware** — one line of the merchant's stock: an item template, a price in gold and a count left,
+  shared by the party, first come.
+- **Purchase** — one delver buying one ware: the stock is **reserved** on the tick, the wallet
+  **debit** runs off the tick, and on a later tick the item is granted (success) or the reserve
+  released (refusal). Identified by its **purchase key** (run, buyer, the buyer's purchase
+  sequence), the debit's idempotency key. A bought item is an unsafe find.
+- **Debit** — wallet-service's idempotent gold removal for a purchase (ADR-0093), bounded by
+  available gold, reached through an interface game-service owns. Not Withdraw, which takes no
+  key. The gold the client shows is its **purse line** (FS-7TGZ3), a read, not this.
+- **Antidote** — a consumable item template: drunk from the bag (the `use` action), it ends
+  poison at once; refused and not spent when its drinker is not poisoned.
+
+### Encounters (FS-4EC7Z)
+
+- **Encounter** — a group of humanoid NPCs met on a Spire floor (at most one a floor, about 40% of
+  floors 2+, never floor 1 or the top), of one **encounter kind**: **Lost Pilgrims** (defend them
+  from a wave; a better chest if one lives), **Captives** (caged; freed, they fight beside the
+  party), **Cutthroats** (talk first; half turn hostile, the rest reveal the hidden room). An
+  encounter NPC is not a monster until it turns, and never a hub NPC.
+- **Hired ally** — an encounter NPC fighting on the party's side: hired (FS-X2CMM's Strike a
+  Deal) or freed. Follows its **hirer** (the party, for freed captives), fights monsters, holds a
+  pressure plate, triggers traps, is targeted by monsters, never climbs. At most 3 a party. Its
+  kills give no experience and count as the hirer's for loot.
+- **Contract** — the once-a-delve job the mercenary takes (FS-X2CMM's Take a Contract): a **mark**
+  spawns on the current floor. **Settled** when the party kills it; **lost** when the party
+  climbs with it alive or the mercenary dies.
+- **Mark** — the contract's target: a humanoid in a variant look, champion health scaled to the
+  party, poison blades, calls three cutthroats once at half health, flees and heals once at a
+  quarter. Off the minimap; the mercenary sees only a **heading** (a compass word, refreshed every
+  5 s).
+- **Contract Settled** — the mercenary's delve-long buff for a settled contract: +15% damage. Lost
+  on death. The mercenary who took the contract only.
+
 ### Ranged monsters (FS-B4SG9, locked, not built)
 
 - **Ranged monster** — a monster whose sheet carries a **shot**: it closes to its shooting range,
