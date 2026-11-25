@@ -232,9 +232,12 @@ drunk from the bag.
   refused `sold_out` at once. If the first's debit is refused, the potion returns to stock.
 - **A buyer clicks Buy twice.** The second is refused `purchase_pending` while the first is in
   flight.
-- **The wallet is down.** Retries for 10 s, then `wallet_unavailable`; the reserve is released and
-  nothing was taken (a debit that applied but whose answer was lost within those 10 s is found by
-  the retry with the same key and succeeds).
+- **The wallet is down.** Retries for 10 s with the same key (a debit that applied but whose
+  answer was lost within those 10 s is found by the retry and succeeds); if the budget runs out,
+  `outcome_unknown` (amended 2026-11-25): the reserve is released, the purchase is logged at warn
+  for support, and the client asks the buyer to check their gold, never promising that nothing was
+  taken (ADR-0096). A definite refusal (unauthenticated, invalid argument, no wallet configured)
+  is `wallet_unavailable`: nothing was taken.
 - **The buyer's token expired** (access tokens last 60 minutes): the debit is refused as
   unauthenticated and reported as `wallet_unavailable`; reconnecting refreshes the token the
   session keeps.
