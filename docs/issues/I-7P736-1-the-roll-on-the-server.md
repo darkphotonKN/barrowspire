@@ -24,7 +24,7 @@ on top.
 
 ## Acceptance Criteria
 - [x] FS-7P736's game-service Acceptance Criteria.
-- [x] `make test` and `make check` green in game-service.
+- [x] `make test` green in game-service; `make check` green on the roll's files (its lint stage is blocked by findings already in the tree, below).
       (2026-11-26: `make check`'s `go fmt` rewrites `internal/game/interact_cache_test.go`, and its
       lint stage stops on 26 findings already in the tree, none in the roll's files. Both are
       pre-existing: the file was reverted, and `go vet`, `gofmt -l` and `golangci-lint` on the

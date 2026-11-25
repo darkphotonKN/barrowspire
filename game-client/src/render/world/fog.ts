@@ -29,7 +29,7 @@
  */
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
-import { WORLD_PX_PER_TILE, worldToScreen, type Point, type Rect } from "@/render/iso/projection";
+import { PLAYER_RADIUS, WORLD_PX_PER_TILE, worldToScreen, type Point, type Rect } from "@/render/iso/projection";
 import { mix, palette } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
 import { BAKE } from "./bake";
@@ -111,7 +111,7 @@ export const FOG = {
    * (`game-service/common/constants/game.go`); a position drawn between two snapshots along one
    * wall keeps it too.
    */
-  reach: 20,
+  reach: PLAYER_RADIUS,
   /**
    * Screen px a corner post stands clear over its wall top (FS-XK2B6 R18, ruling E4): its cap's top
    * (`POST_CAP`) and that top face's back corner, peaked over its middle, about 12.6 px.
