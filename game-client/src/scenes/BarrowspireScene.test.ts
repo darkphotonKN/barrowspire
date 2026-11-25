@@ -2999,8 +2999,8 @@ describe("BarrowspireScene ability bar (FS-Q18Q3 §E, §G, §L)", () => {
     });
     run.handleGameStateUpdate(withMe(me()));
     expect(kinds).toContain("bar");
-    // the status marks beside the health bar are the HUD's too (FS-5FZ4J §J R55)
-    expect(kinds.filter((k) => !["bars", "bar", "progress", "statusMarks"].includes(k))).toEqual([]);
+    // the status marks beside the health bar are the HUD's too (FS-5FZ4J §J R55), and the roll pip (FS-7P736 R16)
+    expect(kinds.filter((k) => !["bars", "bar", "progress", "statusMarks", "roll"].includes(k))).toEqual([]);
     expect(JSON.parse(JSON.stringify(bar))).toEqual(bar);
     expect(bar).toMatchObject({ potion: { count: 0, greyed: true } });
   });
@@ -6724,6 +6724,45 @@ describe("BarrowspireScene Space, the roll (FS-7P736 §B R13, R14, R16)", () => 
     expect(run.playerPos!.x).toBeLessThan(start.x + 200);
   });
 
+  /** The last turn a sprite was given, radians; 0 when it never was. */
+  const turn = (sprite: { last: Record<string, unknown[]> }) => Number(sprite.last.setRotation?.[0] ?? 0);
+
+  // FS-7P736 R15 (I-7P736-3): the stage bakes nothing, so the body is the placeholder under the in-code tumble
+  it("should draw the own body tumbling from the press, and upright again once the roll is over", () => {
+    const { run, press, players } = rollOnStage(undefined, { right: true });
+    run.update(0, 16);
+    press();
+    run.time.now = 1200;
+    run.update(0, 16);
+    // half way through: about half its one turn, clockwise as it rolls world east (down-right on screen)
+    expect(turn(players()[0])).toBeCloseTo(Math.PI, 0);
+    run.time.now = 1000 + 400;
+    run.update(0, 16);
+    expect(turn(players()[0])).toBe(0);
+  });
+
+  it("should draw another delver tumbling from the first state that shows them rolling, their way", () => {
+    const { run, players } = rollOnStage();
+    const smooth = (run as unknown as { updateOtherPlayersSmooth(t: number, d: number): void });
+    // the stage's stand-in for the others' smoothing is the real one again
+    delete (smooth as { updateOtherPlayersSmooth?: unknown }).updateOtherPlayersSmooth;
+    (run as unknown as FloorRun).handleGameStateUpdate(
+      partyState(player("me", "Aldric", 130), { ...player("ally", "Wenna", 160), roll: { dir_x: -1, dir_y: 0 } } as Me),
+    );
+    run.time.now = 1200;
+    smooth.updateOtherPlayersSmooth(0, 16);
+    const ally = players()[1];
+    // world west runs up-left on screen: anticlockwise
+    expect(turn(ally)).toBeCloseTo(-Math.PI, 0);
+    // the states go on showing the same roll: it is not drawn again once over
+    (run as unknown as FloorRun).handleGameStateUpdate(
+      partyState(player("me", "Aldric", 130), { ...player("ally", "Wenna", 160), roll: { dir_x: -1, dir_y: 0 } } as Me),
+    );
+    run.time.now = 1450;
+    smooth.updateOtherPlayersSmooth(0, 16);
+    expect(turn(ally)).toBe(0);
+  });
+
   it("should hand the UI scene the roll pip on each state, swept from the wire's roll cooldown", () => {
     const { run } = rollOnStage();
     const hud = vi.spyOn(run.ui, "hud");
@@ -8673,6 +8712,7 @@ describe("BarrowspireScene facing from movement, nothing on the wire (FS-JS7C8 �
     baked: true,
     facing: "se",
     guard: vi.fn(),
+    roll: vi.fn(),
     step: vi.fn(() => ({ animation: "run", facing: "e", direction: 0, timeScale: 1 })),
     show: vi.fn(),
   });

@@ -22,14 +22,16 @@ export const CHARACTER_ANIMATIONS = ["idle", "walk", "attack", "death"] as const
  * (FS-1J1CB §D R28), the attack swung with the left hand, which only his sheet carries. No sheet's
  * standalone `backpedal` is ever chosen (FS-JS7C8 R45), and no class attacks on the move: the
  * `walk_attack` and `backpedal_attack` clips were retired (FS-JS7C8 § Change: The knight's
- * sprint, and the attack-on-the-move clips retired, R155).
+ * sprint, and the attack-on-the-move clips retired, R155). A class's `roll` (FS-7P736 R15) plays
+ * once while the body rolls, on a sheet whose bake carries it.
  */
 export type CharacterAnimation =
   | (typeof CHARACTER_ANIMATIONS)[number]
   | "parry"
   | "claw"
   | "run"
-  | "attack_offhand";
+  | "attack_offhand"
+  | "roll";
 
 /**
  * World px per second the walk clip covers at 1x: the stride the bake keyed, over one cycle at
@@ -86,6 +88,16 @@ export interface CharacterState {
    * (only the Berserker's) and this swing is the left's: the attack plays `attack_offhand`.
    */
   offhand?: boolean;
+  /**
+   * The body is rolling (FS-7P736 R15), this world way: it plays its roll turned to the roll, over
+   * an attack, a guard, a held aim and its movement; death over it.
+   */
+  rolling?: { x: number; y: number };
+  /**
+   * The sheet carries `roll`: a rolling body plays it. Without it the body strides its `walk` turned
+   * to the roll at its authored rate, under the in-code tumble the scene draws over the sprite.
+   */
+  roll?: boolean;
 }
 
 export interface AnimationChoice {
@@ -98,7 +110,7 @@ export interface AnimationChoice {
 }
 
 /**
- * Dead over attacking over guarding over holding an aim over moving over idle. A character faces
+ * Dead over rolling over attacking over guarding over holding an aim over moving over idle. A character faces
  * its drawn movement (FS-JS7C8 §D R22); an attack faces its aim, death the facing it fell in, a
  * held aim the hold.
  *
@@ -108,7 +120,7 @@ export interface AnimationChoice {
  * backward step (R4, R45).
  */
 export function selectAnimation(state: CharacterState): AnimationChoice {
-  const { velocity, facing, attacking, dead, aim, holding, guarding, run, offhand } = state;
+  const { velocity, facing, attacking, dead, aim, holding, guarding, run, offhand, rolling, roll } = state;
   const speed = Math.hypot(velocity.vx, velocity.vy);
   const moving = speed >= MOVING_SPEED;
 
@@ -120,6 +132,9 @@ export function selectAnimation(state: CharacterState): AnimationChoice {
   });
 
   if (dead) return choose("death", facing);
+
+  // a roll faces its own way, whatever the eased motion or an aim says (FS-7P736 R15)
+  if (rolling) return choose(roll ? "roll" : "walk", facingFrom(rolling.x, rolling.y, facing));
 
   const walking = moving ? facingFrom(velocity.vx, velocity.vy, facing) : facing;
   if (attacking) {

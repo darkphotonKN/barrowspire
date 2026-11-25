@@ -25,6 +25,7 @@ import {
   DoorState,
   ProjectileState,
   type BookTimedState,
+  type RollState,
 } from "@/types/gameState";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { lootMessage } from "@/ui/ContainerView";
@@ -67,6 +68,8 @@ import { RUN_ACTIONS } from "./runActions";
 import { bindTreeAbilityKey } from "./treeAbilityKey";
 import { bindRollKey, rollAllowed, rollDirection } from "./rollKey";
 import { RollPrediction, rollReach, type RollBlocker } from "@/render/world/rollPrediction";
+import { RollBodies, RollTumble, tumbleMiddle } from "@/render/world/rollDraw";
+import { playRollDust } from "@/render/effects/rollDust";
 import { placeOnJump } from "@/render/jump";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
@@ -767,6 +770,12 @@ export class BarrowspireScene extends Phaser.Scene {
    * says instead of easing toward `targetPosition`; once it lets go the ease takes the body back to the server.
    */
   private readonly rolled = new RollPrediction();
+  /**
+   * Who is drawn rolling (FS-7P736 R15): the own body under {@link OWN_BODY} from its press, every other
+   * delver by player id from `other_players[].roll`; and the in-code tumble over a sheet with no baked roll.
+   */
+  private readonly rollDraws = new RollBodies();
+  private readonly tumble = new RollTumble();
 
   // 地圖大小: the floor's own, from its floor map (FS-KE075 §H.42); none until a map sizes it
   private mapWidth = 0;
@@ -1333,6 +1342,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.ownHealth = undefined;
     this.targetPosition = null;
     this.rolled.clear();
+    this.rollDraws.clear();
 
     this.otherPlayers.clear();
     this.otherPlayersPos.clear();
@@ -4407,6 +4417,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // and the archers' hounds, which run, bite and fall (FS-X2CMM §I R47)
     this.hounds?.sync(state.book_effects);
     this.syncBookStates(state);
+    // every delver the state shows rolling is drawn rolling, the own body too when no press predicted it (FS-7P736 R15)
+    this.syncRolls(state);
     this.seeAimAllies(state);
     // what the party has explored of a dungeon floor, from this broadcast (FS-SRA9J §B)
     this.explore(state);
@@ -5093,8 +5105,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * across the map from where they stood on the old one.
    */
   private settlePlayers(): void {
-    // a roll ends with the floor (FS-7P736 R11): the body stands where the server put it
+    // a roll ends with the floor (FS-7P736 R11): the body stands where the server put it, drawn upright
     this.rolled.clear();
+    this.rollDraws.clear();
     if (this.playerPos && this.targetPosition) {
       this.playerPos.x = this.targetPosition.x;
       this.playerPos.y = this.targetPosition.y;
@@ -5209,8 +5222,9 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private ownMarkerBase(): number | null {
     if (!this.player) return null;
+    // over the body as it stands, never as a roll tumbles it (FS-7P736 R15)
     return markerBase(
-      this.player,
+      this.tumble.standing(this.player),
       this.playerAnim?.crown,
       isDead(this.lastGameState?.current_player),
       this.playerAnim?.artScale,
@@ -6639,6 +6653,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const end = rollReach(this.targetPosition, unit, this.dungeon?.grid, this.shutDoors());
     const reach = Math.hypot(end.x - this.targetPosition.x, end.y - this.targetPosition.y);
     this.rolled.start(this.playerPos, unit, reach, now);
+    // drawn rolling at once, with the scuff where the drawn body pushes off (R15)
+    if (this.rollDraws.start(OWN_BODY, unit, now) && this.fx) playRollDust(this.fx, OWN_BODY, this.playerPos, unit);
   }
 
   /** The floor's shut doors as the roll's sweep stops at them (FS-7P736 R4), from the latest state. */
@@ -6922,7 +6938,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // update player name position; none over a baked corpse
     const ownBase = this.ownMarkerBase();
     if (this.player && this.playerNameText) {
-      if (ownBase !== null) this.playerNameText.setPosition(this.player.x, ownBase - NAME_GAP);
+      if (ownBase !== null) this.playerNameText.setPosition(this.tumble.standing(this.player).x, ownBase - NAME_GAP);
       this.playerNameText.setVisible(this.player.visible && ownBase !== null);
       // the title stands where the name was just put, the name over it; none over a corpse
       if (ownBase !== null) this.playerTitle?.stand(this.playerNameText);
@@ -6956,12 +6972,21 @@ export class BarrowspireScene extends Phaser.Scene {
     this.aimFrame();
 
     // the baked sheet plays what the player is doing, read off the position just drawn
+    const ownRoll = this.rollDraws.at(OWN_BODY, this.time.now);
     if (this.player && this.playerPos && this.playerAnim?.baked) {
       const dead = isDead(this.lastGameState?.current_player);
       if (!dead) this.deathDust.alive(this.player);
       // the merc's guard clip holds while his stance does (FS-MAMHR §G.35)
       this.playerAnim.guard(this.kit.guarding, this.time.now);
+      // rolling plays the class's baked roll, else its stride under the tumble below (FS-7P736 R15)
+      this.playerAnim.roll(ownRoll?.dir, this.time.now);
       this.playerAnim.show(this.player, this.playerAnim.step(this.playerPos, time, delta, dead));
+    }
+    // the in-code tumble over a sheet with no baked roll, the placeholder's too, so the roll never waits
+    // on art (R15), over the body just stood; once the roll is over it stands upright on its own scale again
+    if (this.player && this.playerPos && this.targetPosition) {
+      const tumbling = ownRoll && !this.playerAnim?.rolls && !isDead(this.lastGameState?.current_player);
+      this.tumble.apply(this.player, tumbling ? ownRoll : null, tumbleMiddle(!!this.playerAnim?.baked, this.playerAnim?.crown));
     }
 
     this.updateOtherPlayersSmooth(time, delta);
@@ -7021,6 +7046,22 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * Every body's roll from this state (FS-7P736 R15): a delver first shown rolling is drawn rolling from
+   * now, with a dust scuff where its drawn body starts; the own body's press has already started its own.
+   */
+  private syncRolls(state: ClientGameState): void {
+    const me = state.current_player;
+    const bodies: (readonly [string, RollState | undefined])[] = (state.other_players ?? []).map(
+      (p) => [p.id, p.roll] as const,
+    );
+    if (me) bodies.push([OWN_BODY, me.roll]);
+    for (const { id, dir } of this.rollDraws.sync(bodies, this.time.now)) {
+      const at = id === OWN_BODY ? this.playerPos : this.otherPlayersPos.get(id);
+      if (at && this.fx) playRollDust(this.fx, id, at, dir);
+    }
+  }
+
+  /**
    * Every body's book states on its drawn feet (FS-X2CMM R47), hidden with its body (the blackout, an
    * escape) and from the death clip, as its aura is.
    */
@@ -7057,7 +7098,12 @@ export class BarrowspireScene extends Phaser.Scene {
         const anim = this.otherPlayersAnim.get(playerId);
         const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
         if (!dead) this.deathDust.alive(sprite);
+        // a rolling delver is drawn rolling from `other_players[].roll` (FS-7P736 R15): the class's baked
+        // roll, else its stride under the in-code tumble, the placeholder's too
+        const rolling = this.rollDraws.at(playerId, this.time.now);
+        anim?.roll(rolling?.dir, this.time.now);
         if (anim?.baked) anim.show(sprite, anim.step(pos, time, delta, dead));
+        this.tumble.apply(sprite, rolling && !anim?.rolls && !dead ? rolling : null, tumbleMiddle(!!anim?.baked, anim?.crown));
 
         // update facing and legs for other players: the placeholder rig
         const legs = this.otherPlayersLegs.get(playerId);
@@ -7108,15 +7154,17 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!sprite) return;
     const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
     const anim = this.otherPlayersAnim.get(playerId);
-    const base = markerBase(sprite, anim?.crown, dead, anim?.artScale);
+    // over the body as it stands, never as a roll tumbles it (FS-7P736 R15)
+    const stood = this.tumble.standing(sprite);
+    const base = markerBase(stood, anim?.crown, dead, anim?.artScale);
     // the switch alone decides, not whether a bar happens to be in the map
     const bar = this.showTeammateBars ? this.teammateHealthBars.get(playerId) : undefined;
-    const barTop = bar ? this.drawTeammateBar(bar, sprite.x, base) : null;
+    const barTop = bar ? this.drawTeammateBar(bar, stood.x, base) : null;
 
     const nameText = this.otherPlayersNameTexts.get(playerId);
     if (nameText) {
-      if (barTop !== null) nameText.setPosition(sprite.x, barTop - 1 - NAME_OVER_BAR_GAP);
-      else if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
+      if (barTop !== null) nameText.setPosition(stood.x, barTop - 1 - NAME_OVER_BAR_GAP);
+      else if (base !== null) nameText.setPosition(stood.x, base - NAME_GAP);
       nameText.setVisible(base !== null);
       // the title stands where the name was just put, the name over it (FS-E1ZDG §K.41)
       const title = this.otherPlayersTitles.get(playerId);

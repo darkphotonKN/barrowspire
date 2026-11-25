@@ -38,9 +38,11 @@ export const clearanceLimit = (scale = 1) => CLEARANCE_PX / scale;
 
 /**
  * Clips the guard does not hold to it: a death folds the thighs up to the chest as the body drops,
- * further than any skinned skirt can follow (that would take draped cloth), and plays once.
+ * further than any skinned skirt can follow (that would take draped cloth), and plays once. A roll
+ * (FS-7P736 R15) does the same as it balls up and turns over, once, in 0.4 s: the knees to the chest,
+ * the body upside down, where a skinned skirt, robe or cloak cannot follow the thighs either.
  */
-export const UNGUARDED = ["death"];
+export const UNGUARDED = ["death", "roll"];
 
 /**
  * Sheets baked before the guard whose legs still show through their garment, each still built
