@@ -17,6 +17,7 @@ function recording() {
     layer: number;
     calls: string[];
     lit: boolean;
+    lightKind?: string;
     destroyed: boolean;
     destroy(): void;
   };
@@ -44,8 +45,9 @@ function recording() {
       piece.at = at;
       piece.calls.push(`stand ${at.x},${at.y}`);
     },
-    glow: (piece, _at, on) => {
+    glow: (piece, _at, on, kind) => {
       piece.lit = on;
+      piece.lightKind = kind;
       piece.calls.push(on ? "light" : "dark");
     },
     decal: (look, at, depthAt) => {
@@ -92,7 +94,7 @@ describe("SealSet: the pieces (FS-5FZ4J §J R51)", () => {
   it("should draw each piece at its position from its sheet, a lever's glyph over it on the layer above", () => {
     const { set, live } = recording();
     set.sync({ seal_pieces: [piece({ kind: "lever", glyph: "eye" }), piece({ kind: "mural", entity_id: "m", position: { x: 500, y: 40 } })] }, grid());
-    expect(live().map(({ look, at, band, layer }) => ({ look, at, band, layer }))).toEqual([
+    expect(live().map(({ look, at, band, layer }) => ({ look, at, band, layer }))).toMatchObject([
       { look: { sheet: "seal_lever", frame: "up" }, at: centre(2, 2), band: "standing", layer: 0 },
       { look: { sheet: "seal_lever", frame: "glyph_eye" }, at: centre(2, 2), band: "standing", layer: 1 },
       { look: { sheet: "mural", frame: "default" }, at: { x: 500, y: 40 }, band: "standing", layer: 0 },
@@ -117,9 +119,9 @@ describe("SealSet: the pieces (FS-5FZ4J §J R51)", () => {
     set.sync({ seal_pieces: [piece({ kind: "lever", glyph: "crow" }), piece({ kind: "plate", entity_id: "p" })] }, grid());
     set.sync({ seal_pieces: [piece({ kind: "lever", glyph: "crow", active: true }), piece({ kind: "plate", entity_id: "p", active: true })] }, grid());
     expect(made).toHaveLength(3);
-    expect(made[0].look).toEqual({ sheet: "seal_lever", frame: "down" });
+    expect(made[0].look).toMatchObject({ sheet: "seal_lever", frame: "down" });
     expect(made[1].calls).toEqual([]);
-    expect(made[2].look).toEqual({ sheet: "pressure_plate", frame: "pressed" });
+    expect(made[2].look).toMatchObject({ sheet: "pressure_plate", frame: "pressed" });
   });
 
   it("should light a brazier's flame only while it is lit", () => {
@@ -130,6 +132,8 @@ describe("SealSet: the pieces (FS-5FZ4J §J R51)", () => {
     expect(made[0]).toMatchObject({ lit: true, look: { sheet: "seal_brazier", frame: "lit" } });
     set.sync({ seal_pieces: [piece({ kind: "brazier" })] }, grid());
     expect(made[0].calls).toEqual(["show seal_brazier/lit", "light", "show seal_brazier/cold", "dark"]);
+    // a brazier's flame is a brazier among the floor's fixed lights (FS-8RBQY §C.6)
+    expect(made[0].lightKind).toBe("brazier");
   });
 
   it("should take away a piece no longer listed, its light first: the stair key taken", () => {
@@ -200,7 +204,7 @@ describe("SealSet: the gate, pits and the bridge (FS-5FZ4J §J R51)", () => {
   it("should lay one gate piece centred on each gate cell, gate_x for a gate running along world x", () => {
     const { set, live } = recording();
     set.sync({ barriers: [barrier({ kind: "gate", cells: [{ x: 4, y: 7 }, { x: 5, y: 7 }] })] }, grid());
-    expect(live().map(({ look, at, band }) => ({ look, at, band }))).toEqual([
+    expect(live().map(({ look, at, band }) => ({ look, at, band }))).toMatchObject([
       { look: { sheet: "gate_x", frame: "shut" }, at: centre(4, 7), band: "standing" },
       { look: { sheet: "gate_x", frame: "shut" }, at: centre(5, 7), band: "standing" },
     ]);
@@ -263,7 +267,7 @@ describe("SealSet: the gate, pits and the bridge (FS-5FZ4J §J R51)", () => {
     set.sync({ barriers: [barrier({ kind: "pit", cells: lane })] }, floor);
     set.sync({ barriers: [barrier({ kind: "pit", cells: lane, open: true })] }, floor);
     expect(made).toHaveLength(3);
-    expect(made.map((p) => p.look)).toEqual(lane.map(() => ({ sheet: "bridge_cell", frame: "y" })));
+    expect(made.map((p) => p.look)).toMatchObject(lane.map(() => ({ sheet: "bridge_cell", frame: "y" })));
   });
 
   it("should draw nothing for a barrier kind it does not know", () => {

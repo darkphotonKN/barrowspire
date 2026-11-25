@@ -38,10 +38,10 @@ import {
 import { placeCard } from "@/ui/placeCard";
 import { tremble, type LoreLine } from "@/ui/loreLine";
 import { burnHeard, loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
-import { SealWatch, sealReplyNotice } from "@/ui/sealLines";
+import { SealReplies, SealWatch } from "@/ui/sealLines";
 import { StatusWatch } from "@/ui/statusLines";
 import { statusMarks } from "@/ui/statusMarks";
-import { SealWindowClock, type SealWindowView } from "@/ui/sealWindow";
+import { SealWindowClock } from "@/ui/sealWindow";
 import {
   nextWatched,
   resolved,
@@ -248,7 +248,7 @@ import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/w
 import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, sameRegions, wallPlan, type DungeonMap } from "@/render/world/dungeon";
 import { buildingWallShadows, dungeonShadows } from "@/render/world/wallShadows";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
-import { nearLights } from "@/render/world/floorLights";
+import { FloorLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
 import { dressingStandsBy, planRoomDressing, type DressingPiece } from "@/render/world/runDressing";
 import { GROUND_MARGIN } from "@/render/world/scene";
@@ -428,10 +428,8 @@ interface DungeonFloor {
   floor: number;
   grid: RegionGrid;
   chunks: ChunkVisibility;
-  /** Each with the region it lights (FS-SRA9J §C.12), 0 for none. */
-  lights: (FixedLight<{ source: LightSource } & LightRoom> & { chunk: number; region: number })[];
-  /** The lights on the light-map now. */
-  lit: Set<LightSource>;
+  /** Its fixed lights, each by its chunk and the region it lights (FS-SRA9J §C.12), and those on the light-map now. */
+  lights: FloorLights<LightSource>;
   /** The party's exploration of this floor, from nothing (FS-SRA9J §B.6). */
   seen: Exploration;
   /** The fog over it, once its walls stand. */
@@ -811,7 +809,7 @@ export class BarrowspireScene extends Phaser.Scene {
     add: (look, at, band, layer) => this.addSealPiece(look, at, band, layer),
     show: (sprite, look) => showState(sprite, this.art, look.sheet, look.frame),
     stand: (sprite, at, layer) => this.standSealPiece(sprite, at, layer),
-    glow: (sprite, at, on) => this.glowSealPiece(sprite, at, on),
+    glow: (sprite, at, on, kind) => this.glowSealPiece(sprite, at, on, kind),
     decal: (look, at, depthAt) => this.addSealDecal(look, at, depthAt),
   };
   private seal = new SealSet<Phaser.GameObjects.Sprite>(this.sealStage);
@@ -841,11 +839,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private sealLights = new Map<Phaser.GameObjects.Sprite, LightSource>();
   /** The seal's events against the previous broadcast, a first one the baseline (FS-5FZ4J §I R48, §J R53). */
   private sealWatch = new SealWatch();
-  /** The Braziers window's countdown, and what the HUD was last handed (R53). */
+  /** The Braziers window's countdown, and whether the HUD needs telling (R53). */
   private sealWindow = new SealWindowClock();
-  private shownSealWindow: SealWindowView | null = null;
-  /** The lore shrines read this run: the shrine's line turns with each (R53). */
-  private shrineReads = 0;
+  /** The seal's reply lines, the shrine's turning with each read this run (R53). */
+  private sealReplies = new SealReplies();
 
   /**
    * Burning trails, from state (FS-4R9M9 req 56, 61): a ground bed and an additive glow each,
@@ -1308,8 +1305,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.escapedPlayers = undefined;
     this.sealWatch.reset();
     this.statusWatch.reset();
-    this.sealWindow.reset();
-    this.shownSealWindow = null;
+    this.sealWindow.forget();
   }
 
   /**
@@ -2695,15 +2691,22 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * What the player's own timed interact works, as drawn here: a shut container's sprite, what the
-   * seal drew for its target (a detected shut secret door's cracks), or the hallowed altar being
-   * prayed at; none while it is not drawn.
+   * What the player's own timed interact works, as drawn here, by its `target_kind` (FS-5FZ4J §I
+   * R49): a search's, what the seal drew for its target (a detected shut secret door's cracks); a
+   * prayer's, the hallowed altar; an open's, a shut container's sprite; none while it is not drawn.
    */
   private timedTarget(open: TimedOpenState, state: ClientGameState | undefined): Phaser.GameObjects.Sprite[] {
-    const chest = this.chests.get(open.entity_id)?.sprite;
-    if (chest) return state?.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open) ? [chest] : [];
-    const sealed = this.seal.drawnFor(open.entity_id);
-    return sealed.length > 0 ? sealed : this.respites.drawnFor(open.entity_id);
+    switch (open.target_kind) {
+      case "search":
+        return this.seal.drawnFor(open.entity_id);
+      case "pray":
+        return this.respites.drawnFor(open.entity_id);
+      default: {
+        // a container's open, from a server before FS-5FZ4J with no kind, or a kind this client does not know
+        const chest = this.chests.get(open.entity_id)?.sprite;
+        return chest && state?.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open) ? [chest] : [];
+      }
+    }
   }
 
   /**
@@ -3209,18 +3212,37 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
-  private getNearbyChest(): { entityId: string } | null {
+  /**
+   * What E does for the nearest in reach of a seal piece or the shut gate, the hallowed altar and a
+   * chest (FS-5FZ4J §J R52), as containers are reached; nothing with none in reach. A tie goes to
+   * the seal, then the altar.
+   */
+  private nearestReach(): (() => void) | null {
+    const me = this.playerPos;
+    if (!this.player || !me) return null;
+    const sealed = this.seal.reach(me);
+    const respite = this.respites.reach(me);
+    const chest = this.getNearbyChest();
+    const reaches: { distance: number; act: () => void }[] = [];
+    if (sealed) reaches.push({ distance: sealed.distance, act: () => socketManager.sendMessage(ActionType.Interact, { entity_id: sealed.target.entityId }) });
+    if (respite) reaches.push({ distance: respite.distance, act: () => socketManager.sendMessage(ActionType.Interact, { entity_id: respite.target.entityId }) });
+    if (chest) reaches.push({ distance: chest.distance, act: () => this.toggleChest(chest.entityId) });
+    let best: (typeof reaches)[number] | undefined;
+    for (const r of reaches) if (!best || r.distance < best.distance) best = r;
+    return best?.act ?? null;
+  }
+
+  /** The nearest chest or sack within the interact distance of the player, and how far it stands. */
+  private getNearbyChest(): { entityId: string; distance: number } | null {
     const me = this.playerPos;
     if (!this.player || !me) return null;
     const interactDistance = 60;
-
+    let best: { entityId: string; distance: number } | null = null;
     for (const [entityId, chest] of this.chests) {
       const distance = Phaser.Math.Distance.Between(me.x, me.y, chest.pos.x, chest.pos.y);
-      if (distance < interactDistance) {
-        return { entityId };
-      }
+      if (distance < interactDistance && (!best || distance < best.distance)) best = { entityId, distance };
     }
-    return null;
+    return best;
   }
 
   private getNearbySwitch(): { entityId: string } | null {
@@ -3616,23 +3638,9 @@ export class BarrowspireScene extends Phaser.Scene {
         this.reachSummoning(summoned);
         return;
       }
-      // a seal piece to work, or the shut gate, refused or opened with the key (FS-5FZ4J §J R52)
-      const sealed = this.player && this.playerPos ? this.seal.nearby(this.playerPos) : null;
-      if (sealed) {
-        socketManager.sendMessage(ActionType.Interact, { entity_id: sealed.entityId });
-        return;
-      }
-      // the hallowed altar, to Pray at; never the fountain (FS-5FZ4J §J R52)
-      const respite = this.player && this.playerPos ? this.respites.nearby(this.playerPos) : null;
-      if (respite) {
-        socketManager.sendMessage(ActionType.Interact, { entity_id: respite.entityId });
-        return;
-      }
-      // 檢查寶箱
-      const nearbyChest = this.getNearbyChest();
-      if (nearbyChest) {
-        this.toggleChest(nearbyChest.entityId);
-      }
+      // the nearest in reach of a seal piece to work or the shut gate (refused or opened with the
+      // key), the hallowed altar to Pray at (never the fountain), and a chest (FS-5FZ4J §J R52)
+      this.nearestReach()?.();
     });
 
     // I, B, C, F and Q are the UI scene's, with the gear overlay and the satchel they open, take from
@@ -3886,8 +3894,7 @@ export class BarrowspireScene extends Phaser.Scene {
       const line = loreForReply(payload);
       if (line) this.sayLore(line);
       // a sealed floor's replies, as HUD notices in their tones (FS-5FZ4J §I R49, §J R53)
-      const notice = sealReplyNotice(payload, this.lastGameState?.seal, this.shrineReads);
-      if (payload.reason === "shrine") this.shrineReads++;
+      const notice = this.sealReplies.notice(payload, this.lastGameState?.seal);
       if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     });
 
@@ -4062,8 +4069,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // the tome while it lies here, the altar on its floor (FS-3103M §I R27)
     this.summoning.sync(state);
     // a sealed floor's pieces, gate and pits, over its cell grid; its lines and the Braziers window
-    // (FS-5FZ4J §J R51, R53)
-    this.showSeal(state);
+    // (FS-5FZ4J §J R51, R53): an arrival's first floor says its seal, a return's says nothing
+    this.showSeal(state, arrived);
     // its detected traps, and the player's own poison said (FS-5FZ4J §J R51, R53)
     this.showHazards(state);
     this.updateFloorIndicator(state);
@@ -4195,9 +4202,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
     this.walls.clear();
     this.occluders.prune();
-    const flames = dungeon.wallLights ?? new Set<LightSource>();
-    dungeon.lights = dungeon.lights.filter((l) => !flames.has(l.light.source));
-    for (const source of flames) if (dungeon.lit.delete(source)) this.lightMap?.remove(source);
+    dungeon.lights.remove(dungeon.wallLights ?? []);
     this.dropFog();
     dungeon.minimap?.destroy();
     dungeon.modeIcon?.destroy();
@@ -4215,7 +4220,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.buildDungeonWalls(map.walls);
     for (const dressed of dungeon.dressed) this.standDressing(dungeon, dressed);
     // every light keeps its chunk; the region it lights is the new grid's
-    for (const l of dungeon.lights) l.region = regionAt(grid, l.light.at ?? screenToWorld(l.at.x, l.at.y));
+    dungeon.lights.reRegion((at) => regionAt(grid, at));
     this.stampLights(map.floor);
     if (view) dungeon.chunks.update(view);
     this.lightNearChunks();
@@ -4246,8 +4251,11 @@ export class BarrowspireScene extends Phaser.Scene {
       floor: map.floor,
       grid,
       chunks: new ChunkVisibility(ground),
-      lights: [],
-      lit: new Set(),
+      lights: new FloorLights<LightSource>(
+        (screen) => ground.indexAt(screen),
+        (at) => regionAt(grid, at),
+        { add: (source) => this.lightMap?.add(source), remove: (source) => this.lightMap?.remove(source) },
+      ),
       seen: new Exploration(grid),
       dressed: [],
     };
@@ -4562,24 +4570,11 @@ export class BarrowspireScene extends Phaser.Scene {
     const dungeon = this.dungeon;
     if (!dungeon) return;
     // a light in a region that is not visible is off (FS-SRA9J §C.12); one in no region stays lit
-    const near = nearLights(
-      dungeon.lights,
+    dungeon.lights.light(
       (chunk) => dungeon.chunks.shown(chunk),
-      FIXED_LIGHT_CAP,
-      (l) => l.region === 0 || dungeon.seen.state(l.region) === "visible",
+      (region) => dungeon.seen.state(region) === "visible",
     );
-    const kept = new Set(near.map((l) => l.light.source));
-    for (const source of dungeon.lit)
-      if (!kept.has(source)) {
-        this.lightMap?.remove(source);
-        dungeon.lit.delete(source);
-      }
-    for (const source of kept)
-      if (!dungeon.lit.has(source)) {
-        this.lightMap?.add(source);
-        dungeon.lit.add(source);
-      }
-    this.stampedLights = dungeon.lit.size;
+    this.stampedLights = dungeon.lights.lit.size;
   }
 
   /**
@@ -5074,21 +5069,18 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * A sealed floor's seal from this broadcast (FS-5FZ4J §J R51, R53): its pieces, gate and pits,
-   * once the floor's cell grid stands; its events as HUD notices; the Braziers window's countdown,
-   * handed to the HUD only on a change.
+   * once the floor's cell grid stands; its events as HUD notices, the seal named on `arrival`'s
+   * first broadcast as on a climb's; the Braziers window's countdown, handed to the HUD only on a change.
    */
-  private showSeal(state: ClientGameState): void {
+  private showSeal(state: ClientGameState, arrival: boolean): void {
     const dungeon = this.dungeon;
     // a secret door's cracks over the wall pieces of its face (FS-5FZ4J §J R51)
     if (dungeon) this.seal.sync(state, dungeon.grid, dungeon.faces);
     // the floor's fountain and the hallowed altar, its candles among the floor's lights (FS-5FZ4J §J R51)
     if (dungeon) this.respites.sync(state);
-    for (const notice of this.sealWatch.see(state)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
-    const window = this.sealWindow.see(state.seal);
-    const shown = this.shownSealWindow;
-    if (window?.seconds === shown?.seconds && window?.fraction === shown?.fraction) return;
-    this.shownSealWindow = window;
-    this.ui.hud({ world: "run", kind: "window", window });
+    for (const notice of this.sealWatch.see(state, arrival)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    const { view, changed } = this.sealWindow.see(state.seal);
+    if (changed) this.ui.hud({ world: "run", kind: "window", window: view });
   }
 
   /**
@@ -5103,8 +5095,12 @@ export class BarrowspireScene extends Phaser.Scene {
       sprite.setDepth(SEAL_GROUND_DEPTH);
       this.sealGround.add(sprite);
     }
-    if (look.sheet.startsWith("gate_")) this.occluders.add([sprite]);
-    if (light) this.sealLights.set(sprite, light);
+    if (look.occludes) this.occluders.add([sprite]);
+    if (light) {
+      this.sealLights.set(sprite, light);
+      // the flame is held only while its piece is: a piece gone (a key taken) leaves no entry
+      sprite.once("destroy", () => this.sealLights.delete(sprite));
+    }
     return sprite;
   }
 
@@ -5122,23 +5118,12 @@ export class BarrowspireScene extends Phaser.Scene {
    * lit), or the hallowed altar's candles (only while it is dormant): one of the floor's fixed
    * lights, by its chunk and region, under the floor's cap.
    */
-  private glowSealPiece(sprite: Phaser.GameObjects.Sprite, at: Point, on: boolean): void {
+  private glowSealPiece(sprite: Phaser.GameObjects.Sprite, at: Point, on: boolean, kind: FixedLightKind): void {
     const source = this.sealLights.get(sprite);
     const dungeon = this.dungeon;
     if (!source || !dungeon) return;
-    const held = dungeon.lights.findIndex((l) => l.light.source === source);
-    if (held >= 0) dungeon.lights.splice(held, 1);
-    if (dungeon.lit.delete(source)) this.lightMap?.remove(source);
-    if (on) {
-      const screen = { x: source.x, y: source.y };
-      dungeon.lights.push({
-        kind: "brazier",
-        at: screen,
-        light: { source, at },
-        chunk: dungeon.chunks.grid.indexAt(screen),
-        region: regionAt(dungeon.grid, at),
-      });
-    }
+    dungeon.lights.remove([source]);
+    if (on) dungeon.lights.add(kind, source, at);
     this.lightNearChunks();
   }
 
@@ -5150,7 +5135,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private addSealDecal(look: SealLook, at: Point, depthAt: Point): Phaser.GameObjects.Sprite {
     const { sprite } = addProp(this, this.art, look.sheet, at, { animation: look.frame });
     sprite.setDepth(worldDepth(depthAt.x, depthAt.y, 2));
-    if (!look.frame.startsWith("front_")) this.occluders.add([sprite]);
+    if (look.occludes) this.occluders.add([sprite]);
     return sprite;
   }
 
@@ -5247,10 +5232,8 @@ export class BarrowspireScene extends Phaser.Scene {
       this.dressing = this.dressing?.filter((sprite) => !dressed.sprites.includes(sprite));
       const flames = new Set(dressed.lights);
       this.pendingLights = this.pendingLights.filter((l) => !flames.has(l.light.source));
-      dungeon.lights = dungeon.lights.filter((l) => !flames.has(l.light.source));
-      for (const source of flames)
-        if (dungeon.lit.delete(source)) this.lightMap?.remove(source);
-      this.stampedLights = dungeon.lit.size;
+      dungeon.lights.remove(flames);
+      this.stampedLights = dungeon.lights.lit.size;
     }
   }
 
@@ -5287,11 +5270,8 @@ export class BarrowspireScene extends Phaser.Scene {
     if (dungeon) {
       // a dungeon floor's every fixed light waits in its chunk; those near the camera are lit
       // within the cap (FS-KE075 §H.45)
-      for (const l of this.pendingLights) {
-        // the region it lights: where it stands, or the nearest walkable cell to the wall it hangs on
-        const region = regionAt(dungeon.grid, l.light.at ?? screenToWorld(l.at.x, l.at.y));
-        dungeon.lights.push({ ...l, chunk: dungeon.chunks.grid.indexAt(l.at), region });
-      }
+      // the region each lights: where it stands, or the nearest walkable cell to the wall it hangs on
+      for (const l of this.pendingLights) dungeon.lights.add(l.kind, l.light.source, l.light.at);
       this.pendingLights = [];
       this.lightNearChunks();
       return;
@@ -5763,7 +5743,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.ui.hud({ world: "run", kind: "bars", bars: own.bars });
     this.ui.hud({ world: "run", kind: "bar", bar: own.bar });
     // the Blessing's mark beside the own health bar, while it holds (FS-5FZ4J §J R55)
-    this.ui.hud({ world: "run", kind: "marks", marks: statusMarks(state) });
+    this.ui.hud({ world: "run", kind: "statusMarks", marks: statusMarks(state) });
     // the controls badge stands while the bar is live, so it goes at a death though the bar is held
     // (FS-84N1G R4; FS-Q18Q3 R42): told on each change
     const live = own.bar !== null && this.heldHud === undefined;

@@ -14,11 +14,15 @@
 import type { SealPieceKind, TrapKind } from "@/types/gameState";
 import type { WallAxis, WallHeight } from "./walls";
 
-/** A sheet and the frame it shows. */
+/** A sheet and the frame it shows, and whether it fades over a player behind it as the walls do. */
 export interface SealLook {
   sheet: string;
   frame: string;
+  occludes: boolean;
 }
+
+/** A look that never fades over a player: it stands low, or under every body. */
+const flat = (sheet: string, frame: string): SealLook => ({ sheet, frame, occludes: false });
 
 /** The glyphs a lever bears, each baked as a `glyph_<name>` frame (the server's `LeverGlyphs`). */
 export const GLYPHS = ["crow", "key", "flame", "eye", "serpent", "moon"] as const;
@@ -65,25 +69,25 @@ export const SEALED_SHEETS: Readonly<Record<string, readonly string[]>> = {
  */
 export function pieceLooks(kind: SealPieceKind, active: boolean, glyph?: string): SealLook[] {
   const { sheet, off, on } = PIECES[kind];
-  const looks = [{ sheet, frame: active ? on : off }];
-  if (kind === "lever" && glyph && (GLYPHS as readonly string[]).includes(glyph)) looks.push({ sheet, frame: `glyph_${glyph}` });
+  const looks = [flat(sheet, active ? on : off)];
+  if (kind === "lever" && glyph && (GLYPHS as readonly string[]).includes(glyph)) looks.push(flat(sheet, `glyph_${glyph}`));
   return looks;
 }
 
-/** One gate cell's piece, shut or open. */
+/** One gate cell's piece, shut or open: as tall as a wall, it fades over a player behind it. */
 export function gateLook(axis: CellAxis, open: boolean): SealLook {
-  return { sheet: `gate_${axis}`, frame: open ? "open" : "shut" };
+  return { sheet: `gate_${axis}`, frame: open ? "open" : "shut", occludes: true };
 }
 
 /** A pit cell's ground: the rock face falls from a floor edge to its north and west; south and east never show one. */
 export function pitLook(floorAt: { north: boolean; west: boolean }): SealLook {
   const frame = floorAt.north ? (floorAt.west ? "nw" : "n") : floorAt.west ? "w" : "open";
-  return { sheet: "pit_cell", frame };
+  return flat("pit_cell", frame);
 }
 
 /** A lowered lane's cell, in its pit's place. */
 export function bridgeLook(axis: CellAxis): SealLook {
-  return { sheet: "bridge_cell", frame: axis };
+  return flat("bridge_cell", axis);
 }
 
 /** Whether a piece's sheet declares a light that burns only while it is active: the seal's brazier, lit. */
@@ -102,17 +106,21 @@ export type TrapFrame = "armed" | "sprung" | "puff";
 
 /** A trap's sheet and frame; every trap kind has its own sheet. */
 export function trapLook(kind: TrapKind, frame: TrapFrame): SealLook {
-  return { sheet: `trap_${kind}`, frame };
+  return flat(`trap_${kind}`, frame);
 }
 
-/** A secret door's cracks over one wall piece: `x`/`y` on a back piece, `front_x`/`front_y` on a cut-away one. */
+/**
+ * A secret door's cracks over one wall piece: `x`/`y` on a back piece, fading with it over a player
+ * as the full-height piece does; `front_x`/`front_y` on a cut-away one, which never fades.
+ */
 export function cracksLook(height: WallHeight, axis: WallAxis): SealLook {
-  return { sheet: "secret_cracks", frame: height === "back" ? axis : `front_${axis}` };
+  const back = height === "back";
+  return { sheet: "secret_cracks", frame: back ? axis : `front_${axis}`, occludes: back };
 }
 
 /** The healing fountain, full or dry once its pool is spent (R51). Its sheet declares no light. */
 export function fountainLook(dry: boolean): SealLook {
-  return { sheet: "healing_fountain", frame: dry ? "dry" : "full" };
+  return flat("healing_fountain", dry ? "dry" : "full");
 }
 
 /**
@@ -120,5 +128,5 @@ export function fountainLook(dry: boolean): SealLook {
  * while it is dormant (I-5FZ4J-8): the candles are cold stubs once it is prayed at.
  */
 export function hallowedAltarLook(prayed: boolean): SealLook {
-  return { sheet: "hallowed_altar", frame: prayed ? "prayed" : "dormant" };
+  return flat("hallowed_altar", prayed ? "prayed" : "dormant");
 }

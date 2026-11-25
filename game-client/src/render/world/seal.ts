@@ -13,6 +13,7 @@
  */
 
 import type { Point } from "@/render/iso/projection";
+import type { FixedLightKind } from "./floorLights";
 import {
   knownBarrier,
   knownSealPiece,
@@ -58,13 +59,19 @@ export type WallFace = Pick<WallPiece, "at" | "depthAt" | "axis" | "height">;
 /** Where a sprite sorts: on the ground under every body (a pit, a bridge, a plate), or standing among them. */
 export type SealBand = "ground" | "standing";
 
+/** A seal brazier's flame among the floor's fixed lights: a brazier, as the dressing's are (FS-8RBQY §C.6). */
+const PIECE_LIGHT: FixedLightKind = "brazier";
+
 /** What the set asks of the scene. `layer` stacks a piece's parts at one spot (a lever's glyph over it). */
 export interface SealStage<S extends { destroy(): void }> {
   add(look: SealLook, at: Point, band: SealBand, layer: number): S;
   show(sprite: S, look: SealLook): void;
   stand(sprite: S, at: Point, layer: number): void;
-  /** Light or put out the flame a piece's sheet declares: the seal's brazier while it is lit. */
-  glow(sprite: S, at: Point, on: boolean): void;
+  /**
+   * Light or put out the flame a piece's sheet declares, as one of the floor's fixed lights of
+   * `kind`: the seal's brazier while it is lit, the hallowed altar's candles while it is dormant.
+   */
+  glow(sprite: S, at: Point, on: boolean, kind: FixedLightKind): void;
   /** A decal over a wall piece at its own spot, sorted just over it by `depthAt`: a secret door's cracks. */
   decal(look: SealLook, at: Point, depthAt: Point): S;
 }
@@ -168,6 +175,11 @@ export class SealSet<S extends { destroy(): void }> {
 
   /** The nearest piece or shut gate the interact key reaches from `me`, or `null` (R52). */
   nearby(me: Point): SealTarget | null {
+    return this.reach(me)?.target ?? null;
+  }
+
+  /** {@link nearby}'s target with how far it stands from `me`: what E weighs against the other targets in reach. */
+  reach(me: Point): { target: SealTarget; distance: number } | null {
     const inReach: { target: SealTarget; d: number }[] = [];
     for (const [entityId, p] of this.pieces)
       if (reachable(p.kind, p.active)) inReach.push({ target: { kind: p.kind, entityId }, d: Math.hypot(me.x - p.pos.x, me.y - p.pos.y) });
@@ -178,7 +190,7 @@ export class SealSet<S extends { destroy(): void }> {
       if (grid && !door.open) inReach.push({ target: { kind: "secret_door", entityId }, d: rectDistance(me, door.cells, grid.cell) });
     let best: { target: SealTarget; d: number } | undefined;
     for (const c of inReach) if (c.d < INTERACT_RANGE && (!best || c.d < best.d)) best = c;
-    return best?.target ?? null;
+    return best ? { target: best.target, distance: best.d } : null;
   }
 
   /** Each sprite drawn, with where it stands: what the hide rule and the blackout read. */
@@ -260,7 +272,7 @@ export class SealSet<S extends { destroy(): void }> {
   private addPiece(kind: SealPieceKind, looks: SealLook[], at: Point, active: boolean): DrawnPiece<S> {
     const band: SealBand = kind === "plate" ? "ground" : "standing";
     const sprites = looks.map((look, layer) => this.stage.add(look, at, band, layer));
-    if (active && glowsWhileActive(kind)) this.stage.glow(sprites[0], at, true);
+    if (active && glowsWhileActive(kind)) this.stage.glow(sprites[0], at, true, PIECE_LIGHT);
     return { kind, sprites, looks, pos: at, goal: at, active };
   }
 
@@ -271,7 +283,7 @@ export class SealSet<S extends { destroy(): void }> {
       this.stage.show(p.sprites[i], look);
     });
     p.looks = looks;
-    if (p.active !== active && glowsWhileActive(p.kind)) this.stage.glow(p.sprites[0], p.pos, active);
+    if (p.active !== active && glowsWhileActive(p.kind)) this.stage.glow(p.sprites[0], p.pos, active, PIECE_LIGHT);
     p.active = active;
   }
 
@@ -290,7 +302,7 @@ export class SealSet<S extends { destroy(): void }> {
   }
 
   private dropPiece(p: DrawnPiece<S>): void {
-    if (p.active && glowsWhileActive(p.kind)) this.stage.glow(p.sprites[0], p.pos, false);
+    if (p.active && glowsWhileActive(p.kind)) this.stage.glow(p.sprites[0], p.pos, false, PIECE_LIGHT);
     for (const sprite of p.sprites) sprite.destroy();
   }
 

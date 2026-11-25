@@ -13,6 +13,7 @@
 
 import type { Point } from "@/render/iso/projection";
 import type { FountainState, HallowedAltarState } from "@/types/gameState";
+import type { FixedLightKind } from "./floorLights";
 import type { SealStage } from "./seal";
 import { fountainLook, hallowedAltarLook, type SealLook } from "./sealLooks";
 import { INTERACT_RANGE } from "./stairs";
@@ -24,6 +25,9 @@ export type RespiteTarget = { kind: "hallowed_altar"; entityId: string };
 export type RespiteStage<S extends { destroy(): void }> = Pick<SealStage<S>, "add" | "show" | "stand" | "glow">;
 
 type Kind = "fountain" | "hallowed_altar";
+
+/** The hallowed altar's candles among the floor's fixed lights: their own kind, dropped as FS-8RBQY §C.6 orders it. */
+const CANDLES: FixedLightKind = "hallowed_altar";
 
 interface Drawn<S> {
   entityId: string;
@@ -54,9 +58,15 @@ export class RespiteSet<S extends { destroy(): void }> {
 
   /** The dormant hallowed altar the interact key reaches from `me`, or `null` (R52). */
   nearby(me: Point): RespiteTarget | null {
+    return this.reach(me)?.target ?? null;
+  }
+
+  /** {@link nearby}'s target with how far it stands from `me`: what E weighs against the other targets in reach. */
+  reach(me: Point): { target: RespiteTarget; distance: number } | null {
     const altar = this.drawn.get("hallowed_altar");
-    if (!altar?.dormant || Math.hypot(me.x - altar.pos.x, me.y - altar.pos.y) >= INTERACT_RANGE) return null;
-    return { kind: "hallowed_altar", entityId: altar.entityId };
+    const distance = altar ? Math.hypot(me.x - altar.pos.x, me.y - altar.pos.y) : Infinity;
+    if (!altar?.dormant || distance >= INTERACT_RANGE) return null;
+    return { target: { kind: "hallowed_altar", entityId: altar.entityId }, distance };
   }
 
   /** The sprite drawn for one listed respite: what a prayer's bar stands over (R54). */
@@ -93,7 +103,7 @@ export class RespiteSet<S extends { destroy(): void }> {
     const drawn = this.drawn.get(kind);
     if (!drawn) {
       const sprite = this.stage.add(look, pos, "standing", 0);
-      if (dormant) this.stage.glow(sprite, pos, true);
+      if (dormant) this.stage.glow(sprite, pos, true, CANDLES);
       this.drawn.set(kind, { entityId: wire.entity_id, sprite, pos, look, dormant });
       return;
     }
@@ -107,12 +117,12 @@ export class RespiteSet<S extends { destroy(): void }> {
     }
     if (drawn.dormant !== dormant) {
       drawn.dormant = dormant;
-      this.stage.glow(drawn.sprite, pos, dormant);
+      this.stage.glow(drawn.sprite, pos, dormant, CANDLES);
     }
   }
 
   private drop(d: Drawn<S>): void {
-    if (d.dormant) this.stage.glow(d.sprite, d.pos, false);
+    if (d.dormant) this.stage.glow(d.sprite, d.pos, false, CANDLES);
     d.sprite.destroy();
   }
 }

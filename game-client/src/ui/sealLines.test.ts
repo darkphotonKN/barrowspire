@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SealState } from "@/types/gameState";
 import { loreForReply } from "./loreCopy";
-import { SEAL_REPLY_REASONS, SHRINE_LINES, SealWatch, sealKindName, sealReplyNotice } from "./sealLines";
+import { SEAL_REPLY_REASONS, SHRINE_LINES, SealReplies, SealWatch, sealKindName, sealReplyNotice } from "./sealLines";
 
 const seal = (over: Partial<SealState> = {}): SealState => ({ kind: "lever_order", stage: 1, stages: 1, broken: false, ...over });
 
@@ -58,14 +58,48 @@ describe("the seal's reply lines (FS-5FZ4J §I R49, §J R53)", () => {
   });
 });
 
+// the review's fix round 1: the shrine's turn is the lines', not the scene's
+describe("SealReplies: the seal's reply lines in turn (FS-5FZ4J §J R53)", () => {
+  it("should turn the shrine's line with each shrine read, and only with a shrine read", () => {
+    const replies = new SealReplies();
+    const shrine = { success: true, message: "", reason: "shrine" };
+    const said = [
+      replies.notice(shrine, undefined),
+      replies.notice({ success: true, message: "", reason: "mural", glyphs: ["eye"] }, seal()),
+      replies.notice(shrine, undefined),
+      replies.notice({ success: false, message: "too far" }, seal()),
+      replies.notice(shrine, undefined),
+      replies.notice(shrine, undefined),
+    ].map((n) => n?.text ?? null);
+    expect(said).toEqual([SHRINE_LINES[0], "The mural shows: Eye.", SHRINE_LINES[1], null, SHRINE_LINES[2], SHRINE_LINES[0]]);
+  });
+
+  it("should name the seal's kind from the state handed in", () => {
+    expect(new SealReplies().notice({ success: false, message: "", reason: "gate_sealed" }, seal({ kind: "chasm" }))?.text).toBe("Sealed. The Chasm holds it.");
+  });
+});
+
 describe("SealWatch: the seal's events off the state (FS-5FZ4J §I R48, §J R53)", () => {
   const watched = (...states: { floor?: number; seal?: SealState }[]) => {
     const watch = new SealWatch();
     return states.map((s) => watch.see(s).map((n) => `${n.tone}: ${n.text}`));
   };
 
-  it("should say nothing on a first broadcast, however the seal stands", () => {
+  it("should say nothing on a return's first broadcast (a reconnect), however the seal stands", () => {
     expect(watched({ floor: 3, seal: seal({ broken: true, key_carried: true }) })).toEqual([[]]);
+  });
+
+  it("should name the seal on an arrival's first broadcast, floor 1 of a fresh run included, and nothing else of it", () => {
+    const watch = new SealWatch();
+    expect(watch.see({ floor: 1, seal: seal({ kind: "weighted_plates", key_carried: true }) }, true)).toEqual([
+      { text: "The stairs are sealed: Weighted Plates.", tone: "waiting" },
+    ]);
+    // the arrival is the baseline for what follows
+    expect(watch.see({ floor: 1, seal: seal({ kind: "weighted_plates", key_carried: true }) })).toEqual([]);
+  });
+
+  it("should say nothing on an arrival onto a floor with no seal", () => {
+    expect(new SealWatch().see({ floor: 1 }, true)).toEqual([]);
   });
 
   it("should name the seal on arriving on a sealed floor", () => {

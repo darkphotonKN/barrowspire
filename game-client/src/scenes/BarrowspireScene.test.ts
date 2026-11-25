@@ -38,6 +38,7 @@ vi.mock("phaser", async () => (await import("./phaser.standin")).phaserStandIn()
 
 const { BarrowspireScene, keepBodySize, projectileFlightOf, TOP_RIGHT_EDGE } = await import("./BarrowspireScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
+const { ChunkVisibility } = await import("@/render/world/chunks");
 const { anchorAt, viewport } = await import("@/render/viewport");
 const { EffectsRuntime } = await import("@/render/effects/runtime");
 const { HitFeedback } = await import("@/render/effects/hit");
@@ -2817,7 +2818,7 @@ describe("BarrowspireScene ability bar (FS-Q18Q3 §E, §G, §L)", () => {
     run.handleGameStateUpdate(withMe(me()));
     expect(kinds).toContain("bar");
     // the status marks beside the health bar are the HUD's too (FS-5FZ4J §J R55)
-    expect(kinds.filter((k) => !["bars", "bar", "progress", "marks"].includes(k))).toEqual([]);
+    expect(kinds.filter((k) => !["bars", "bar", "progress", "statusMarks"].includes(k))).toEqual([]);
     expect(JSON.parse(JSON.stringify(bar))).toEqual(bar);
     expect(bar).toMatchObject({ potion: { count: 0, greyed: true } });
   });
@@ -10248,12 +10249,21 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
   function dungeonStage(
     party: Partial<Party> = {},
     extra: Partial<GameState> = {},
-    { late = false, without, map = dungeonMap }: { late?: boolean; without?: string; map?: typeof dungeonMap } = {},
+    {
+      late = false,
+      without,
+      map = dungeonMap,
+      arrival = false,
+      spy,
+    }: { late?: boolean; without?: string; map?: typeof dungeonMap; arrival?: boolean; spy?: (run: unknown) => void } = {},
   ) {
     const scene = sceneOnStage();
     const { stage } = scene;
     const run = scene.run as unknown as DungeonRun;
     run.worldLook = WORLD_THEMES.tower;
+    // a start that is an arrival (FS-PQ2TW R8), not a return; and what a test watches before the first broadcast
+    (run as unknown as { arrival: boolean }).arrival = arrival;
+    spy?.(run);
     // `without`: the manifest's sheets whose name starts so are missing (a bake without them)
     const sheets = Object.fromEntries(Object.entries(manifest.sheets).filter(([name]) => !without || !name.startsWith(without)));
     run.art = new ArtLibrary({ ...manifest, sheets }, { warn: () => {} });
@@ -10410,18 +10420,18 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       const fs = await_iso.worldToScreen(p.x, p.y);
       look(fs.x, fs.y);
       handle({ ...dungeonState(everyRegion()), containers: [chestAt("x1", piece.piece.at), chestAt("x2", p)] });
-      const floor = (run as unknown as { dungeon: { lights: { light: { source: unknown } }[] } }).dungeon;
-      expect(floor.lights.some((l) => flamed.lights.includes(l.light.source))).toBe(false);
+      const floor = (run as unknown as { dungeon: { lights: { all: { light: { source: unknown } }[] } } }).dungeon;
+      expect(floor.lights.all.some((l) => flamed.lights.includes(l.light.source))).toBe(false);
       expect(lights.some((l) => flamed.lights.includes(l))).toBe(false);
     }
   });
 
   it("should light a dungeon floor's interactables in its chunks, under the fog, when its map comes after its first snapshot (review M2)", () => {
     const { run } = dungeonStage(everyRegion(), {}, { late: true });
-    const floor = (run as unknown as { dungeon: { lights: { kind: string }[] }; hallLights: unknown[]; builtFloor?: number }).dungeon;
+    const floor = (run as unknown as { dungeon: { lights: { all: { kind: string }[] } }; hallLights: unknown[]; builtFloor?: number }).dungeon;
     expect((run as unknown as { builtFloor?: number }).builtFloor).toBe(1);
     // the chest's and the switch's pools wait in their chunks with the floor's other fixed lights
-    expect(floor.lights.filter((l) => l.kind === "interactable").length).toBeGreaterThanOrEqual(2);
+    expect(floor.lights.all.filter((l) => l.kind === "interactable").length).toBeGreaterThanOrEqual(2);
     // none was stamped as a light of the halls before the floor stood
     expect((run as unknown as { hallLights: unknown[] }).hallLights).toEqual([]);
   });
@@ -10709,7 +10719,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     type EdgedRun = DungeonRun & {
       currentFloorLook(): { seed: number; walls: import("@/render/world/walls").WallSheets };
       occluders: { size: number; items: { sprite: Made }[] };
-      dungeon: { lights: { kind: string; region: number; light: { at?: Point } }[] };
+      dungeon: { lights: { all: { kind: string; region: number; light: { at?: Point } }[] } };
     };
     /** The floor's walls as the plan cuts them, in the look the staged floor has. */
     const planned = (run: EdgedRun) => {
@@ -10744,7 +10754,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
     it("should queue a wall light where its piece stands, for the region its edge faces: only a room's", () => {
       const { run } = dungeonStage();
       const { plan, look } = planned(run as EdgedRun);
-      const lights = (run as EdgedRun).dungeon.lights.filter((l) => l.kind === "sconce");
+      const lights = (run as EdgedRun).dungeon.lights.all.filter((l) => l.kind === "sconce");
       const want: { at: Point; region: number }[] = [];
       for (const edge of plan.runs)
         for (const p of dungeonWalls({ edges: [], runs: [edge], posts: [] }, grid, look.seed, look.walls).pieces) {
@@ -10802,8 +10812,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       dungeon?: {
         seen: Seen;
         fog?: InstanceType<typeof FogClass>;
-        lit: Set<unknown>;
-        lights: { light: { source: unknown }; region: number }[];
+        lights: { all: { light: { source: unknown }; region: number }[]; lit: ReadonlySet<unknown> };
       };
       chests: Map<string, { sprite: Made }>;
       escapeDoors: Map<string, { sprite: Made }>;
@@ -10876,12 +10885,12 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       const { x, y } = await_iso.worldToScreen(2560, 3080);
       look(x, y);
       const dungeon = run.dungeon!;
-      const lit = dungeon.lights.filter((l) => dungeon.lit.has(l.light.source));
+      const lit = dungeon.lights.all.filter((l) => dungeon.lights.lit.has(l.light.source));
       for (const l of lit) expect(l.region === 0 || dungeon.seen.state(l.region) === "visible").toBe(true);
       // the same view with every region visible lights more
       const all = stageIn({ ...inRoom, ...everyRegion() });
       all.look(x, y);
-      expect(all.run.dungeon!.lit.size).toBeGreaterThan(dungeon.lit.size);
+      expect(all.run.dungeon!.lights.lit.size).toBeGreaterThan(dungeon.lights.lit.size);
     });
 
     it("should draw the fog at the blackout's depth, redraw it only when a region's state changes, and take it down with the floor", () => {
@@ -12245,6 +12254,56 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(interacts).toEqual([[ActionType.Interact, { entity_id: "lever-1" }]]);
     });
 
+    // the review's fix round 1: E reaches the nearest of a seal piece, a respite and a chest
+    it("should send the interact for the nearest in reach of a seal piece, the hallowed altar and a chest", () => {
+      const pressAt = (playerPos: { x: number; y: number }) => {
+        const staged = dungeonStage(inRoom, sealed({ containers: [chestAt("chest-1", at(ME.x + 50, ME.y))], hallowed_altar: { entity_id: "altar-1", position: at(ME.x, ME.y + 50), prayed: false } }));
+        const run = staged.run as unknown as SealedRun;
+        const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+        const keyHandlers: Record<string, () => void> = {};
+        Object.assign(run, {
+          input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+          playerPos,
+        });
+        run.bindRunInput();
+        keyHandlers["keydown-E"]();
+        const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact).map(([, p]) => (p as { entity_id: string }).entity_id);
+        sent.mockRestore();
+        return interacts;
+      };
+      // the lever stands where ME is, the chest 50 px east, the altar 50 px south
+      expect(pressAt(at(ME.x + 40, ME.y))).toEqual(["chest-1"]);
+      expect(pressAt(at(ME.x, ME.y + 40))).toEqual(["altar-1"]);
+      expect(pressAt(at(ME.x + 5, ME.y + 5))).toEqual(["lever-1"]);
+    });
+
+    // the review's fix round 1: floor 1's seal was never said
+    it("should name the floor's seal on an arrival's first broadcast, and nothing on a return's (R53)", () => {
+      const said = (arrival: boolean) => {
+        const lines: unknown[][] = [];
+        dungeonStage(inRoom, sealed({ seal: sealOf({ kind: "weighted_plates" }) }), {
+          arrival,
+          spy: (run) => void vi.spyOn(run as SealedRun, "showNotification").mockImplementation((...a) => void lines.push(a)),
+        });
+        return lines;
+      };
+      expect(said(true)).toEqual([["The stairs are sealed: Weighted Plates.", palette.hudPanel]]);
+      expect(said(false)).toEqual([]);
+    });
+
+    // the review's fix round 1: one owner of the floor's lights, and no flame held for a piece gone
+    it("should light a lit seal brazier among the floor's lights as a brazier, and forget its flame once the piece goes", () => {
+      const brazier = (active: boolean) => ({ entity_id: "brazier-1", kind: "brazier", position: ME, cell: { x: 32, y: 38 }, active });
+      const { run, next } = sealedStage();
+      const floor = run as unknown as { dungeon: { lights: { all: readonly { kind: string; light: { at?: { x: number } } }[] } }; sealLights: Map<unknown, unknown> };
+      next({ seal_pieces: [brazier(true)] });
+      expect(floor.dungeon.lights.all.filter((l) => l.light.at?.x === ME.x).map((l) => l.kind)).toEqual(["brazier"]);
+      expect(floor.sealLights.size).toBe(1);
+      next({ seal_pieces: [] });
+      expect(floor.dungeon.lights.all.filter((l) => l.light.at?.x === ME.x)).toEqual([]);
+      expect(floor.sealLights.size).toBe(0);
+    });
+
     it("should say the seal breaks on the broadcast it breaks, and nothing on the first", () => {
       const { notified, next } = sealedStage();
       expect(notified).not.toHaveBeenCalled();
@@ -12384,6 +12443,36 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(drawn(stage.made, "secret_cracks/")).toEqual([]);
     });
 
+    // the review's fix round 1: a redraw makes the chunks again, so whatever registers in them must be laid again
+    it("should register in the redrawn floor's chunks from every site that registered in the first build's (R56)", () => {
+      /** The scene's own code that registered a part: the innermost of the known sites on the stack. */
+      const SITES = ["createGround", "buildDungeonWalls", "standDressing", "Fog"] as const;
+      const siteOf = (stack: string) => {
+        for (const line of stack.split("\n").slice(1)) {
+          if (/\bnew Fog\b/.test(line)) return "Fog";
+          const named = SITES.find((name) => name !== "Fog" && line.includes(`.${name} `));
+          if (named) return named;
+        }
+        return `unknown: ${stack.split("\n").slice(2, 5).join(" | ")}`;
+      };
+      const sites = new Map<unknown, Set<string>>();
+      const add = ChunkVisibility.prototype.add;
+      const spied = vi.spyOn(ChunkVisibility.prototype, "add").mockImplementation(function (this: unknown, ...args) {
+        const own = sites.get(this) ?? new Set<string>();
+        sites.set(this, own);
+        own.add(siteOf(new Error().stack ?? ""));
+        return add.apply(this as InstanceType<typeof ChunkVisibility>, args);
+      });
+      const { handle } = hiddenStage();
+      useGameStore.getState().receiveFloorMap({ ...dungeonMap } as never);
+      handle({ ...dungeonState(inRoom()), barriers: [door(true)] } as GameState);
+      spied.mockRestore();
+      const [first, redrawn] = [...sites.values()].map((own) => [...own].sort());
+      // a new site of registration must be laid again by redrawDungeon, and pinned here
+      expect(first).toEqual([...SITES].sort());
+      expect(redrawn).toEqual(first);
+    });
+
     it("should draw nothing again for the same map re-sent (a reconnect's ask)", () => {
       const { stage, handle } = hiddenStage();
       const walls = drawn(stage.made, "tower_wall_");
@@ -12421,7 +12510,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       checkBuildingStatus(): void;
       showNotification(text: string, backing: number): void;
       respites: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
-      dungeon: { lights: { light: { at?: { x: number; y: number } } }[] };
+      dungeon: { lights: { all: readonly { kind: string; light: { at?: { x: number; y: number } } }[] } };
       timedOpen?: { label?: Made };
       ui: { hud(message: unknown): void };
     }
@@ -12468,8 +12557,10 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
 
     it("should light the altar's candles among the floor's lights while it is dormant, and put them out once prayed", () => {
       const { run, next } = respiteStage();
-      const candles = () => run.dungeon.lights.filter((l) => l.light.at?.x === ME.x && l.light.at?.y === ME.y);
+      const candles = () => run.dungeon.lights.all.filter((l) => l.light.at?.x === ME.x && l.light.at?.y === ME.y);
       expect(candles()).toHaveLength(1);
+      // its own kind of fixed light, never a brazier's (FS-8RBQY §C.6)
+      expect(candles()[0].kind).toBe("hallowed_altar");
       next({ hallowed_altar: altar(true) });
       expect(candles()).toHaveLength(0);
     });
@@ -12518,7 +12609,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       const hud = vi.spyOn(run.ui, "hud");
       next({}, mine({ blessed: true }));
       next({}, mine());
-      const marks = hud.mock.calls.map(([m]) => m as { kind: string; marks?: unknown }).filter((m) => m.kind === "marks");
+      const marks = hud.mock.calls.map(([m]) => m as { kind: string; marks?: unknown }).filter((m) => m.kind === "statusMarks");
       expect(marks.map((m) => m.marks)).toEqual([["blessed"], []]);
     });
   });

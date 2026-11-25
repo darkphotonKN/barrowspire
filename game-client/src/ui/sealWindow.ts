@@ -23,23 +23,36 @@ export interface SealWindowView {
 /** The panel's line. */
 export const SEAL_WINDOW_LINE = "The braziers burn.";
 
-/** Each broadcast's seal read into the countdown, or none while no window runs. */
+/**
+ * Each broadcast's seal read into the countdown, or none while no window runs, and whether that
+ * differs from the last view seen: the HUD is told only on a change.
+ */
 export class SealWindowClock {
   private length?: number;
+  private shown: SealWindowView | null = null;
 
-  see(seal: SealState | undefined): SealWindowView | null {
+  see(seal: SealState | undefined): { view: SealWindowView | null; changed: boolean } {
     const left = seal?.window_ends_in;
-    if (left === undefined) {
-      this.length = undefined;
-      return null;
+    let view: SealWindowView | null = null;
+    if (left === undefined) this.length = undefined;
+    else {
+      this.length ??= left;
+      view = { seconds: Math.max(0, Math.ceil(left)), fraction: countdownFraction(left, this.length) };
     }
-    this.length ??= left;
-    return { seconds: Math.max(0, Math.ceil(left)), fraction: countdownFraction(left, this.length) };
+    const changed = view?.seconds !== this.shown?.seconds || view?.fraction !== this.shown?.fraction;
+    this.shown = view;
+    return { view, changed };
   }
 
-  /** Forget the window: the next one seen starts afresh. */
+  /** Forget the window: the next one seen starts afresh; one still shown is taken down by the next `see`. */
   reset(): void {
     this.length = undefined;
+  }
+
+  /** Forget the window and what was shown: the HUD went with the scene. */
+  forget(): void {
+    this.reset();
+    this.shown = null;
   }
 }
 

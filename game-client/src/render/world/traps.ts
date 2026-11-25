@@ -2,8 +2,11 @@
  * A floor's detected traps on the canvas (FS-5FZ4J §J R51): each listed trap drawn from its baked
  * sheet at its cell's centre, faint (its armed frame at reduced alpha) while it waits, and its
  * **spring** played at full strength when R48's events fire against the previous broadcast: its
- * `armed` falling, or a gas vent's `puffed_at` changing. A first sight is the baseline: a trap
- * first seen sprung shows sprung and plays nothing. The broadcast is the whole truth: a trap no
+ * `armed` falling, or a gas vent's `puffed_at` changing. The floor's first sync (entering it, a
+ * reconnect) is the baseline: a trap it lists sprung shows sprung and plays nothing. A trap newly
+ * listed after it was just detected, and what it carries happened on the tick it was: one listed
+ * sprung plays its spring, a gas vent listed with a puff plays it (the server detects a vent and
+ * records its first, poisoning puff on one tick). The broadcast is the whole truth: a trap no
  * longer listed goes; a kind this client does not know draws nothing. Never on the minimap (R56).
  *
  * The looks are `sealLooks.ts`'s; this set only places them, through {@link TrapStage}, the slice
@@ -39,6 +42,8 @@ function still(kind: TrapKind, armed: boolean): { look: SealLook; alpha: number 
 
 export class TrapSet<S extends { destroy(): void }> {
   private readonly traps = new Map<string, DrawnTrap<S>>();
+  /** Whether the floor's first sync over its grid has run: after it, a newly listed trap's spring or puff plays. */
+  private baseline = false;
 
   constructor(private readonly stage: TrapStage<S>) {}
 
@@ -60,11 +65,14 @@ export class TrapSet<S extends { destroy(): void }> {
         held?.sprite.destroy();
         const pos = { x: (trap.cell.x + 0.5) * grid.cell, y: (trap.cell.y + 0.5) * grid.cell };
         const { look, alpha } = still(kind, trap.armed);
-        this.traps.set(trap.entity_id, { kind, sprite: this.stage.add(look, pos, alpha), pos, armed: trap.armed, puffedAt: trap.puffed_at });
+        const drawn = { kind, sprite: this.stage.add(look, pos, alpha), pos, armed: trap.armed, puffedAt: trap.puffed_at };
+        this.traps.set(trap.entity_id, drawn);
+        if (this.baseline) this.firstSight(drawn);
         continue;
       }
       this.turn(held, trap);
     }
+    this.baseline = true;
   }
 
   /** Each sprite drawn, with where it stands: what the hide rule and the blackout read. */
@@ -72,7 +80,7 @@ export class TrapSet<S extends { destroy(): void }> {
     return [...this.traps.values()].map(({ sprite, pos }) => ({ sprite, pos }));
   }
 
-  /** Destroy every trap and forget them: the next sight of each is a first. */
+  /** Destroy every trap and forget them: the next sync is the floor's first again. */
   clear(): void {
     for (const t of this.traps.values()) t.sprite.destroy();
     this.forget();
@@ -81,6 +89,13 @@ export class TrapSet<S extends { destroy(): void }> {
   /** Forget everything without touching it: the scene has already destroyed its objects. */
   forget(): void {
     this.traps.clear();
+    this.baseline = false;
+  }
+
+  /** A trap newly listed past the floor's baseline: listed sprung, its spring; a vent listed with a puff, the puff. */
+  private firstSight(t: DrawnTrap<S>): void {
+    if (!t.armed) this.stage.spring(t.sprite, trapLook(t.kind, "sprung"));
+    else if (t.puffedAt !== undefined) this.stage.spring(t.sprite, trapLook(t.kind, "puff"), still(t.kind, true));
   }
 
   /** A held trap against this broadcast: a spring on armed falling or a puff, a still frame on re-arming. */

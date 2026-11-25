@@ -41,7 +41,7 @@ function onHud() {
     bars: piece("bars"),
     progress: piece("progress"),
     window: piece("window"),
-    marks: piece("marks"),
+    statusMarks: piece("statusMarks"),
   };
   const slot = new UiHudSlot(bridge, build);
   const report = (world: World): WorldReport => {
@@ -91,7 +91,7 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     expect(RESOURCE_HUD_AT.run).toEqual(RESOURCE_HUD_AT.field);
     // FS-5FZ4J §J R53: a sealed floor's Braziers window counts down in a run alone
     // FS-5FZ4J §J R55: the status marks beside the run's own health bar, a run's alone
-    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, marks: STATUS_MARKS_AT });
+    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, statusMarks: STATUS_MARKS_AT });
   });
 
   it.each([
@@ -153,16 +153,16 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
   it("should build the status marks in a run, at their place, on the first marks, hand them none after, and never in a field", () => {
     const { slot, built, report } = onHud();
     report("run");
-    slot.hear({ world: "run", kind: "marks", marks: [] });
+    slot.hear({ world: "run", kind: "statusMarks", marks: [] });
     expect(built).toEqual([]);
-    slot.hear({ world: "run", kind: "marks", marks: ["blessed"] });
-    slot.hear({ world: "run", kind: "marks", marks: [] });
+    slot.hear({ world: "run", kind: "statusMarks", marks: ["blessed"] });
+    slot.hear({ world: "run", kind: "statusMarks", marks: [] });
     expect(built).toHaveLength(1);
     expect(built[0].at).toEqual(STATUS_MARKS_AT);
     expect(built[0].shown).toEqual([["blessed"], []]);
     const field = onHud();
     field.report("field");
-    field.slot.hear({ world: "field", kind: "marks", marks: ["blessed"] });
+    field.slot.hear({ world: "field", kind: "statusMarks", marks: ["blessed"] });
     expect(field.built).toEqual([]);
   });
 

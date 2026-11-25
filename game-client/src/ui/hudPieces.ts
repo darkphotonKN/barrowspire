@@ -23,7 +23,7 @@ export function hudPieces(scene: Phaser.Scene): HudBuild {
     bars: (at) => new ResourceHud(scene, at.x, at.y),
     progress: () => new ProgressHud(scene),
     window: () => new SealWindowHud(scene),
-    marks: (at) => new StatusMarksHud(scene, at.x, at.y),
+    statusMarks: (at) => new StatusMarksHud(scene, at.x, at.y),
   };
 }
 

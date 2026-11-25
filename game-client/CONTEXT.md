@@ -790,8 +790,12 @@ The server owns every rule ([`game-service/CONTEXT.md`](../game-server/game-serv
   it): faint when first detected, then its **spring** (spikes up, darts, a fire jet, a gas puff)
   when it fires. Never drawn from a guess. Kinds keep the server's names: spike plate, dart wall,
   fire jet, tripwire, gas vent.
-- **Poison**: the delver status, shown as a green tint on the health bar and a status mark; never
-  "venom" or "toxic" in copy.
+- **Poison**: the delver status, shown as the **poison tint** (a sour bile-olive, `palette.poisoned`)
+  on the poisoned delver's own health bar and on a teammate's overhead bar; it has no status mark.
+  Never "venom" or "toxic" in copy.
+- **Status mark**: a small mark on the UI scene beside the delver's own health bar, one per lasting
+  status, with a hover line. The Blessing is the first and, for now, the only one. *Avoid*: "mark"
+  bare, which is the contract's target (**Mark**).
 - **Secret door**: a wall cell drawn as plain wall until detected, then with **faint cracks**;
   **Search** is the hold-interact on it ("Searching…", the same bar as a timed open). Opened, it
   draws as a doorway into the **hidden room**, which joins the minimap only then.

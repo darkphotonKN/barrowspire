@@ -101,6 +101,38 @@ describe("TrapSet: a listed trap drawn faint (FS-5FZ4J §J R51)", () => {
     expect(live()[0].calls).toEqual([`spring puff then armed ${TRAP_FAINT}`]);
   });
 
+  // the review's fix round 1: a vent is detected and puffs on one tick, so its first listing carries the puff
+  it("should play the first puff of a gas vent first listed after the floor's first sync with puffed_at set", () => {
+    const { set, live } = recording();
+    set.sync([], grid);
+    set.sync([trap({ kind: "gas_vent", puffed_at: 7 })], grid);
+    expect(live()[0]).toMatchObject({ look: { frame: "puff" } });
+    expect(live()[0].calls).toEqual([`spring puff then armed ${TRAP_FAINT}`]);
+    set.sync([trap({ kind: "gas_vent", puffed_at: 7 })], grid);
+    expect(live()[0].calls).toHaveLength(1);
+  });
+
+  it("should play the spring of a trap first listed after the floor's first sync already sprung", () => {
+    const { set, live } = recording();
+    set.sync([trap({ entity_id: "t0" })], grid);
+    set.sync([trap({ entity_id: "t0" }), trap({ armed: false })], grid);
+    expect(live()[1].calls).toEqual(["spring sprung"]);
+    expect(live()[0].calls).toEqual([]);
+  });
+
+  it("should keep the floor's first sync silent: what it lists sprung or puffed is the baseline (entering, a reconnect)", () => {
+    const { set, live } = recording();
+    set.sync([trap({ armed: false }), trap({ entity_id: "t2", kind: "gas_vent", puffed_at: 4 })], grid);
+    expect(live().flatMap((d) => d.calls)).toEqual([]);
+  });
+
+  it("should not take a sync with no grid yet for the floor's first: the first with its grid is still the baseline", () => {
+    const { set, live } = recording();
+    set.sync([], undefined);
+    set.sync([trap({ armed: false })], grid);
+    expect(live()[0].calls).toEqual([]);
+  });
+
   it("should take away a trap no longer listed, and draw nothing for a kind it does not know", () => {
     const { set, live, made } = recording();
     set.sync([trap(), trap({ entity_id: "t2", kind: "bear_trap" })], grid);

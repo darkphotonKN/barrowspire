@@ -9,7 +9,7 @@ type Point = { x: number; y: number };
 
 /** A stand-in for the scene: each sprite drawn and every call made on it. */
 function recording() {
-  type Piece = { look: SealLook; at: Point; band: SealBand; calls: string[]; lit: boolean; destroyed: boolean; destroy(): void };
+  type Piece = { look: SealLook; at: Point; band: SealBand; calls: string[]; lit: boolean; lightKind?: string; destroyed: boolean; destroy(): void };
   const made: Piece[] = [];
   const set = new RespiteSet<Piece>({
     add: (look, at, band) => {
@@ -25,8 +25,9 @@ function recording() {
       piece.at = at;
       piece.calls.push(`stand ${at.x},${at.y}`);
     },
-    glow: (piece, _at, on) => {
+    glow: (piece, _at, on, kind) => {
       piece.lit = on;
+      piece.lightKind = kind;
       piece.calls.push(on ? "light" : "dark");
     },
   });
@@ -52,7 +53,7 @@ describe("RespiteSet: the healing fountain and the hallowed altar (FS-5FZ4J §J 
   it("should draw each at its position, standing among the bodies, in the frame its state names", () => {
     const { set, made } = recording();
     set.sync({ fountain: fountain(), hallowed_altar: altar() });
-    expect(made.map(({ look, at, band }) => ({ look, at, band }))).toEqual([
+    expect(made.map(({ look, at, band }) => ({ look, at, band }))).toMatchObject([
       { look: { sheet: "healing_fountain", frame: "full" }, at: { x: 400, y: 560 }, band: "standing" },
       { look: { sheet: "hallowed_altar", frame: "dormant" }, at: { x: 880, y: 240 }, band: "standing" },
     ]);
@@ -64,7 +65,7 @@ describe("RespiteSet: the healing fountain and the hallowed altar (FS-5FZ4J §J 
     set.sync({ fountain: fountain(), hallowed_altar: altar() });
     set.sync({ fountain: fountain(true), hallowed_altar: altar(true) });
     expect(made).toHaveLength(2);
-    expect(made.map((p) => p.look)).toEqual([
+    expect(made.map((p) => p.look)).toMatchObject([
       { sheet: "healing_fountain", frame: "dry" },
       { sheet: "hallowed_altar", frame: "prayed" },
     ]);
@@ -79,6 +80,8 @@ describe("RespiteSet: the healing fountain and the hallowed altar (FS-5FZ4J §J 
     set.sync({ fountain: fountain(), hallowed_altar: altar() });
     const [basin, stone] = made;
     expect(stone.lit).toBe(true);
+    // the candles are the hallowed altar's own kind of fixed light, never a brazier's (FS-8RBQY §C.6)
+    expect(stone.lightKind).toBe("hallowed_altar");
     set.sync({ fountain: fountain(), hallowed_altar: altar(true) });
     expect(stone.lit).toBe(false);
     expect(basin.calls).not.toContain("light");

@@ -27,7 +27,7 @@ function recording(build: HudBuild, built: Partial<Record<HudKind, unknown>>): H
     bars: keep("bars", build.bars),
     progress: keep("progress", build.progress),
     window: keep("window", build.window),
-    marks: keep("marks", build.marks),
+    statusMarks: keep("statusMarks", build.statusMarks),
   };
 }
 

@@ -4,8 +4,8 @@
  * what these return through its HUD notice.
  *
  * Two sources: the interact replies with the seal's reasons (§I R49), and the events read off the
- * state against the previous broadcast (§I R48), a first broadcast being the baseline that says
- * nothing (a connect, a reconnect, a new floor).
+ * state against the previous broadcast (§I R48), a first broadcast being the baseline (a connect,
+ * a reconnect, a new floor) that says nothing but an arrival's seal.
  */
 
 import type { SealState } from "@/types/gameState";
@@ -80,6 +80,26 @@ export function sealReplyNotice(reply: InteractReply, seal: SealState | undefine
   return REPLY_NOTICES[reason](reply, seal, pick);
 }
 
+/** Arriving on a floor: its seal named, or nothing on a floor with none. */
+function arrived(seal: SealState | undefined): SealNotice[] {
+  return seal ? [{ text: `The stairs are sealed: ${sealKindName(seal.kind)}.`, tone: "waiting" }] : [];
+}
+
+/**
+ * The seal's reply lines as a run says them (§J R53): {@link sealReplyNotice}'s, the lore shrine's
+ * line turning with each shrine read this run.
+ */
+export class SealReplies {
+  private shrineReads = 0;
+
+  /** The notice for `reply`, or `null`; `seal` is the last state's, which names the kind. */
+  notice(reply: InteractReply, seal: SealState | undefined): SealNotice | null {
+    const notice = sealReplyNotice(reply, seal, this.shrineReads);
+    if (reply.reason === "shrine") this.shrineReads++;
+    return notice;
+  }
+}
+
 /** A broadcast as the watch reads it. */
 interface Seen {
   floor?: number;
@@ -89,20 +109,21 @@ interface Seen {
 /**
  * The seal's events, read off each broadcast against the one before (§I R48): arriving on a
  * sealed floor, a stage rising, the seal broken, the key taken, a Braziers window ending unbroken.
- * The first broadcast it sees, and the first of each new floor, is the baseline: an arrival says
- * the seal, and nothing else of the floor's past is said.
+ * The first broadcast it sees, and the first of each new floor, is the baseline: arriving on a
+ * floor says its seal, and nothing else of the floor's past is said. A first broadcast says the
+ * seal only when it is an arrival's (floor 1 of a fresh run, FS-PQ2TW R8); a return's (a
+ * reconnect) says nothing.
  */
 export class SealWatch {
   private last?: Seen;
 
-  /** This broadcast's lines, in order. */
-  see(state: Seen): SealNotice[] {
+  /** This broadcast's lines, in order; `arrival` when it is the first broadcast of an arrival. */
+  see(state: Seen, arrival = false): SealNotice[] {
     const before = this.last;
     this.last = { floor: state.floor, seal: state.seal && { ...state.seal } };
-    if (!before) return [];
     const now = state.seal;
-    if (before.floor !== state.floor)
-      return now ? [{ text: `The stairs are sealed: ${sealKindName(now.kind)}.`, tone: "waiting" }] : [];
+    if (!before) return arrival ? arrived(now) : [];
+    if (before.floor !== state.floor) return arrived(now);
     const was = before.seal;
     if (!was || !now) return [];
 
