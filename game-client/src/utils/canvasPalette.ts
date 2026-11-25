@@ -518,7 +518,7 @@ export const palette = {
      * frame, lifted toward vellum so it warms the trap rather than recolours it.
      */
     revealedTrap: tint(BOOK_PIGMENT.ochre, 0.4),
-    /** The faint ring on the floor under a hound, whose it is at a glance (R47): Call the Hound's verdigris. */
+    /** The faint ring on the floor under a hound, whose it is at a glance (R47): Call the Wolf's verdigris. */
     houndRing: BOOK_PIGMENT.verdigris,
     /** The hound's bay, rings at what the hound bays at (R49): the hound's own verdigris. */
     houndBay: BOOK_PIGMENT.verdigris,

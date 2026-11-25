@@ -119,6 +119,12 @@ describe("a page's right page (FS-X2CMM §Change: the open tome, C5)", () => {
     });
   });
 
+  it("should name the archer's summon Call the Wolf on its right page (§Change: The archer's wolf W2)", () => {
+    const leaf = leafOf({ class: "archer", level: 20, resource: { kind: "stamina", current: 100, max: 100, ability_cost: 10 }, book: { pages: [page("call_the_hound", 9, 60)] } });
+    expect(leaf.name).toBe("Call the Wolf");
+    expect(leaf.line).toMatch(/\bwolf\b/i);
+  });
+
   it("should give a Scar its scar's name and the line of where it was earned", () => {
     const leaf = leafOf({ class: "warrior", level: 20, resource: { kind: "stamina", current: 100, max: 100, ability_cost: 10 }, book: { pages: [page("hardened", 9, 30)] } });
     expect(leaf.name).toBe("Hardened");

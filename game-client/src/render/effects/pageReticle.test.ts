@@ -34,7 +34,7 @@ describe("reticleShapes (FS-X2CMM R41)", () => {
     expect(ring[0].y).toBeCloseTo(east.y);
   });
 
-  it("should lay the paw mark for a page whose data shapes it so, rather than a ring (Call the Hound)", () => {
+  it("should lay the paw mark for a page whose data shapes it so, rather than a ring (Call the Wolf)", () => {
     const paw = reticleShapes({ ...ground, page: "call_the_hound", radius: 40 });
     // a pad and four toes
     expect(paw).toHaveLength(5);
