@@ -13,7 +13,7 @@
  */
 
 import type { Point } from "@/render/iso";
-import { PAGE_COPY } from "@/data/classBooks";
+import { PAGE_COPY, type AimTargetKind } from "@/data/classBooks";
 import type { PageId } from "@/ui/pageIcons";
 
 /** A body's reach of the pointer, in cells: how near it a teammate (or interactable) is picked (R41). */
@@ -28,6 +28,8 @@ export interface AimBody {
   readonly at: Point;
   /** The player themself: picked only by a page that allows self (Levitate). */
   readonly self?: boolean;
+  /** What an interactable is: picked only by a page that names it among its `targets`. */
+  readonly kind?: AimTargetKind;
 }
 
 /** What the run tells the aim each frame and on a click, all in world px. */
@@ -40,7 +42,7 @@ export interface AimScene {
   readonly cell: number;
   /** The living, un-escaped delvers of the run, the player among them (`self`). */
   readonly allies: readonly AimBody[];
-  /** The interactables an interactable page may name; none, none can be (wave 2, §K). */
+  /** The run's interactables, each with its `kind`; an interactable page picks those it targets. None, none can be. */
   readonly interactables?: readonly AimBody[];
   /** Whether a world point is on the walkable floor; none, every point is. */
   readonly walkable?: (p: Point) => boolean;
@@ -84,7 +86,10 @@ export function pageReticle(page: PageId, scene: AimScene): Reticle {
     const valid = distance(scene.from, at) <= range && (scene.walkable?.(at) ?? true);
     return { page, kind, at, radius, valid };
   }
-  const bodies = kind === "ally" ? scene.allies.filter((b) => !b.self || copy.allowsSelf) : (scene.interactables ?? []);
+  const bodies =
+    kind === "ally"
+      ? scene.allies.filter((b) => !b.self || copy.allowsSelf)
+      : (scene.interactables ?? []).filter((b) => b.kind !== undefined && (copy.targets ?? []).includes(b.kind));
   const reach = ALLY_REACH_CELLS * scene.cell;
   let nearest: AimBody | undefined;
   for (const body of bodies) {

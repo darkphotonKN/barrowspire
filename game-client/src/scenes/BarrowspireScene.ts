@@ -153,6 +153,7 @@ import { CastBar } from "@/ui/castBar";
 import { PAGE_ROUNDEL_SIZE, PageRoundel } from "@/ui/pageRoundel";
 import { PAGE_ICONS, type PageId } from "@/ui/pageIcons";
 import type { AimBody, AimScene } from "./pageAim";
+import { aimInteractables } from "./aimInteractables";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { FOG_FLOOR_AMBIENT, HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -4060,16 +4061,19 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The run as an armed page reads it (FS-X2CMM R41): the player's drawn feet, the world point `cursor`, the
    * floor's cell, the living, un-escaped delvers where they are drawn (the player among them, by the id the
-   * server knows them by, §C R15), and the walkable floor.
+   * server knows them by, §C R15), the last state's interactables, each named by what it is (the armed page
+   * picks the kinds it targets, §J R50, R52), and the walkable floor.
    */
   private aimScene(cursor: Point): AimScene {
     const from = this.playerPos ?? this.lastGameState?.current_player?.position ?? cursor;
     const grid = this.dungeon?.grid;
+    const cell = grid?.cell ?? DEFAULT_CELL;
     return {
       from,
       cursor,
-      cell: grid?.cell ?? DEFAULT_CELL,
+      cell,
       allies: this.aimAllies,
+      interactables: this.lastGameState ? aimInteractables(this.lastGameState, cell) : [],
       walkable: grid
         ? (p) => {
             const { cx, cy } = grid.cellOf(p);

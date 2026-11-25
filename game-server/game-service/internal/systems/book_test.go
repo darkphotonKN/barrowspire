@@ -59,8 +59,8 @@ func TestBookSystemCast_EachGateRefusesForItsReason(t *testing.T) {
 			return hardenedCast(e)
 		}, ErrPageLocked},
 		{"not offered", func(e *ecs.Entity) BookCast {
-			bookOfT(t, e).Pages = []components.PageID{components.PageFarHand} // wave 2
-			page, _ := BookPageOf(string(components.PageFarHand))
+			bookOfT(t, e).Pages = []components.PageID{components.PageStrikeADeal} // wave 2
+			page, _ := BookPageOf(string(components.PageStrikeADeal))
 			sc, _ := e.GetComponent(ecs.ComponentTypeStats)
 			sc.(*components.StatsComponent).Level = 20
 			return BookCast{Caster: e, Page: page, CellSize: testCell}
@@ -176,9 +176,9 @@ func TestGateTarget_JudgesTheTargetByKindAndRange(t *testing.T) {
 
 // Only pages with a resolver are offered: Hardened, Witchlight, Levitate,
 // Binding Glyph, Recall, Tracker's Eye, the Long Night, Brew, Call the Hound,
-// Take a Contract and Heave so far. §K R59.
+// Take a Contract, Heave and Far Hand so far. §K R59.
 func TestPageOffered_OnlyPagesWithAResolver(t *testing.T) {
-	offered := []components.PageID{components.PageHardened, components.PageWitchlight, components.PageLevitate, components.PageBindingGlyph, components.PageRecall, components.PageTrackersEye, components.PageLongNight, components.PageBrew, components.PageCallTheHound, components.PageTakeAContract, components.PageHeave}
+	offered := []components.PageID{components.PageHardened, components.PageWitchlight, components.PageLevitate, components.PageBindingGlyph, components.PageRecall, components.PageTrackersEye, components.PageLongNight, components.PageBrew, components.PageCallTheHound, components.PageTakeAContract, components.PageHeave, components.PageFarHand}
 	for _, id := range AllPageIDs() {
 		assert.Equal(t, slices.Contains(offered, id), PageOffered(id), id)
 	}

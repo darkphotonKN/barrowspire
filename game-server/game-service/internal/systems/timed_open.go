@@ -75,6 +75,18 @@ func (s *TimedOpenSystem) Start(delver *ecs.Entity, targetID uuid.UUID, kind com
 	delver.AddComponent(open)
 }
 
+// StartAfar begins the delver's timed open of kind on the target as Start
+// does, its reach measured from (x, y), a point beside the target, for as long
+// as it runs: Far Hand's, worked from a distance (FS-X2CMM §J R50). The body's
+// own place is still where it must stay.
+func (s *TimedOpenSystem) StartAfar(delver *ecs.Entity, targetID uuid.UUID, kind components.TimedTargetKind, duration, x, y float64) {
+	s.Start(delver, targetID, kind, duration)
+	if oc, ok := delver.GetComponent(ecs.ComponentTypeTimedOpen); ok {
+		open := oc.(*components.TimedOpenComponent)
+		open.Afar, open.AfarX, open.AfarY = true, x, y
+	}
+}
+
 // MarkHealth notes the health each timed open's delver takes into the tick's
 // combat, the one place a hit costs health: Update, after it, reads a hit from
 // the health that is missing. A heal or a change of gear earlier in the tick
@@ -184,6 +196,9 @@ func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOp
 	if !ok {
 		return true
 	}
+	if open.Afar {
+		return !withinInteractRangeOf(open.AfarX, open.AfarY, container)
+	}
 	return !withinInteractRange(delver, container)
 }
 
@@ -192,18 +207,28 @@ func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOp
 // target, a secret door, is measured to its rect's nearest point, as its
 // reach is (FS-5FZ4J §F R38); a container to its centre, as ever.
 func withinInteractRange(a, b *ecs.Entity) bool {
-	ac, aok := a.GetComponent(ecs.ComponentTypeTransform)
-	bc, bok := b.GetComponent(ecs.ComponentTypeTransform)
-	if !aok || !bok {
+	ac, ok := a.GetComponent(ecs.ComponentTypeTransform)
+	if !ok {
 		return false
 	}
-	from, to := ac.(*components.TransformComponent), bc.(*components.TransformComponent)
+	from := ac.(*components.TransformComponent)
+	return withinInteractRangeOf(from.X, from.Y, b)
+}
+
+// withinInteractRangeOf is whether the place (fromX, fromY) stands within
+// the interact range of b, measured as withinInteractRange measures.
+func withinInteractRangeOf(fromX, fromY float64, b *ecs.Entity) bool {
+	bc, ok := b.GetComponent(ecs.ComponentTypeTransform)
+	if !ok {
+		return false
+	}
+	to := bc.(*components.TransformComponent)
 	x, y := to.X, to.Y
 	if dc, isDoor := b.GetComponent(ecs.ComponentTypeDoor); isDoor {
 		door := dc.(*components.DoorComponent)
-		x, y = min(max(from.X, to.X), to.X+door.Width), min(max(from.Y, to.Y), to.Y+door.Height)
+		x, y = min(max(fromX, to.X), to.X+door.Width), min(max(fromY, to.Y), to.Y+door.Height)
 	}
-	return WithinInteractRange(from.X, from.Y, x, y)
+	return WithinInteractRange(fromX, fromY, x, y)
 }
 
 // WithinInteractRange is whether two places are within the interact range of

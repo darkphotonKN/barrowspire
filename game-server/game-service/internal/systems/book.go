@@ -79,6 +79,9 @@ type BookGround struct {
 	// Heave shoves a block over it as a push does (book_heave.go, R52). Nil
 	// off a dungeon floor: nothing is shoved.
 	Cells CellMask
+	// FarReach is the world's interact from a distance, Far Hand's effect
+	// (book_far_hand.go, R50). Nil works nothing.
+	FarReach FarReach
 }
 
 // pageResolver has a page's effect, once its cast is accepted and paid for.
@@ -108,7 +111,23 @@ type pageEntry func(cast BookCast) error
 // pageEntries holds the effect of every offered page that is an entry point,
 // by page id, as pageResolvers holds the rest.
 var pageEntries = map[components.PageID]pageEntry{
+	components.PageFarHand:       enterFarHand,
 	components.PageTakeAContract: enterTakeAContract,
+}
+
+// pageInteractables holds, by page id, which entities an interactable page
+// may name, where the page says (Far Hand's levers, chests, doors and traps);
+// any other interactable page names an entity the world takes an interact on.
+var pageInteractables = map[components.PageID]func(*ecs.Entity) bool{
+	components.PageFarHand: farHandTarget,
+}
+
+// interactableFor is whether target is one the interactable page may name.
+func interactableFor(page components.PageID, target *ecs.Entity) bool {
+	if takes, ok := pageInteractables[page]; ok {
+		return takes(target)
+	}
+	return target.HasComponent(ecs.ComponentTypeInteractable)
 }
 
 // PageOffered is whether the server resolves the page: castable and sent.
@@ -364,14 +383,14 @@ func gateTarget(cast BookCast, _ *components.BookComponent) error {
 			return ErrBadPageTarget
 		}
 	case TargetInteractable:
-		if cast.Target == nil || !cast.Target.HasComponent(ecs.ComponentTypeInteractable) {
+		if cast.Target == nil || !interactableFor(cast.Page.ID, cast.Target) {
 			return ErrBadPageTarget
 		}
 	default:
 		return ErrBadPageTarget
 	}
-	at, ok := bodyCentre(cast.Target)
-	if !ok || !inPageRange(cast, at.X, at.Y) {
+	x, y, ok := TargetMiddle(cast.Target)
+	if !ok || !inPageRange(cast, x, y) {
 		return ErrBadPageTarget
 	}
 	return nil
@@ -464,6 +483,22 @@ func bodyCentre(entity *ecs.Entity) (*components.TransformComponent, bool) {
 		return nil, false
 	}
 	return tc.(*components.TransformComponent), true
+}
+
+// TargetMiddle is where a page's range is measured to on its target: a body's
+// centre, or, for a door stored by its top-left corner, its doorway's middle,
+// as an interact's reach is measured. Far Hand's interact is reached from it.
+func TargetMiddle(entity *ecs.Entity) (x, y float64, ok bool) {
+	at, ok := bodyCentre(entity)
+	if !ok {
+		return 0, 0, false
+	}
+	x, y = at.X, at.Y
+	if dc, isDoor := entity.GetComponent(ecs.ComponentTypeDoor); isDoor {
+		door := dc.(*components.DoorComponent)
+		x, y = x+door.Width/2, y+door.Height/2
+	}
+	return x, y, true
 }
 
 // delverLevel is the character's level in play, 1 when unknown.

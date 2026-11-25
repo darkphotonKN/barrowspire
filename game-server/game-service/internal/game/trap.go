@@ -43,13 +43,36 @@ func trapCount(depth int) int {
 // fires a trap as a delver does, though its hit passes the ally by as every
 // trap's passes an encounter NPC (FS-4EC7Z §A R3, §C R9).
 func (s *Session) springTraps(dt float64, entities []*ecs.Entity) {
-	traps := systems.TrapSystem{
+	traps := s.trapSystem()
+	s.applySprings(traps.Update(dt, entities))
+}
+
+// springTrap springs an armed trap from afar as if it were stepped on with no
+// body on its cell, by the delver who sprang it (Far Hand, FS-X2CMM §J R50),
+// and applies what fired as the tick's springs are applied: a tripwire's
+// ambush wakes on by, a gas vent poisons whoever is in its cloud. False for a
+// trap that is not armed.
+func (s *Session) springTrap(trap, by *ecs.Entity) bool {
+	traps := s.trapSystem()
+	springs, sprung := traps.Spring(trap, by, s.EntityManager.GetAllEntities())
+	s.applySprings(springs)
+	return sprung
+}
+
+// trapSystem is the floor's traps as the TrapSystem runs them.
+func (s *Session) trapSystem() systems.TrapSystem {
+	return systems.TrapSystem{
 		CellSize:    s.dungeonCellSize(),
 		RearmAfter:  TrapRearmAfter,
 		CloudRadius: GasVentRadius,
 		PuffEvery:   GasVentPuffEvery,
 	}
-	for _, spring := range traps.Update(dt, entities) {
+}
+
+// applySprings applies what fired: a hit queued for this tick's combat, an
+// ambush woken on the body, or a poisoning.
+func (s *Session) applySprings(springs []systems.TrapSpring) {
+	for _, spring := range springs {
 		switch spring.Kind {
 		case components.TrapTripwire:
 			s.wakePieceAmbush(spring.Trap, spring.Body)

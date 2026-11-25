@@ -1,6 +1,6 @@
 ---
 id: I-X2CMM-15
-status: open
+status: done
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-11", "FS-5FZ4J (levers, plates, detected traps)"]
 labels: [ready-for-agent]

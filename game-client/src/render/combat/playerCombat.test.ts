@@ -1006,6 +1006,16 @@ describe("PlayerCombat book pages (FS-X2CMM §H R40–R42)", () => {
     expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "levitate", target_x: 300, target_y: 100, target_id: "ally-id" });
   });
 
+  // I-X2CMM-15: Far Hand's click casts with the interactable's id, the reticle under the nearest lever
+  it("should send an interactable page's target id, snapped under the lever nearest the pointer", () => {
+    const { combat, send } = combatOnStage();
+    combat.pressPage("far_hand", me);
+    const lever = { id: "lever-id", at: { x: 100 + 4 * CELL, y: 100 }, kind: "lever" } as const;
+
+    expect(combat.castArmed({ ...scene({ x: lever.at.x + 10, y: 110 }), interactables: [lever] })).toBe(true);
+    expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "far_hand", target_x: lever.at.x, target_y: 100, target_id: "lever-id" });
+  });
+
   it("should send nothing on a click with no valid target, the page kept armed", () => {
     const { combat, send } = combatOnStage();
     combat.pressPage("witchlight", me);

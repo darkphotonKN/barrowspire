@@ -75,8 +75,45 @@ describe("pageReticle (FS-X2CMM R41)", () => {
 
   it("should find no target for an interactable page where the scene names none (wave 2)", () => {
     expect(pageReticle("far_hand", scene(ally.at)).valid).toBe(false);
-    const lever = { id: "lever", at: { x: 1100, y: 1000 } };
+    const lever = { id: "lever", at: { x: 1100, y: 1000 }, kind: "lever" } as const;
     expect(pageReticle("far_hand", scene(lever.at, { interactables: [lever] }))).toMatchObject({ valid: true, targetId: "lever" });
+  });
+
+  // I-X2CMM-15: each interactable page picks only the kinds it names (PAGE_COPY targets), within its range
+  it("should snap Far Hand under the lever, chest, door or trap nearest the pointer, valid within 6 cells", () => {
+    for (const kind of ["lever", "chest", "door", "trap"] as const) {
+      const near = { id: kind, at: { x: 1000 + 5 * CELL, y: 1000 }, kind };
+      expect(pageReticle("far_hand", scene(near.at, { interactables: [near] }))).toMatchObject({
+        kind: "interactable",
+        at: near.at,
+        radius: 0.6 * CELL,
+        valid: true,
+        targetId: kind,
+      });
+    }
+    const far = { id: "far", at: { x: 1000 + 6 * CELL + 1, y: 1000 }, kind: "lever" } as const;
+    expect(pageReticle("far_hand", scene(far.at, { interactables: [far] }))).toMatchObject({ valid: false, targetId: "far" });
+  });
+
+  it("should pass over an interactable a page does not name: Far Hand no stone block, Heave no lever", () => {
+    const block = { id: "block", at: { x: 1050, y: 1000 }, kind: "stone_block" } as const;
+    const lever = { id: "lever", at: { x: 1060, y: 1000 }, kind: "lever" } as const;
+    const untagged = { id: "untagged", at: { x: 1055, y: 1000 } };
+    const interactables = [block, lever, untagged];
+    expect(pageReticle("far_hand", scene(block.at, { interactables }))).toMatchObject({ valid: true, targetId: "lever" });
+    expect(pageReticle("heave", scene(lever.at, { interactables }))).toMatchObject({ valid: true, targetId: "block" });
+  });
+
+  it("should judge Heave's stone block within 1.5 cells of the player", () => {
+    const beside = { id: "near", at: { x: 1000 + 1.5 * CELL, y: 1000 }, kind: "stone_block" } as const;
+    const beyond = { id: "beyond", at: { x: 1000 + 1.5 * CELL + 1, y: 1000 }, kind: "stone_block" } as const;
+    expect(pageReticle("heave", scene(beside.at, { interactables: [beside] })).valid).toBe(true);
+    expect(pageReticle("heave", scene(beyond.at, { interactables: [beyond] })).valid).toBe(false);
+  });
+
+  it("should pick nothing for a page that does not name the kind: Pick the Lock takes no lever", () => {
+    const lever = { id: "lever", at: { x: 1050, y: 1000 }, kind: "lever" } as const;
+    expect(pageReticle("pick_the_lock", scene(lever.at, { interactables: [lever] })).valid).toBe(false);
   });
 });
 

@@ -86,6 +86,45 @@ func (s *TrapSystem) Update(dt float64, entities []*ecs.Entity) []TrapSpring {
 	return springs
 }
 
+/*
+Spring fires an armed trap as if a body had stepped on it with none on its
+cell (Far Hand, FS-X2CMM §J R50): a spike plate, dart wall or fire jet
+disarms, re-arming RearmAfter later, and hits no one; a tripwire is spent, its
+spring at by, the body its ambush wakes on; a gas vent puffs now at every
+grounded body in its cloud whose kind Breathes, its cycle running on as it
+was. What fired comes back for the floor to apply, as Update's does. False,
+with nothing changed, for a trap that is not armed, or no trap.
+*/
+func (s *TrapSystem) Spring(e, by *ecs.Entity, entities []*ecs.Entity) ([]TrapSpring, bool) {
+	tc, ok := e.GetComponent(ecs.ComponentTypeTrap)
+	if !ok || !tc.(*components.TrapComponent).Armed {
+		return nil, false
+	}
+	trap := tc.(*components.TrapComponent)
+	switch trap.Kind {
+	case components.TrapGasVent:
+		var breathers []*ecs.Entity
+		for _, b := range entities {
+			if b.HasComponent(ecs.ComponentTypeTransform) && BodyKindOf(b).Breathes() && !afloat(b) {
+				breathers = append(breathers, b)
+			}
+		}
+		trap.Puffed, trap.PuffedAt = true, trap.Age
+		detect(e)
+		var springs []TrapSpring
+		for _, body := range s.inCloud(e, breathers) {
+			springs = append(springs, TrapSpring{Trap: e, Kind: trap.Kind, Body: body})
+		}
+		return springs, true
+	case components.TrapTripwire:
+		s.fire(e, trap)
+		return []TrapSpring{{Trap: e, Kind: trap.Kind, Body: by}}, true
+	default:
+		s.fire(e, trap)
+		return nil, true
+	}
+}
+
 // rearm counts a fired trap's wait down, arming it once it has passed.
 func (s *TrapSystem) rearm(dt float64, trap *components.TrapComponent) {
 	if trap.Armed || trap.Spent {

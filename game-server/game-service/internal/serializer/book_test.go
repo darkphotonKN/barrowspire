@@ -30,8 +30,8 @@ var warriorPages = []components.PageID{components.PageHeave, components.PageHard
 func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 	em := ecs.NewEntityManager()
 	warrior := uuid.New()
-	// a page not yet offered (Far Hand, wave 2) is never sent, whoever holds it
-	pages := append(slices.Clone(warriorPages), components.PageFarHand)
+	// a page not yet offered (Strike a Deal, wave 2) is never sent, whoever holds it
+	pages := append(slices.Clone(warriorPages), components.PageStrikeADeal)
 	book := seatBook(seatWithResource(em, warrior, "warrior", stamina(100, 100), components.AttackDash), pages...)
 
 	me := ownFrame(t, em, types.WorldTypeRun, warrior)
@@ -48,7 +48,7 @@ func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 		"id": "long_night", "unlock_level": float64(15), "cost": float64(40),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
 		"cooldown_length": float64(120), "cast_time": float64(0),
-	}}}, me["book"], "ready, {0, 0}, in book order; Far Hand never sent")
+	}}}, me["book"], "ready, {0, 0}, in book order; Strike a Deal never sent")
 
 	book.Cooldowns[components.PageHardened] = components.BookCooldown{Remaining: 45, Total: 90}
 	me = ownFrame(t, em, types.WorldTypeRun, warrior)

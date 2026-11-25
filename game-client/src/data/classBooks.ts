@@ -33,7 +33,18 @@ export interface PageCopy {
   readonly reticleCells?: number;
   /** The armed reticle's mark: a ring, or the hound's paw. Absent, a ring. */
   readonly reticleShape?: ReticleShape;
+  /**
+   * An interactable page's candidates (R41): the kinds of the run's interactables its reticle may stand
+   * under, as `aimInteractables` names them. Absent, none.
+   */
+  readonly targets?: readonly AimTargetKind[];
 }
+
+/**
+ * What an interactable page may be aimed at, as the run names its interactables (`aimInteractables`): an
+ * up lever or bridge lever, a shut chest or sack, a floor door, a detected trap still armed, a stone block.
+ */
+export type AimTargetKind = "lever" | "chest" | "door" | "trap" | "stone_block";
 
 /** What an armed page's reticle lays on the ground (R41). */
 export type ReticleShape = "ring" | "paw";
@@ -60,6 +71,7 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     target: "interactable",
     rangeCells: 6,
     reticleCells: BODY_RING,
+    targets: ["lever", "chest", "door", "trap"],
   },
   levitate: {
     id: "levitate",
@@ -136,6 +148,7 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     target: "interactable",
     rangeCells: ADJACENT,
     reticleCells: BODY_RING,
+    targets: ["stone_block"],
   },
   hardened: {
     id: "hardened",

@@ -387,3 +387,34 @@ func TestTimedOpenSystem_Update_AnAttackOnAnotherTickCancelsNothing(t *testing.T
 	}
 	assert.Len(t, sys.Update(timedOpenTick, em.GetAllEntities(), nil), 1, "it completes on its own time")
 }
+
+// A timed open worked from afar (Far Hand, FS-X2CMM §J R50) is reached from
+// the point given, beside the container, not from the body: a body 5 cells
+// off counts it through to completion standing still, and is cancelled as any
+// timed open is when it moves. I-X2CMM-15.
+func TestTimedOpenSystem_StartAfar_ReachedFromBesideTheContainer(t *testing.T) {
+	for name, moves := range map[string]bool{"standing still": false, "moving": true} {
+		t.Run(name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			body := bodyAt(em, 100, 500)
+			container := containerBeside(em, 500, 500)
+			sys := NewTimedOpenSystem(em)
+			sys.StartAfar(body, container, components.TimedTargetOpen, timedOpenDuration, 505, 500)
+			if moves {
+				at, _ := body.GetComponent(ecs.ComponentTypeTransform)
+				at.(*components.TransformComponent).X++
+			}
+
+			var completed []CompletedTimedOpen
+			for range 46 {
+				completed = append(completed, sys.Update(timedOpenTick, em.GetAllEntities(), nil)...)
+			}
+
+			if moves {
+				assert.Empty(t, completed, "moving cancels it")
+				return
+			}
+			assert.Equal(t, []CompletedTimedOpen{{DelverEntityID: body.ID, TargetID: container, TargetKind: components.TimedTargetOpen}}, completed)
+		})
+	}
+}

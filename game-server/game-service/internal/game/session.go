@@ -2058,6 +2058,18 @@ func interactRefusedQuietly(err error) bool {
 * handles player interacting with x object with target entity id.
 **/
 func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) error {
+	return s.interactFrom(playerID, targetEntityID, nil)
+}
+
+/**
+* interactFrom is the delver's interact on the target with its reach measured
+* from `from` in place of their body: Far Hand's, from a point beside the
+* target (FS-X2CMM §J R50, class_book_far_hand.go). With from nil it is the
+* delver's own interact, reached from where they stand. Everything else (the
+* holds, the branch the target takes, a timed open's staying put) is the
+* delver's as ever.
+**/
+func (s *Session) interactFrom(playerID uuid.UUID, targetEntityID uuid.UUID, from *components.TransformComponent) error {
 	if err := s.delverInPlay(playerID); err != nil {
 		return fmt.Errorf("interact: %w", err)
 	}
@@ -2178,50 +2190,55 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	}
 
 	playerTransform := playerTransformComponent.(*components.TransformComponent)
+	// where the reach is measured from: the body, or Far Hand's point
+	reach := playerTransform
+	if from != nil {
+		reach = from
+	}
 
 	// --- stairs entity ---
 
 	if isStairs {
-		return s.climbStairs(playerID, playerTransform, targetEntity)
+		return s.climbStairs(playerID, reach, targetEntity)
 	}
 
 	// --- the tome and the altar (FS-3103M §D, §F) ---
 
 	if isTome {
-		return s.takeTome(playerID, playerTransform, targetEntity)
+		return s.takeTome(playerID, reach, targetEntity)
 	}
 	if isAltar {
-		return s.reachAltar(playerID, playerTransform, targetEntity)
+		return s.reachAltar(playerID, reach, targetEntity)
 	}
 	if isHallowedAltar {
-		return s.reachHallowedAltar(playerID, playerEntity, playerTransform, targetEntity)
+		return s.reachHallowedAltar(playerID, playerEntity, reach, targetEntity)
 	}
 
 	// --- a sealed floor's barriers and seal pieces (FS-5FZ4J §B-C) ---
 
 	if isBarrier {
-		return s.reachBarrier(playerID, playerEntity, playerTransform, targetEntity)
+		return s.reachBarrier(playerID, playerEntity, reach, targetEntity)
 	}
 	if isSealPiece {
-		return s.workSealPiece(playerID, playerEntity, playerTransform, targetEntity)
+		return s.workSealPiece(playerID, playerEntity, reach, targetEntity)
 	}
 	if isLorePiece {
-		return s.readLore(playerID, playerTransform, targetEntity)
+		return s.readLore(playerID, reach, targetEntity)
 	}
 
 	// --- an encounter NPC (FS-4EC7Z §A R4) ---
 
 	if isEncounterNPC {
-		return s.talkToEncounterNPC(playerID, playerTransform, targetEntity)
+		return s.talkToEncounterNPC(playerID, reach, targetEntity)
 	}
 
 	// --- the Captives' cage and its key (FS-4EC7Z §D R13) ---
 
 	if isCageKey {
-		return s.takeCageKey(playerID, playerTransform, targetEntity)
+		return s.takeCageKey(playerID, reach, targetEntity)
 	}
 	if isCage {
-		return s.reachCage(playerID, playerTransform, targetEntity)
+		return s.reachCage(playerID, reach, targetEntity)
 	}
 
 	// --- door entity ---
@@ -2247,7 +2264,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		}
 
 		// validate is within distance from player
-		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, doorX, doorY)
+		isWithinDistance := s.calcWithinDistance(reach.X, reach.Y, doorX, doorY)
 
 		if !isWithinDistance {
 			slog.Debug("Door entity out of range for interaction", "targetID", targetEntityID, "playerID", playerID)
@@ -2315,7 +2332,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		)
 
 		// validate is within distance from player
-		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, containerTransform.X, containerTransform.Y)
+		isWithinDistance := s.calcWithinDistance(reach.X, reach.Y, containerTransform.X, containerTransform.Y)
 		if !isWithinDistance {
 			slog.Debug("Container entity out of range for interaction", "targetID", targetEntityID, "playerID", playerID)
 			s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
@@ -2344,7 +2361,12 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 			// has passed. The container is not held (FS-MQYEX §Requirements 2, 15).
 			// A reach for the one they are already opening changes nothing; for
 			// another, it takes the first one's place (§Requirements 12)
-			systems.NewTimedOpenSystem(s.EntityManager).Start(playerEntity, targetEntityID, components.TimedTargetOpen, TimedOpenDuration)
+			// worked from afar, it is reached from beside the container
+			if timed := systems.NewTimedOpenSystem(s.EntityManager); from != nil {
+				timed.StartAfar(playerEntity, targetEntityID, components.TimedTargetOpen, TimedOpenDuration, from.X, from.Y)
+			} else {
+				timed.Start(playerEntity, targetEntityID, components.TimedTargetOpen, TimedOpenDuration)
+			}
 		} else {
 			if err := s.openContainer(targetEntity, containerOpenable); err != nil {
 				return err
@@ -2379,7 +2401,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	if isItemEntity {
 		// pickUpItem releases a refused item itself and keeps a taken one held
 		releaseHandedOff = true
-		err := s.pickUpItem(playerEntity, playerTransform, targetEntityID)
+		err := s.pickUpItem(playerEntity, reach, targetEntityID)
 		if errors.Is(err, ErrOutOfRange) {
 			s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
 		}
@@ -2402,7 +2424,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 
 		switchTransform := switchTransformComponent.(*components.TransformComponent)
 		// validate is within distance from player
-		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, switchTransform.X, switchTransform.Y)
+		isWithinDistance := s.calcWithinDistance(reach.X, reach.Y, switchTransform.X, switchTransform.Y)
 
 		if !isWithinDistance {
 			slog.Debug("Switch entity out of range for interaction", "targetID", targetEntityID, "playerID", playerID)
@@ -2465,7 +2487,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 
 		escapeDoorTransform := escapeDoorTransformComponent.(*components.TransformComponent)
 		// validate is within distance from player
-		isWithinDistance := s.calcWithinDistance(playerTransform.X, playerTransform.Y, escapeDoorTransform.X, escapeDoorTransform.Y)
+		isWithinDistance := s.calcWithinDistance(reach.X, reach.Y, escapeDoorTransform.X, escapeDoorTransform.Y)
 
 		if !isWithinDistance {
 			slog.Debug("Escape door entity out of range for interaction", "targetID", targetEntityID, "playerID", playerID)

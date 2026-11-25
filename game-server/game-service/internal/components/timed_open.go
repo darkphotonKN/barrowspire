@@ -33,6 +33,11 @@ type TimedOpenComponent struct {
 	Duration float64
 	// FromX, FromY is where the body stood at the reach.
 	FromX, FromY float64
+	// Afar is a timed open worked from a distance (Far Hand, FS-X2CMM §J
+	// R50): its reach is measured from AfarX, AfarY, a point beside the
+	// target, rather than from the body.
+	Afar         bool
+	AfarX, AfarY float64
 	// HealthBeforeCombat is the health the delver took into the last combat
 	// the timed open saw: less than it afterwards is a hit that cost health.
 	HealthBeforeCombat int
