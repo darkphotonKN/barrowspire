@@ -2,9 +2,9 @@
  * The run's interactables as an armed interactable page sees them (FS-X2CMM §H R41): each one an
  * interactable page may name, with what it is, where it stands (world px) and the entity id its cast
  * sends. Which of them a page takes is the page's own, in data (`PAGE_COPY[page].targets`): Far Hand's
- * levers, chests, doors and traps (§J R50), Heave's stone blocks (R52), Pick the Lock's shut cage (R55).
- * A later page adds its own kind here once, and names it in its targets; the run scene never asks which
- * page is armed.
+ * levers, chests, doors and traps (§J R50), Heave's stone blocks (R52), Pick the Lock's shut cage (R55),
+ * Strike a Deal's willing Cutthroats (R56). A later page adds its own kind here once, and names it in its
+ * targets; the run scene never asks which page is armed.
  *
  * Pure and Phaser-free, as the aim it feeds (`pageAim.ts`). What a kind leaves out mirrors the server's
  * own rule (`systems/book_far_hand.go`): a lever already down, an open coffer, a trap waiting to re-arm.
@@ -16,7 +16,10 @@ import type { ClientGameState } from "@/types/gameState";
 import type { AimBody } from "./pageAim";
 
 /** The parts of a state the interactables are named from. */
-export type AimInteractableState = Pick<ClientGameState, "containers" | "doors" | "seal_pieces" | "traps" | "cages">;
+export type AimInteractableState = Pick<
+  ClientGameState,
+  "containers" | "doors" | "seal_pieces" | "traps" | "cages" | "encounter_npcs"
+>;
 
 /** A seal piece's kind as an aim target: levers still up, and the stone blocks. */
 const PIECE_TARGETS: Readonly<Record<string, (active: boolean) => AimTargetKind | null>> = {
@@ -48,6 +51,13 @@ export function aimInteractables(state: AimInteractableState, cell: number): Aim
   // a cage is picked shut; an open one has no lock left
   for (const c of state.cages ?? []) {
     if (!c.open) named.push({ id: c.entity_id, at: { x: c.position.x, y: c.position.y }, kind: "cage" });
+  }
+  // a group shows no body of its own: any of its NPCs names it. Willing looks like a living Cutthroat not
+  // hired (FS-4EC7Z §D R15); a turned one rides the monsters, and the server judges the rest
+  for (const n of state.encounter_npcs ?? []) {
+    if (n.kind === "cutthroat" && n.stance === "peaceful" && n.action !== "dead" && n.health > 0) {
+      named.push({ id: n.entity_id, at: { x: n.position.x, y: n.position.y }, kind: "willing_cutthroat" });
+    }
   }
   return named;
 }

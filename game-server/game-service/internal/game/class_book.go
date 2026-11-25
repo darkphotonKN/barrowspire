@@ -150,6 +150,7 @@ func (s *Session) bookGround() systems.BookGround {
 		EndCharge: s.combatSystem.EndCharge,
 		Contracts: s,
 		Cages:     s,
+		Hires:     s,
 		FarReach:  s,
 	}
 	// a nil grid is no footing, never a footing holding a nil grid

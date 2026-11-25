@@ -8,12 +8,13 @@ import (
 )
 
 /**
-* A page whose effect is one of the session's entry points (FS-X2CMM §J R55,
-* R57: Pick the Lock → OpenCage, Take a Contract → TakeContract) is refused as
-* that entry point refuses, at its cast or its cast's end (advanceCasts), and,
-* unlike a page its book's gates refuse (§A R4, FS-8AY7S R10), the caster is
-* told why: the cast's reply carries the reason, from which the client writes
-* its line, as an interact's refusal does (FS-4EC7Z §F R27).
+* A page whose effect is one of the session's entry points (FS-X2CMM §J
+* R55-R57: Pick the Lock → OpenCage, Strike a Deal → Hire, Take a Contract →
+* TakeContract) is refused as that entry point refuses, at its cast or its
+* cast's end (advanceCasts), and, unlike a page its book's gates refuse (§A
+* R4, FS-8AY7S R10), the caster is told why: the cast's reply carries the
+* reason, from which the client writes its line, as an interact's refusal does
+* (FS-4EC7Z §F R27).
 **/
 
 // The reasons a refused Take a Contract's reply gives beside
@@ -36,14 +37,16 @@ type pageRefusal struct {
 }
 
 // pageRefusals are the entry points' refusals told to the caster. Any other
-// (the taker out of play, no floors, no such cage) is a book gate's or no
-// run's, and sends nothing.
+// (the taker out of play, no floors, no such cage or NPC) is a book gate's or
+// no run's, and sends nothing.
 var pageRefusals = []pageRefusal{
 	{ErrContractTaken, RefusalContractTaken, "a contract was already taken this delve"},
 	{ErrContractNoStairs, RefusalContractNoStairs, "no contract on the top floor"},
 	{ErrNoMarkRoom, RefusalContractNoRoom, "no room on this floor holds a mark"},
 	{ErrCageOpen, RefusalCageOpen, "the cage is already open"},
 	{ErrTooManyAllies, RefusalTooManyAllies, "too many follow you already"},
+	{ErrNotWilling, RefusalNotWilling, "they will not follow you"},
+	{ErrAlreadyHired, RefusalAlreadyHired, "they are already sworn to another"},
 }
 
 // refusePage tells the caster why an entry point refused their page, on the

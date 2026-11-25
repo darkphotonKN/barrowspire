@@ -132,6 +132,21 @@ describe("pageReticle (FS-X2CMM R41)", () => {
   });
 });
 
+// I-X2CMM-20: Strike a Deal names a willing Cutthroat within 4 cells (FS-X2CMM §J R56, §B R11)
+describe("Strike a Deal's reticle (FS-X2CMM R41, R56)", () => {
+  it("should pick a willing Cutthroat within 4 cells, never one beyond, nor a cage", () => {
+    const near = { id: "near", at: { x: 1000 + 4 * CELL, y: 1000 }, kind: "willing_cutthroat" } as const;
+    const cage = { id: "cage", at: { x: 1000 + 4 * CELL - 5, y: 1000 }, kind: "cage" } as const;
+    expect(pageReticle("strike_a_deal", scene(near.at, { interactables: [cage, near] }))).toMatchObject({
+      valid: true,
+      targetId: "near",
+    });
+    const beyond = { id: "beyond", at: { x: 1000 + 4 * CELL + 1, y: 1000 }, kind: "willing_cutthroat" } as const;
+    expect(pageReticle("strike_a_deal", scene(beyond.at, { interactables: [beyond] })).valid).toBe(false);
+    expect(pageReticle("pick_the_lock", scene(near.at, { interactables: [near] })).valid).toBe(false);
+  });
+});
+
 describe("PageAim's click (FS-X2CMM R41)", () => {
   it("should hand back a valid target and disarm", () => {
     const aim = new PageAim();

@@ -43,9 +43,9 @@ export interface PageCopy {
 /**
  * What an interactable page may be aimed at, as the run names its interactables (`aimInteractables`): an
  * up lever or bridge lever, a shut chest or sack, a floor door, a detected trap still armed, a stone block,
- * a shut cage.
+ * a shut cage, a living Cutthroat not yet hired (one of a willing group).
  */
-export type AimTargetKind = "lever" | "chest" | "door" | "trap" | "stone_block" | "cage";
+export type AimTargetKind = "lever" | "chest" | "door" | "trap" | "stone_block" | "cage" | "willing_cutthroat";
 
 /** What an armed page's reticle lays on the ground (R41). */
 export type ReticleShape = "ring" | "paw";
@@ -134,6 +134,7 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     target: "interactable",
     rangeCells: 4,
     reticleCells: BODY_RING,
+    targets: ["willing_cutthroat"],
   },
   take_a_contract: {
     id: "take_a_contract",

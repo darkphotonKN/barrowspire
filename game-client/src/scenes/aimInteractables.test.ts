@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CageState, ContainerState, DoorState, SealPieceState, TrapState } from "@/types/gameState";
+import type { CageState, ContainerState, DoorState, EncounterNPCState, SealPieceState, TrapState } from "@/types/gameState";
 import { aimInteractables } from "./aimInteractables";
 
 // FS-X2CMM §H R41, §J R50, R52 (I-X2CMM-15): the run's interactables an interactable page may name, each
@@ -80,6 +80,30 @@ describe("aimInteractables (FS-X2CMM R41)", () => {
     const cage = (entity_id: string, open: boolean): CageState => ({ entity_id, position: { x: 640, y: 320 }, open });
     const named = aimInteractables({ containers: [], doors: [], cages: [cage("shut", false), cage("open", true)] }, CELL);
     expect(named).toEqual([{ id: "shut", at: { x: 640, y: 320 }, kind: "cage" }]);
+  });
+
+  // I-X2CMM-20: Strike a Deal's willing group, named by any of its NPCs (FS-X2CMM §J R56; FS-4EC7Z §D R15, §F R22)
+  it("should name a living peaceful Cutthroat as a willing one, never a hired or dead one, a captive or a pilgrim", () => {
+    const npc = (entity_id: string, kind: string, stance: string, action = "idle"): EncounterNPCState => ({
+      entity_id,
+      kind,
+      look: "a",
+      position: { x: 720, y: 400 },
+      facing: { x: 0, y: 1 },
+      health: 50,
+      max_health: 50,
+      stance,
+      action,
+    });
+    const npcs = [
+      npc("willing", "cutthroat", "peaceful"),
+      npc("hired", "cutthroat", "ally"),
+      npc("dead", "cutthroat", "peaceful", "dead"),
+      npc("caged", "captive", "caged"),
+      npc("pilgrim", "pilgrim", "peaceful"),
+    ];
+    const named = aimInteractables({ containers: [], doors: [], encounter_npcs: npcs }, CELL);
+    expect(named).toEqual([{ id: "willing", at: { x: 720, y: 400 }, kind: "willing_cutthroat" }]);
   });
 
   it("should name a detected trap still armed at its cell's centre, never one waiting to re-arm", () => {

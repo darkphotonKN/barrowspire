@@ -85,6 +85,9 @@ type BookGround struct {
 	// Cages is the world's open-cage entry point, Pick the Lock's effect
 	// (book_pick_the_lock.go, R55). Nil opens none.
 	Cages CageOpener
+	// Hires is the world's hire entry point, Strike a Deal's effect
+	// (book_strike_a_deal.go, R56). Nil hires none.
+	Hires GroupHirer
 }
 
 // pageResolver has a page's effect, once its cast is accepted and paid for.
@@ -116,6 +119,7 @@ type pageEntry func(cast BookCast) error
 var pageEntries = map[components.PageID]pageEntry{
 	components.PageFarHand:       enterFarHand,
 	components.PagePickTheLock:   enterPickTheLock,
+	components.PageStrikeADeal:   enterStrikeADeal,
 	components.PageTakeAContract: enterTakeAContract,
 }
 
@@ -125,6 +129,7 @@ var pageEntries = map[components.PageID]pageEntry{
 var pageInteractables = map[components.PageID]func(*ecs.Entity) bool{
 	components.PageFarHand:     farHandTarget,
 	components.PagePickTheLock: isCage,
+	components.PageStrikeADeal: isLivingEncounterNPC,
 }
 
 // interactableFor is whether target is one the interactable page may name.

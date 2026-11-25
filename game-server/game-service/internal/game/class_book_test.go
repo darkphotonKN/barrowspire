@@ -98,8 +98,6 @@ func TestCastSkill_BookAbilityRefusedWithNothingSpent(t *testing.T) {
 		{name: "dead", world: unstartedRun, class: "warrior", level: 9, page: "hardened",
 			ready: func(t *testing.T, _ *Session, d *ecs.Entity) { hurt(t, d, 0, 150) }},
 		{name: "a mage casting hardened", world: unstartedRun, class: "mage", level: 20, page: "hardened"},
-		{name: "a page not offered", world: unstartedRun, class: "mercenary", level: 20, page: "strike_a_deal",
-			ready: notOffered(components.PageStrikeADeal)},
 	}
 
 	for _, tt := range tests {
@@ -118,19 +116,6 @@ func TestCastSkill_BookAbilityRefusedWithNothingSpent(t *testing.T) {
 			assert.Equal(t, cooldownsBefore, bookOf(t, delver).Cooldowns, "no cooldown")
 			assert.Empty(t, bookOf(t, delver).States, "no effect")
 		})
-	}
-}
-
-// notOffered readies a cast refused for its page's wave alone: the page is in
-// the delver's book and unlocked at their level, but has no resolver yet.
-// FS-X2CMM §K R59.
-func notOffered(page components.PageID) func(t *testing.T, s *Session, delver *ecs.Entity) {
-	return func(t *testing.T, _ *Session, delver *ecs.Entity) {
-		t.Helper()
-		require.True(t, bookOf(t, delver).Has(page), "in the book")
-		table, _ := systems.BookPageOf(string(page))
-		require.LessOrEqual(t, table.UnlockLevel, 20, "unlocked at level 20")
-		require.False(t, systems.PageOffered(page), "a wave-2 page")
 	}
 }
 

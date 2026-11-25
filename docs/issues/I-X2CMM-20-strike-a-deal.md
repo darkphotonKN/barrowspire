@@ -1,6 +1,6 @@
 ---
 id: I-X2CMM-20
-status: open
+status: done
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-11", "FS-4EC7Z (encounter groups and the hire)"]
 labels: [ready-for-agent]

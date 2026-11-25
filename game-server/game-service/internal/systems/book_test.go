@@ -1,7 +1,6 @@
 package systems
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -59,11 +58,9 @@ func TestBookSystemCast_EachGateRefusesForItsReason(t *testing.T) {
 			return hardenedCast(e)
 		}, ErrPageLocked},
 		{"not offered", func(e *ecs.Entity) BookCast {
-			bookOfT(t, e).Pages = []components.PageID{components.PageStrikeADeal} // wave 2
-			page, _ := BookPageOf(string(components.PageStrikeADeal))
-			sc, _ := e.GetComponent(ecs.ComponentTypeStats)
-			sc.(*components.StatsComponent).Level = 20
-			return BookCast{Caster: e, Page: page, CellSize: testCell}
+			// every page of the table is offered: one of no resolver stands in
+			bookOfT(t, e).Pages = []components.PageID{unwrittenPage.ID}
+			return BookCast{Caster: e, Page: unwrittenPage, CellSize: testCell}
 		}, ErrPageNotOffered},
 		{"escaped", func(e *ecs.Entity) BookCast {
 			pc, _ := e.GetComponent(ecs.ComponentTypePlayer)
@@ -174,15 +171,19 @@ func TestGateTarget_JudgesTheTargetByKindAndRange(t *testing.T) {
 	}
 }
 
-// Only pages with a resolver are offered: Hardened, Witchlight, Levitate,
-// Binding Glyph, Recall, Tracker's Eye, the Long Night, Brew, Call the Hound,
-// Take a Contract, Heave, Far Hand and Pick the Lock so far. §K R59.
+// Only pages with a resolver are offered, and with wave 2 built every page of
+// the table has one; a page of none is not. §K R59.
 func TestPageOffered_OnlyPagesWithAResolver(t *testing.T) {
-	offered := []components.PageID{components.PageHardened, components.PageWitchlight, components.PageLevitate, components.PageBindingGlyph, components.PageRecall, components.PageTrackersEye, components.PageLongNight, components.PageBrew, components.PageCallTheHound, components.PageTakeAContract, components.PageHeave, components.PageFarHand, components.PagePickTheLock}
+	assert.Len(t, AllPageIDs(), 14)
 	for _, id := range AllPageIDs() {
-		assert.Equal(t, slices.Contains(offered, id), PageOffered(id), id)
+		assert.True(t, PageOffered(id), id)
 	}
+	assert.False(t, PageOffered(unwrittenPage.ID))
 }
+
+// unwrittenPage is a page of no resolver, unlocked from level 1: it stands in
+// for a page not offered, now that every page of the table is.
+var unwrittenPage = BookPage{ID: "unwritten", Class: "warrior", UnlockLevel: 1, Target: TargetSelf}
 
 // Every book holds its own copy of its pages: a class's page table is never
 // shared between the worlds that seat it. CLAUDE.md "No mutable state shared
