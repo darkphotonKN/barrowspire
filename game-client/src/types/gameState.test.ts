@@ -331,6 +331,8 @@ describe('traps, poison and a search on the wire (FS-5FZ4J §I R46, R47, R49)', 
       wares: [
         { ware: 'health_potion', price: 60, left: 3, item: { name: 'Lesser Heal Potion', item_type: 'consumable', rarity: 'normal', healing_amount: 30 } },
         { ware: 'antidote', price: 40, left: 0, item: { name: 'Antidote', item_type: 'consumable' } },
+        // §Change: The Restoring Draught D6 (I-9JV5K-7): a third bag ware, no new field
+        { ware: 'restoring_draught', price: 50, left: 3, item: { name: 'Restoring Draught', item_type: 'consumable', rarity: 'common' } },
         { ware: 'tome_of_filth', price: 1500, left: 1 },
       ],
     };

@@ -64,6 +64,32 @@ function antidote(M) {
   return g;
 }
 
+/**
+ * The Restoring Draught (FS-9JV5K §Change: The Restoring Draught, D6): a flat pilgrim's flask, a
+ * disc of glass seen edge-on with a short neck, so it parts from the round potions and the
+ * antidote's slim vial by its outline before its colour. Its draught is the resource-refill tone:
+ * bright brass lifted toward vellum and lit from within, the gold the stamina and parry bars share,
+ * none of the health potion's oxblood nor the antidote's milky pallor. A brass collar at the neck,
+ * a cork, and a leather cord looped through two lugs on its shoulders.
+ */
+function restoringDraught(M) {
+  const g = new THREE.Group();
+  const draught = mix("brassBright", "vellum", 0.25);
+  const glass = new THREE.MeshStandardMaterial({ color: color(draught), emissive: color(shade("brassBright", 0.5)), roughness: 0.15, metalness: 0.1 });
+  // the disc: a sphere pressed flat front to back, standing on its rim
+  g.add(part(new THREE.SphereGeometry(0.13, 20, 14), glass, { y: 0.14, sz: 0.5 }));
+  // a low foot so it stands, and the short neck rising from its crown
+  g.add(part(new THREE.CylinderGeometry(0.05, 0.06, 0.02, 14), glass, { y: 0.01 }));
+  g.add(part(new THREE.CylinderGeometry(0.026, 0.034, 0.07, 12), glass, { y: 0.29 }));
+  g.add(part(new THREE.CylinderGeometry(0.032, 0.032, 0.016, 12), M.brass, { y: 0.32 }));
+  g.add(part(new THREE.CylinderGeometry(0.024, 0.021, 0.05, 10), M.wood, { y: 0.35 }));
+  // the cord's lugs on the shoulders and the cord slung between them
+  for (const sx of [-1, 1]) g.add(part(new THREE.TorusGeometry(0.018, 0.006, 6, 10), M.brass, { x: sx * 0.085, y: 0.245, rz: sx * 0.6 }));
+  g.add(part(new THREE.TorusGeometry(0.1, 0.006, 6, 18, Math.PI), M.leather, { y: 0.245, rx: -1.1 }));
+  g.rotation.y = 0.45;
+  return g;
+}
+
 export const ICONS = {
   ...gearIcons(),
   potion_health: () => scaled(bottle(materials(), "oxblood", shade("oxblood", 0.5)), 2.4),
@@ -125,4 +151,5 @@ export const ICONS = {
     return scaled(g, 2.2);
   },
   antidote: () => scaled(antidote(materials()), 2.2),
+  restoring_draught: () => scaled(restoringDraught(materials()), 2.2),
 };

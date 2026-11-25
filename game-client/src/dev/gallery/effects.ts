@@ -47,7 +47,7 @@ import type {
 } from "@/render/effects/runtime";
 import { playHeavyShotRelease } from "@/render/effects/heavyShot";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
-import { ANTIDOTE_LOOK, HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
+import { ANTIDOTE_LOOK, HEAL_LOOK, restoreLook, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { StunTells } from "@/render/effects/stun";
@@ -656,6 +656,23 @@ export const EFFECT_CARDS: EffectCard[] = [
       shimmers.playGranted(ANTIDOTE_LOOK, s.crown);
     },
   },
+  // as a Restoring Draught drunk from the bag plays it, in the drinker's own bar's colours (FS-9JV5K
+  // §Change: The Restoring Draught D6), one card per pool so the three are judged side by side
+  ...(
+    [
+      ["mana", "mana"],
+      ["stamina", "stamina"],
+      ["parry charges", "parry_charges"],
+    ] as const
+  ).map(([label, kind]): EffectCard => ({
+    module: "shimmer",
+    name: `Restoring Draught shimmer (${label})`,
+    demo: (s) => {
+      const shimmers = new ShimmerFx(s.scene, s.art, s.lights);
+      shimmers.follow(s.at);
+      shimmers.playGranted(restoreLook(kind), s.crown);
+    },
+  })),
   {
     module: "shimmer",
     name: "Invoked shimmer base (heal look as a stand-in)",

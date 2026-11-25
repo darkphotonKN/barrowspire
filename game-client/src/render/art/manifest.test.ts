@@ -639,6 +639,16 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(icon.animations.default.frames).toEqual([[expect.any(Object)]]);
       expect(icon.source).toBe("procedural: tools/bake/page/models/items.js#antidote");
     });
+
+    // §Change: The Restoring Draught D6 (I-9JV5K-7): its flask, baked beside the antidote
+    it("bakes the Restoring Draught's icon on the resident icons atlas, one still frame like the potions'", () => {
+      const icon = baked.sheets.icon_restoring_draught;
+      const potion = baked.sheets.icon_potion_health;
+      expect(atlasGroup(icon.atlas)).toBe("icons");
+      expect([icon.frameWidth, icon.frameHeight]).toEqual([potion.frameWidth, potion.frameHeight]);
+      expect(icon.animations.default.frames).toEqual([[expect.any(Object)]]);
+      expect(icon.source).toBe("procedural: tools/bake/page/models/items.js#restoring_draught");
+    });
   });
 
   describe("the encounters' cage and its key, added to the sealed props (FS-4EC7Z §H R36)", () => {

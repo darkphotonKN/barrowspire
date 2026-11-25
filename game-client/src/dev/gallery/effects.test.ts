@@ -85,6 +85,17 @@ describe("effect cards", () => {
     expect(names).toEqual(expect.arrayContaining(["Heal shimmer (granted base)", "Antidote shimmer (granted base)"]));
   });
 
+  // FS-9JV5K §Change: The Restoring Draught D6 (I-9JV5K-7): the draught's shimmer in each pool's colour
+  it("should card the Restoring Draught's shimmer for mana, stamina and parry charges, each playable", () => {
+    const cards = EFFECT_CARDS.filter((c) => c.module === "shimmer" && c.name.startsWith("Restoring Draught"));
+    expect(cards.map((c) => c.name)).toEqual([
+      "Restoring Draught shimmer (mana)",
+      "Restoring Draught shimmer (stamina)",
+      "Restoring Draught shimmer (parry charges)",
+    ]);
+    for (const card of cards) expect(card.demo).toBeTypeOf("function");
+  });
+
   it("should card the ward on the mage, the gloom on the archer, and a ward under a heal, each playable (FS-1J1CB R38)", () => {
     const cards = EFFECT_CARDS.filter((c) => c.module === "aura");
     expect(cards.map((c) => c.name)).toEqual([

@@ -69,9 +69,10 @@ export const REVIEW_DIR = join(CLIENT_ROOT, "tools", "bake", "review");
 
 /**
  * The icons of the wandering merchant's wares (FS-9JV5K §G R26), drawn on his contact sheet: the
- * antidote beside the health and mana potions and the tonic it must stand apart from.
+ * antidote beside the health and mana potions and the tonic it must stand apart from, and the
+ * Restoring Draught's flask after them (FS-9JV5K §Change: The Restoring Draught, D6).
  */
-export const WARE_ICONS = ["icon_potion_health", "icon_potion_mana", "icon_vial_tonic", "icon_antidote"];
+export const WARE_ICONS = ["icon_potion_health", "icon_potion_mana", "icon_vial_tonic", "icon_antidote", "icon_restoring_draught"];
 
 const M = 16; // margin
 const LABEL_W = 44; // facing-name column
