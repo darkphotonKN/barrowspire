@@ -1,6 +1,6 @@
 ---
 id: I-4EC7Z-2
-status: open
+status: done
 implements: FS-4EC7Z
 blocked_by: [I-4EC7Z-1]
 labels: [ready-for-agent]

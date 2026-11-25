@@ -10,8 +10,8 @@ BodyKind is what a body standing on a floor's ground counts as to it: who
 holds a plate, pushes a stone block, stands in a block's way (FS-5FZ4J §C
 R18-R19), detects a secret door or a trap (§F R38, §D R30) and, later, fires a
 trap (§D R25). The ground asks a body's kind,
-never whether it is a player, so a hired ally (FS-4EC7Z) joins by becoming a
-kind of its own here and answering Weighs; nothing else changes.
+never whether it is a player, so a hired ally (FS-4EC7Z §C R9) is a kind of
+its own here that weighs and fires traps, and nothing else changes.
 */
 type BodyKind int
 
@@ -23,6 +23,17 @@ const (
 	BodyDelver
 	// BodyMonster is a live monster
 	BodyMonster
+	// BodyEncounterNPC is a live peaceful encounter NPC (FS-4EC7Z §A R3): in
+	// a block's way, hunted by monsters, breathing a cloud someone else keeps
+	// puffing, weighing and firing nothing
+	BodyEncounterNPC
+	// BodyCaptive is a live encounter NPC in its cage: no monster hunts it
+	// (§A R3, §D R13)
+	BodyCaptive
+	// BodyAlly is a live hired ally (FS-4EC7Z §C R9): a body on the floor as
+	// a delver is to a plate and a trap, hunted by monsters, pushing no block
+	// and detecting nothing
+	BodyAlly
 )
 
 // BodyKindOf is what entity counts as to the ground.
@@ -33,6 +44,18 @@ func BodyKindOf(entity *ecs.Entity) BodyKind {
 		}
 		return BodyNone
 	}
+	if nc, ok := entity.GetComponent(ecs.ComponentTypeEncounterNPC); ok {
+		if !alive(entity) {
+			return BodyNone
+		}
+		switch nc.(*components.EncounterNPCComponent).Stance {
+		case components.StanceCaged:
+			return BodyCaptive
+		case components.StanceAlly:
+			return BodyAlly
+		}
+		return BodyEncounterNPC
+	}
 	if entity.HasComponent(ecs.ComponentTypeEnemy) {
 		if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok && hc.(*components.HealthComponent).CurrentHealth > 0 {
 			return BodyMonster
@@ -42,8 +65,8 @@ func BodyKindOf(entity *ecs.Entity) BodyKind {
 }
 
 // Weighs is whether a body of this kind holds a plate it stands on: a delver
-// does, a monster never (FS-5FZ4J §C R18). A hired ally (FS-4EC7Z) will.
-func (k BodyKind) Weighs() bool { return k == BodyDelver }
+// and a hired ally do, a monster never (FS-5FZ4J §C R18, FS-4EC7Z §C R9).
+func (k BodyKind) Weighs() bool { return k == BodyDelver || k == BodyAlly }
 
 // Pushes is whether a body of this kind pushes a stone block it walks
 // against: a delver does, a monster never (FS-5FZ4J §C R19).
@@ -53,7 +76,18 @@ func (k BodyKind) Pushes() bool { return k == BodyDelver }
 // comes near: a delver in play does, a monster never (FS-5FZ4J §F R38, §D R30).
 func (k BodyKind) Detects() bool { return k == BodyDelver }
 
-// FiresTraps is whether a body of this kind fires a trap it steps on, or
-// breathes a gas vent's cloud: a delver in play does, a monster never
-// (FS-5FZ4J §D R25, R28). A hired ally (FS-4EC7Z) will.
-func (k BodyKind) FiresTraps() bool { return k == BodyDelver }
+// FiresTraps is whether a body of this kind fires a trap it steps on: a
+// delver in play and a hired ally do, a monster never (FS-5FZ4J §D R25,
+// FS-4EC7Z §C R9).
+func (k BodyKind) FiresTraps() bool { return k == BodyDelver || k == BodyAlly }
+
+// Breathes is whether a puffing gas vent's cloud poisons a body of this kind:
+// whoever fires a trap, and a peaceful encounter NPC too, who can die of it;
+// never a monster or a caged captive. Only a body that FiresTraps makes a vent
+// puff (FS-5FZ4J §D R28, FS-4EC7Z §C R9 amended, Edge States).
+func (k BodyKind) Breathes() bool { return k.FiresTraps() || k == BodyEncounterNPC }
+
+// Hunted is whether a monster's target choice counts a body of this kind:
+// a delver in play and an encounter NPC out of a cage, an ally included, the
+// nearest taken (FS-77AB6 §Requirements 26, FS-4EC7Z §A R3, §C R9).
+func (k BodyKind) Hunted() bool { return k == BodyDelver || k == BodyEncounterNPC || k == BodyAlly }

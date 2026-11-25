@@ -33,6 +33,7 @@ encounter kind.
    piece's, a hidden room or a respite's (FS-5FZ4J, FS-9JV5K), chosen from the rooms at or past the
    median walk distance from the start where one qualifies (promotion default: an encounter is
    something found, not met at the door). It holds the encounter's NPCs and no rolled monsters.
+   (Amended 2026-11-25, code review: never a treasure room either, and no trap is laid in it.)
 3. **An encounter NPC** is a humanoid body: health (an encounter sheet per kind), a transform, a
    velocity, a **stance** (`peaceful`, `caged`, `ally`) and a **look** (§G). It is not a monster
    and not a delver. **Delvers never damage one** (attacks, areas, projectiles, reflects and traps
@@ -74,6 +75,11 @@ encounter kind.
      (monster mitigation applies);
    - **is a body on the floor**: it holds a pressure plate and fires a trap as a delver does
      (FS-5FZ4J §C R18, §D R25; poison applies to it too); a gas vent's cloud counts it;
+     (amended 2026-11-25, code review: as R3 says traps pass an encounter NPC by, an ally takes no
+     damage from a spike plate, dart wall or fire jet it fires, though it fires and disarms it; only
+     a delver or an ally starts a gas vent's puffing, while any uncaged encounter NPC already in a
+     puffing cloud is poisoned; an ally only engages a monster its route search can reach, and drops
+     an engagement that would take it more than 8 cells from its hirer)
    - **is targeted** by monsters as any encounter NPC is (R3);
    - **never climbs**: when the party takes the stairs it stays behind and is gone with the floor.
 10. **At most 3 allies a party** (charter default), counted across hired cutthroats and freed
@@ -87,7 +93,8 @@ encounter kind.
 ### §D. Captives and Cutthroats (game-service)
 
 13. **Captives** (owner-approved proposal): two captives, stance `caged`, inside a **cage** fixture
-    in the encounter room. The cage is locked. Its **cage key** lies elsewhere on the floor: 50% in
+    in the encounter room. The cage is locked (amended 2026-11-25: the cage is not solid; caged
+    captives stand still and are not pushed). Its **cage key** lies elsewhere on the floor: 50% in
     another room (not the start, stairs, a hidden room or a respite's), 50% carried by one elite
     among the floor's monsters, dropped as a key fixture where that elite dies (promotion default:
     an even split of the owner's two places). An interact on the key takes it (party state on the
@@ -135,7 +142,9 @@ encounter kind.
       again.
 19. **Settled**: the mark killed by any party member or ally → `state = settled`, and the taker
     (only) gains **Contract Settled** (owner: the mercenary only; charter default: +15% damage) until
-    the delve ends for them: their outgoing damage × 1.15; kept across floors; lost on death; never
+    the delve ends for them: their outgoing damage × 1.15 (amended 2026-11-25: every attack-table
+    hit, as Blood Price scales; a burning trail's pulses are not scaled, as for Blood Price); kept
+    across floors; lost on death; never
     stacks (one contract a delve). The mark drops nothing and gives an elite's experience
     (promotion default: the reward is the buff, no gold, owner).
 20. **Lost**: the party climbs while the mark lives, or the taker dies (or leaves), → `state = lost`;
@@ -150,8 +159,9 @@ encounter kind.
 22. **`encounter_npcs`** (run-only state key, cut by interest as monsters are): `[{ entity_id, kind,
     look, position, facing, health, max_health, stance, action, line?, line_at?, hirer_id? }]`.
     `kind` is `pilgrim | captive | cutthroat`; `look` names the art variant; `action` is `idle |
-    move | attack | cower | dead`; `line` a line key and `line_at` the server time it was said (the
-    client shows a line once per `line_at`); `hirer_id` the hirer's member id for an ally.
+    move | attack | cower | dead`; `line` a line key and `line_at` when it was said (amended
+    2026-11-25: the NPC's own age in seconds, rising with each line; the client shows a line once
+    per `line_at`); `hirer_id` the hirer's member id for an ally.
 23. **`cages`**: `[{ entity_id, position, open }]` and the **cage key** as `encounter_keys: [{
     entity_id, position }]` while it lies, sent whole (landmarks, as FS-5FZ4J's pieces). A carried
     cage key is `cage_key_carried: true`.
@@ -162,8 +172,9 @@ encounter kind.
     else and when no contract was taken. **`contract_settled: true`** on the public player state of
     a delver who holds the buff.
 26. **Line keys** (the client writes the copy): `pilgrim_plea`, `pilgrim_thanks`, `captive_plea`,
-    `captive_freed`, `cutthroat_greet`, `cutthroat_turn`, `cutthroat_tip`, `ally_ack` (on being
-    hired). The pilgrims' loss has no key: the client reads it off the state (§G R33).
+    `captive_freed`, `cutthroat_greet`, `cutthroat_turn`, `cutthroat_tip` (a door was revealed),
+    `cutthroat_lore` (amended 2026-11-25: the peaceful tip on a floor with no door to reveal),
+    `ally_ack` (on being hired). The pilgrims' loss has no key: the client reads it off the state (§G R33).
 27. **Replies** to interact or the entry points use the existing reply with reasons
     `cage_locked`, `too_many_allies`, `not_willing`, `already_hired`, `contract_taken`.
 28. **A revealed secret door** carries `revealed: true` on its `barriers` entry (an addition to
@@ -178,6 +189,10 @@ encounter kind.
     shown for allies). E on an encounter NPC in reach talks.
 30. **Over-head lines** (new): a short text line over the NPC's head for 4 s, in the world scene
     (ADR-0086: it follows a world object), shown once per `line_at`, never on a first broadcast.
+    (Amended 2026-11-25, code review:) a line whose NPC leaves the state before its 4 s are up (the
+    cutthroats' turn: the server replaces them with monsters on the next tick) stays at that NPC's
+    last position for the rest of its 4 s. `cutthroat_lore` reads *"Nothing in these walls worth
+    your while. Move on."*
     Copy (promotion default, the client's voice): `pilgrim_plea` *"Please, they're coming!"*,
     `pilgrim_thanks` *"Bless you. Take this."*, `captive_plea` *"The key! Find the key!"*,
     `captive_freed` *"We'll fight with you."*, `cutthroat_greet` *"Well, well. Visitors."*,

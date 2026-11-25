@@ -49,6 +49,9 @@ export function mountGearPieces(scene: Phaser.Scene, library: () => ArtLibrary, 
       notice: wiring.notice,
       // each wear and take off as it is asked of the world (FS-AND39 R7)
       gearChanged: () => wiring.sounds.play("item_swap"),
+      // an antidote drunk from the bag, sent by the run, the one world that answers it (FS-9JV5K §F R24);
+      // a field's bag wears it as any consumable
+      ...(world === "run" ? { drink: wiring.drink } : {}),
     },
     Date.now,
     purse,

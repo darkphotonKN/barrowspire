@@ -107,6 +107,15 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
       book.open = false;
     },
   };
+  // the run's wares panel (FS-9JV5K §F R22), open or shut, the player's closes counted
+  const wares = { open: false, closes: 0 };
+  const waresSlot = {
+    isOpen: () => wares.open,
+    close: () => {
+      wares.closes++;
+      wares.open = false;
+    },
+  };
   const { bridge, heard } = heardInterfaceSounds(undefined, {
     party: () => party.open,
     inventory: () => gear.inventory,
@@ -151,6 +160,7 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
     gear: gearSlot,
     tree: treeSlot,
     book: bookSlot,
+    wares: waresSlot,
   });
   const live = () => drawn.filter((d) => !d.destroyed);
   const shown = () => live()[0];
@@ -163,7 +173,7 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
     const action = (spec.actions as Record<string, (() => void) | undefined>)[id] ?? spec.close;
     action();
   };
-  return { bridge, heard, slot, drawn, live, shown, rows, press, esc, row, stored, party, gear, tree, book };
+  return { bridge, heard, slot, drawn, live, shown, rows, press, esc, row, stored, party, gear, tree, book, wares };
 }
 
 describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)", () => {
@@ -268,6 +278,22 @@ describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)",
     t.esc();
     expect(t.gear.inventory).toBe(false);
     expect(t.slot.isOpen()).toBe(false);
+  });
+
+  // FS-9JV5K §F R22 (I-9JV5K-5)
+  it("should close the run's wares panel before the UI scene's own windows, then open the menu", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("run").report);
+    t.wares.open = true;
+    t.gear.inventory = true;
+
+    t.esc();
+    expect([t.wares.closes, t.gear.inventory]).toEqual([1, true]);
+    t.esc();
+    expect(t.gear.inventory).toBe(false);
+    t.esc();
+    expect(t.slot.isOpen()).toBe(true);
+    expect(t.wares.closes).toBe(1);
   });
 
   it("should shut the tree as the menu opens over it, with only the menu's sound (FS-8RZ51 R36; FS-3EBCA R17)", () => {

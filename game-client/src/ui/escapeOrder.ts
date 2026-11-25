@@ -10,6 +10,8 @@
  * The run's controls panel comes before the whole order (FS-84N1G R17): any other window opening
  * closes it (R16), so nothing it covers opened after it. An armed page's disarm stands before the
  * whole order while a page is armed (FS-X2CMM R44a): the run's to answer, it closes nothing.
+ * The run's wares panel comes after the letter panel, over the UI scene's own windows: the world
+ * opened it last (FS-9JV5K §F R22).
  */
 
 export interface EscapeOpen {
@@ -26,14 +28,17 @@ export interface EscapeOpen {
   book?: boolean;
   /** A class book page armed in the run (FS-X2CMM R41); absent elsewhere. */
   armed?: boolean;
+  /** The run's wares panel (FS-9JV5K §F R22), opened by E on the merchant; absent elsewhere. */
+  wares?: boolean;
 }
 
-export type EscapeStep = "disarm" | "controls" | "letter" | "close-menu" | "book" | "gear" | "party" | "tree" | "open-menu";
+export type EscapeStep = "disarm" | "controls" | "letter" | "wares" | "close-menu" | "book" | "gear" | "party" | "tree" | "open-menu";
 
 export function escapeStep(open: EscapeOpen): EscapeStep {
   if (open.armed) return "disarm";
   if (open.controls) return "controls";
   if (open.letter) return "letter";
+  if (open.wares) return "wares";
   if (open.menu) return "close-menu";
   if (open.book) return "book";
   if (open.party) return "party";

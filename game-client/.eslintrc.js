@@ -143,6 +143,8 @@ const UI_SCENE_PIECES = [
   ["@/ui/mailboxHud", "The mailbox is the UI scene's (FS-TQZ5J § Change: Batch 4, R101)."],
   ["@/ui/MailboxEnvelope", "The mailbox is the UI scene's (FS-TQZ5J § Change: Batch 4, R101)."],
   ["@/ui/LetterPanel", "The letter panel is the UI scene's: a world reads its open state from the mailbox store (FS-TQZ5J § Change: Batch 4, R103)."],
+  ["@/ui/WaresPanel", "The wares panel is the UI scene's: the run hands its wares as data (FS-9JV5K §F R22)."],
+  ["@/ui/uiSceneWares", "The wares panel is the UI scene's: the run hands its wares as data (FS-9JV5K §F R22)."],
 ].map(([name, message]) => ({ name, message }));
 /** The UI scene's player of interface sounds: a world reaches it through the bridge (FS-TQZ5J R22). */
 const UI_SOUNDS = {

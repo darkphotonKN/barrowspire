@@ -76,6 +76,11 @@ export interface MenuSlotDeps {
    * `dialog_cancel`). None, and there is none to close.
    */
   controls?: { isOpen(): boolean; dismiss(): void };
+  /**
+   * The run's wares panel (FS-9JV5K §F R22): Esc's wares step, the player's close (the run takes it
+   * down). The menu opening over it is the run's to hear. None, and there is none to shut.
+   */
+  wares?: { isOpen(): boolean; close(): void };
 }
 
 /** A menu's look in a world: its tokens and its rows' pressable area (ADR-0013). */
@@ -207,11 +212,13 @@ export class UiMenuSlot {
       party: this.deps.party?.isOpen() ?? false,
       tree: this.deps.tree?.isOpen() ?? false,
       book: this.deps.book?.isOpen() ?? false,
+      wares: this.deps.wares?.isOpen() ?? false,
     });
     // an armed page disarms, silently, and nothing else happens (FS-X2CMM R41, R44a)
     if (step === "disarm") this.ask({ kind: "disarm" });
     else if (step === "controls") this.deps.controls?.dismiss();
     else if (step === "letter") this.ask({ kind: "close", window: "letter" });
+    else if (step === "wares") this.deps.wares?.close();
     else if (step === "close-menu") this.filled?.panel.keys.dismiss();
     else if (step === "book") this.closeBook();
     else if (step === "party") this.closeParty();
@@ -433,6 +440,7 @@ export class UiMenuSlot {
     this.deps.tree?.close();
     this.deps.book?.close();
     this.deps.gear?.close();
+    // the run's wares panel is the run's: it takes it down as it hears the menu open, silently
     this.deps.bridge.reportUi({ menuOpen: true });
   }
 

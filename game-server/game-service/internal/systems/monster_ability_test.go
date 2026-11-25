@@ -397,3 +397,49 @@ func TestMonsterAbility_WailLandsOnItsCircle(t *testing.T) {
 	assert.Equal(t, 100000, health(leaves))
 	assert.Equal(t, 100000-mitigated(6, 1.2), health(stays))
 }
+
+// FS-4EC7Z §A R3, §C R9: a monster's area lands on the encounter NPCs it
+// hunts, an ally and a peaceful one, as on a delver; a caged captive in it is
+// passed by.
+func TestMonsterAbility_SlamLandsOnTheHuntedEncounterNPCs(t *testing.T) {
+	em := ecs.NewEntityManager()
+	bloodTroll(t, em, 500, 500)
+	sturdy(delver(em, 580, 500))
+	ally := allyNPC(em, 500, 600)
+	peaceful := pilgrim(em, 420, 500)
+	caged := encounterNPC(em, 500, 400, components.StanceCaged)
+	brawl(em, 1)
+	brawl(em, ticks(0.9))
+
+	assert.Less(t, health(ally), 1000, "an ally in the circle is hit")
+	assert.Less(t, health(peaceful), 1000, "a peaceful NPC in the circle is hit")
+	assert.Equal(t, 1000, health(caged), "a caged captive is passed by")
+}
+
+// FS-4EC7Z §A R3: a cleave in front lands on a peaceful NPC there.
+func TestMonsterAbility_CleaveLandsOnAPeacefulNPCInFront(t *testing.T) {
+	em := ecs.NewEntityManager()
+	w := darkWarrior(t, em, 500, 500)
+	target := sturdy(delver(em, 600, 500))
+	peaceful := pilgrim(em, 560, 530)
+	monster(w).Target = target.ID
+	brawl(em, 1)
+	require.Equal(t, components.MonsterActionAbility, monster(w).Action)
+	brawl(em, ticks(0.8))
+	assert.Less(t, health(peaceful), 1000)
+}
+
+// FS-4EC7Z §A R3: a death burst lands on an ally and a peaceful NPC inside
+// it; a caged captive inside it is passed by.
+func TestDeathBurst_LandsOnTheHuntedEncounterNPCs(t *testing.T) {
+	em := ecs.NewEntityManager()
+	b := blightborn(em, 500, 500)
+	ally := allyNPC(em, 580, 500)
+	peaceful := pilgrim(em, 420, 500)
+	caged := encounterNPC(em, 500, 580, components.StanceCaged)
+	slay(em, uuid.New(), b)
+	burstOut(em, ticks(0.8)+1)
+	assert.Less(t, health(ally), 1000)
+	assert.Less(t, health(peaceful), 1000)
+	assert.Equal(t, 1000, health(caged))
+}

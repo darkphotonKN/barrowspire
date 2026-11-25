@@ -88,6 +88,8 @@ export interface GearWiring {
   send: (kind: "equip" | "unequip", item: string) => void;
   /** The container view took an item: the world's loot (R54). */
   take: (item: ItemState) => void;
+  /** The gear drank a bag item, an antidote: the run's `use_item` (FS-9JV5K §F R24). */
+  drink: (item: string) => void;
   /** The level the world last handed, for the view's "Requires level N". */
   level: () => number | undefined;
   /**
@@ -152,6 +154,7 @@ export class UiGearSlot {
       },
       send: (kind, item) => this.bridge.request({ kind, item }),
       take: (item) => this.bridge.request({ kind: "take", item }),
+      drink: (item) => this.bridge.request({ kind: "drink", item }),
       level: () => this.lastLevel,
       sounds: this.sounds,
     });

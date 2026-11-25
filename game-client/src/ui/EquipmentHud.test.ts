@@ -26,6 +26,7 @@ function panel() {
   const p = {
     onEquip: undefined as HudPanel["onEquip"],
     onUnequip: undefined as HudPanel["onUnequip"],
+    onDrink: undefined as HudPanel["onDrink"],
     mayUnequip: undefined as HudPanel["mayUnequip"],
     covers: vi.fn((x: number) => x > 500),
     toggle: vi.fn(() => void (inventory = !inventory)),
@@ -63,6 +64,23 @@ describe("EquipmentHud (FS-X2F2H §Requirements 56: the run's equip HUD, shared)
     expect(send.mock.calls).toEqual([[ActionType.Equip, { item_entity_id: "sword" }]]);
     expect(equipment.equipped.weapon).toBe(sword);
     expect(equipment.inventory).toEqual([]);
+  });
+
+  // FS-9JV5K §F R24 (I-9JV5K-5)
+  it("should hand a drunk antidote to the port's drink, moving nothing: the next state takes it away", () => {
+    const p = panel();
+    const drink = vi.fn();
+    const equipment = new EquipmentHud(p, { send: vi.fn(), notice: vi.fn(), drink }, () => 5000);
+    const antidote = item("antidote-1", { name: "Antidote" });
+    equipment.sync({ inventory: [antidote], equipment: NOTHING_WORN });
+    p.onDrink?.(antidote);
+    expect(drink.mock.calls).toEqual([["antidote-1"]]);
+    expect(equipment.inventory).toEqual([antidote]);
+  });
+
+  it("should leave the panel without a drink where its port has none", () => {
+    const { p } = hud();
+    expect(p.onDrink).toBeUndefined();
   });
 
   it("should send the run's unequip message and put the item back in the inventory", () => {

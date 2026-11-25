@@ -42,8 +42,9 @@ drunk from the bag.
 4. **The wire.** A run-only state key `merchant`: `{ entity_id, position, wares: [{ ware, price,
    left, item? }] }` on his floor, sent whole (promotion default: one landmark a floor). `ware` is
    `health_potion | antidote | tome_of_filth`; `left` counts what is neither sold nor reserved;
-   `item` carries the template's display data the client draws (name, rarity, icon key), absent
-   for the tome. Absent in the hub, the fields and on floors without him.
+   `item` carries the template's display data the client draws (name, item type, rarity, healing
+   and mana amounts; amended 2026-11-25: the session's catalogue has no icon key, so the client
+   picks the icon by name and stats), absent for the tome. Absent in the hub, the fields and on floors without him.
 
 ### §B. Buying (game-service, ADR-0093)
 
@@ -73,8 +74,13 @@ drunk from the bag.
       they paid; nothing is lost). The tome is §E. Reply `{ success: true, ware }`.
     - **Refusal**: the reserve is released (`left` rises again) and nothing is granted. Reply
       `{ success: false, reason }`: `not_enough_gold` (available gold, excluding gold held in bids,
-      is below the price), `no_wallet` (no account), `wallet_unavailable` (the retries ran out, or
-      the call was refused as unauthenticated).
+      is below the price), `no_wallet` (no account), `wallet_unavailable` (the call was refused
+      as unauthenticated, or no wallet is configured: definitely nothing taken), and **amended
+      2026-11-25 (code review)** `outcome_unknown` (the retries ran out on transient errors, or the
+      wallet failed after it may have committed: the debit may have applied). An unknown outcome
+      releases the reserve like a refusal and is logged at warn with key, buyer, ware and price, so
+      support can make it good; the client never promises that nothing was taken. A refusal for the
+      tome while the party carries one is `tome_held`, checked before stock.
 11. **The buyer left before the result** (died, escaped, left the run, or the run ended): on
     success nothing can be granted; the gold is spent. Logged at warn with the purchase key, buyer,
     ware and price, so support can make it good (ADR-0093's accepted gap). On refusal the reserve
@@ -141,7 +147,8 @@ drunk from the bag.
     in plain words (money clarity overrides lore): `not_enough_gold` → *"Not enough gold."*,
     `sold_out` → *"Sold out."*, `bag_full` → *"Your bag is full."*, `out_of_reach` → *"Too far
     away."*, `wallet_unavailable` / `no_wallet` → *"Your purse can't be reached. Nothing was
-    taken."*, `tome_held` → *"You already carry a tome."*, `purchase_pending` → nothing new.
+    taken."*, `outcome_unknown` → *"Your purse did not answer. Check your gold before you buy
+    again."* (amended 2026-11-25), `tome_held` → *"You already carry a tome."*, `purchase_pending` → nothing new.
 24. **Drink.** In the gear overlay, an antidote in the bag offers **Drink** (the bag item's action
     in place of equip for an antidote) and sends `use_item`. `not_poisoned` shows *"You are not
     poisoned."*; success plays the potion shimmer in the poison tint's colour and clears nothing
@@ -225,9 +232,12 @@ drunk from the bag.
   refused `sold_out` at once. If the first's debit is refused, the potion returns to stock.
 - **A buyer clicks Buy twice.** The second is refused `purchase_pending` while the first is in
   flight.
-- **The wallet is down.** Retries for 10 s, then `wallet_unavailable`; the reserve is released and
-  nothing was taken (a debit that applied but whose answer was lost within those 10 s is found by
-  the retry with the same key and succeeds).
+- **The wallet is down.** Retries for 10 s with the same key (a debit that applied but whose
+  answer was lost within those 10 s is found by the retry and succeeds); if the budget runs out,
+  `outcome_unknown` (amended 2026-11-25): the reserve is released, the purchase is logged at warn
+  for support, and the client asks the buyer to check their gold, never promising that nothing was
+  taken (ADR-0096). A definite refusal (unauthenticated, invalid argument, no wallet configured)
+  is `wallet_unavailable`: nothing was taken.
 - **The buyer's token expired** (access tokens last 60 minutes): the debit is refused as
   unauthenticated and reported as `wallet_unavailable`; reconnecting refreshes the token the
   session keeps.

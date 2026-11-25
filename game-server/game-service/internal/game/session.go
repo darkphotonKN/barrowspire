@@ -231,6 +231,10 @@ type Session struct {
 	// builds the run; nil in every other world and in a run built without
 	// one. Guarded by mu. FS-9JV5K §B R7, ADR-0093.
 	wallet WalletDebiter
+	// walletCtx is what each debit's context is built on: the host's
+	// lifetime context without its cancellation, so its values (tracing's)
+	// carry and a shutdown never cuts a debit in flight. Guarded by mu.
+	walletCtx context.Context
 	// tokens are each seated member's latest bearer token, the one a
 	// purchase's debit is made with (FS-9JV5K §B R8)
 	tokens *memberTokens
@@ -686,11 +690,13 @@ func (s *Session) manageClientMessages() {
 				}
 				usePayload := parsedPayload.(types.PlayerUseItemPayload)
 
+				// an id that is not an entity id is judged on the tick as
+				// the nil id, in no one's bag: refused there as a valid id
+				// is, or ignored quietly outside a run or out of play
 				itemEntityID, err := uuid.Parse(usePayload.ItemEntityID)
 				if err != nil {
-					// no id that is not an entity id is in anyone's bag
-					s.refuseUse(playerID, systems.ErrUseNotInBag)
-					continue
+					slog.Debug("use_item names no entity id", "player_id", playerID, "item_entity_id", usePayload.ItemEntityID)
+					itemEntityID = uuid.Nil
 				}
 
 				s.queueIntent(func() { s.useItem(playerID, itemEntityID) })
@@ -706,11 +712,13 @@ func (s *Session) manageClientMessages() {
 				}
 				buyPayload := parsedPayload.(types.PlayerBuyPayload)
 
+				// an id that is not an entity id is judged on the tick as
+				// the nil id, no merchant in reach: refused there as a valid
+				// id is, or ignored quietly outside a run
 				merchantID, err := uuid.Parse(buyPayload.MerchantID)
 				if err != nil {
-					// no id that is not an entity id is a merchant in reach
-					s.refuseBuy(playerID, RefusalOutOfReach)
-					continue
+					slog.Debug("buy names no entity id", "player_id", playerID, "merchant_id", buyPayload.MerchantID)
+					merchantID = uuid.Nil
 				}
 				ware := components.WareKind(buyPayload.Ware)
 
@@ -909,6 +917,14 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.monsterAISystem.Update(deltaTime, entities)
 	}
 
+	// a run floor's hired allies follow and fight, steered as the monsters
+	// are, before anything moves (FS-4EC7Z §C R9)
+	if s.worldType == types.WorldTypeRun {
+		if allies, ok := s.allyAI(); ok {
+			allies.Update(deltaTime, entities)
+		}
+	}
+
 	// movement, by the world's own rules, fixed as it was built, bounded to
 	// the floor the world stands on now (FS-KE075 §B R11)
 	s.mu.RLock()
@@ -969,6 +985,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	if s.worldType == types.WorldTypeRun {
 		systems.NewFountainSystem(FountainRadius, FountainPercentPerSecond).Update(deltaTime, entities)
 		systems.NewPoisonSystem(PoisonPercentPerSecond).Update(deltaTime, entities)
+		// a floor's encounter: its NPCs' clocks and dead, and its kind's
+		// plea, wave and reward, after the tick's hits (FS-4EC7Z §A-§B)
+		s.advanceEncounters(deltaTime, entities)
 	}
 
 	// monster death: the slain lie dead from this tick; the hub holds no monsters
@@ -997,6 +1016,13 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.settleFieldDeaths(deltaTime, entities, fallen)
 	} else {
 		s.recordEliminations(fallen)
+	}
+
+	// the delve's contract: settled by its mark's kill, lost with its floor
+	// or its taker, else its mark's call, flight and heal and the taker's
+	// heading, after the tick's hits and deaths (FS-4EC7Z §E R18-R21)
+	if s.worldType == types.WorldTypeRun {
+		s.advanceContract(deltaTime, kills)
 	}
 
 	// rules
@@ -1180,7 +1206,7 @@ func (s *Session) AddPlayerAt(playerID uuid.UUID, character types.CharacterInPla
 	}
 
 	loadout, bag := s.seatGearLocked(playerID, character, token)
-	s.tokens.seat(playerID, token)
+	s.holdToken(playerID, token)
 	return s.buildBodyLocked(playerID, character, x, y, loadout, bag)
 }
 
@@ -1201,7 +1227,7 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 	spawnX, spawnY := s.spawnPoint()
 
 	loadout, bag := s.seatGearLocked(playerID, character, token)
-	s.tokens.seat(playerID, token)
+	s.holdToken(playerID, token)
 	return s.buildBodyLocked(playerID, character, spawnX, spawnY, loadout, bag)
 }
 
@@ -1434,7 +1460,7 @@ func (s *Session) seatPlayerLocked(player *types.Player, gear *pbitems.CheckOutR
 		slog.Warn("No loadout for handoff arrival, player spawns with no equipment.", "player_id", player.ID)
 	}
 	s.buildBodyLocked(player.ID, character, spawnX, spawnY, gear.GetLoadout(), gear.GetBag())
-	s.tokens.seat(player.ID, player.Token)
+	s.holdToken(player.ID, player.Token)
 
 	// remove them from the pending list
 	delete(s.playersPendingConnection, player.ID)
@@ -2017,9 +2043,11 @@ func unitIntent(vx, vy float64) (float64, float64) {
 // interactRefusedQuietly is whether an interact's error is play, not a fault,
 // and is logged quietly: a stale bag check refused into a full bag (FS-HRH2J
 // R37), a guarded chest (FS-KE075 §J R60), a secret door the party has not
-// detected (FS-5FZ4J §F R38).
+// detected (FS-5FZ4J §F R38), a talk to a dead encounter NPC (FS-4EC7Z §A
+// R4).
 func interactRefusedQuietly(err error) bool {
-	return errors.Is(err, ErrBagFull) || errors.Is(err, ErrContainerGuarded) || errors.Is(err, ErrUndetected)
+	return errors.Is(err, ErrBagFull) || errors.Is(err, ErrContainerGuarded) || errors.Is(err, ErrUndetected) ||
+		errors.Is(err, ErrEncounterNPCDead)
 }
 
 /**
@@ -2105,8 +2133,13 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	isSealPiece := targetEntity.HasComponent(ecs.ComponentTypeSealPiece)
 	// a mural or a lore shrine, read, part of no seal (FS-5FZ4J §C R15, §F R39)
 	isLorePiece := targetEntity.HasComponent(ecs.ComponentTypeLorePiece)
+	// an encounter NPC, talked to (FS-4EC7Z §A R4)
+	isEncounterNPC := targetEntity.HasComponent(ecs.ComponentTypeEncounterNPC)
+	// the Captives' cage and its key (FS-4EC7Z §D R13)
+	isCage := targetEntity.HasComponent(ecs.ComponentTypeCage)
+	isCageKey := targetEntity.HasComponent(ecs.ComponentTypeCageKey)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isBarrier && !isSealPiece && !isLorePiece {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isBarrier && !isSealPiece && !isLorePiece && !isEncounterNPC && !isCage && !isCageKey {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -2170,6 +2203,21 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	}
 	if isLorePiece {
 		return s.readLore(playerID, playerTransform, targetEntity)
+	}
+
+	// --- an encounter NPC (FS-4EC7Z §A R4) ---
+
+	if isEncounterNPC {
+		return s.talkToEncounterNPC(playerID, playerTransform, targetEntity)
+	}
+
+	// --- the Captives' cage and its key (FS-4EC7Z §D R13) ---
+
+	if isCageKey {
+		return s.takeCageKey(playerID, playerTransform, targetEntity)
+	}
+	if isCage {
+		return s.reachCage(playerID, playerTransform, targetEntity)
 	}
 
 	// --- door entity ---
@@ -3546,6 +3594,9 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	// FS-K2HKP R18: monsters are levelled to the whole matched party, the
 	// expected included, not only who is seated now
 	s.populateMonsters(depth, s.isTopFloor(depth), expected)
+	// the Captives' key, when an elite carries it, goes to one once they
+	// stand (FS-4EC7Z §D R13)
+	s.handCageKey()
 
 	// the floor's layout stands: its map is what anyone entering is sent
 	s.publishFloorMap(depth)

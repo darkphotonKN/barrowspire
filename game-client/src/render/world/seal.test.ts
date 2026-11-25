@@ -456,6 +456,26 @@ describe("SealSet: a detected secret door (FS-5FZ4J §J R51, R52)", () => {
     expect(made.every((p) => p.destroyed)).toBe(true);
   });
 
+  // FS-4EC7Z §G R35 (I-4EC7Z-6): the Cutthroats' tip revealed it; the minimap marks it while it is shut
+  it("should name a revealed shut door for the minimap, at its cell, seen from the ground beside it", () => {
+    const { set } = recording();
+    set.sync({ barriers: [door()] }, floor, faces);
+    expect(set.revealedDoors()).toEqual([]);
+    set.sync({ barriers: [{ ...door(), revealed: true }] }, floor, faces);
+    expect(set.revealedDoors()).toEqual([{ at: centre(6, 3), seenAt: [centre(5, 3), centre(7, 3), centre(6, 2), centre(6, 4)] }]);
+    set.sync({ barriers: [{ ...door(true), revealed: true }] }, floor, faces);
+    expect(set.revealedDoors()).toEqual([]);
+  });
+
+  it("should name none before the floor's grid stands, nor after a clear", () => {
+    const { set } = recording();
+    set.sync({ barriers: [{ ...door(), revealed: true }] }, undefined);
+    expect(set.revealedDoors()).toEqual([]);
+    set.sync({ barriers: [{ ...door(), revealed: true }] }, floor, faces);
+    set.clear();
+    expect(set.revealedDoors()).toEqual([]);
+  });
+
   it("should not count a secret door among the shut gates the minimap strokes: the map draws it as wall already", () => {
     const { set } = recording();
     set.sync({ barriers: [door()] }, floor, faces);

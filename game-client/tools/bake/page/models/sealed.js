@@ -1165,3 +1165,147 @@ export function fountain(state) {
   }
   return scaled(g, 1.0);
 }
+
+// ── The encounter's cage and its key (FS-4EC7Z §H R36) ──────────────────────────────
+// Not the seal's: the Captives' cage (FS-4EC7Z §D R13) and the key that opens it, packed with the
+// sealed floor's props because they stand on the same floors.
+
+/** The cage's measures (units): its side, the height of its top band, the bars along each side. */
+export const CAGE = { side: 1.7, h: 2.3, bars: 6, door: 0.9 };
+/** How far an open cage door is swung out on its hinge (rad). */
+const CAGE_DOOR_OPEN = 1.95;
+
+/** A material that draws nothing but still casts its ground shadow (a cage's front, behind its captives). */
+const shadowOnly = () => new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+
+/**
+ * The Captives' cage (§D R13): a square cage of black iron bars stood on the floor, a cell wide, as
+ * tall as a door and more, its bars riveted to three bands, a corner post at each corner and four
+ * straps rising from the corners to a ring at its crown, a door in its front face (toward world +y)
+ * on two hinges with a padlock through its hasp. `shut`: the door closed and locked; `open`: swung
+ * out on its hinges, the padlock hanging open from the hasp.
+ *
+ * The captives stand inside it, so it also bakes in two layers the client draws them between
+ * (`layer`): `back`, the bars on the far side of its centre from the camera, the straps and the
+ * crown, with the whole cage's ground shadow; and `front`, the near bars and the door, casting no
+ * shadow of their own. A part is near when its centre is toward the camera (world x + y > 0). With
+ * no layer it is the whole cage. Every state is framed together, so the layers lie on the whole.
+ */
+export function cage(state, layer = null) {
+  const M = materials();
+  const T = towerMaterials();
+  const g = new THREE.Group();
+  const s = CAGE.side / 2;
+  const H = CAGE.h;
+  const bar = T.rust;
+  const iron = M.iron;
+  const hidden = shadowOnly();
+  /** Adds `obj` (a part or a group of them) to the layer it belongs to, by its centre (x, z). */
+  const put = (obj, x, z, near = x + z > 0.01) => {
+    if (layer === "front" && !near) return;
+    obj.traverse((o) => {
+      if (!o.isMesh) return;
+      if (layer === "back" && near) o.material = hidden;
+      if (layer === "front") o.userData.noShadow = true;
+    });
+    g.add(obj);
+  };
+  const step = CAGE.side / CAGE.bars;
+  // the four sides: each its bars and its three bands; the front leaves the door's width to the door
+  const sides = [
+    { axis: "x", at: [0, s] },
+    { axis: "x", at: [0, -s] },
+    { axis: "z", at: [s, 0] },
+    { axis: "z", at: [-s, 0] },
+  ];
+  const door = CAGE.door / 2;
+  for (const { axis, at } of sides) {
+    const front = axis === "x" && at[1] > 0;
+    for (let i = 1; i < CAGE.bars; i++) {
+      const u = -s + i * step;
+      if (front && Math.abs(u) < door) continue;
+      const [x, z] = axis === "x" ? [u, at[1]] : [at[0], u];
+      put(part(new THREE.CylinderGeometry(0.026, 0.026, H, 6), bar, { x, y: H / 2, z }), x, z);
+    }
+    for (const y of [0.05, 1.18, H]) {
+      const len = CAGE.side + 0.06;
+      const geo = axis === "x" ? new THREE.BoxGeometry(len, 0.07, 0.05) : new THREE.BoxGeometry(0.05, 0.07, len);
+      const [x, z] = at;
+      if (front && y < H) {
+        // either side of the door
+        for (const sx of [-1, 1]) {
+          const w = s - door + 0.03;
+          const px = sx * (door + w / 2 - 0.015);
+          put(part(new THREE.BoxGeometry(w, 0.07, 0.05), iron, { x: px, y, z }), px, z);
+        }
+      } else put(part(geo, iron, { x, y, z }), x, z);
+    }
+  }
+  // corner posts and a rivet head on each where a band crosses it
+  for (const [x, z] of [
+    [s, s],
+    [s, -s],
+    [-s, s],
+    [-s, -s],
+  ]) {
+    put(part(new THREE.BoxGeometry(0.075, H + 0.08, 0.075), iron, { x, y: (H + 0.08) / 2, z }), x, z);
+    for (const y of [0.05, 1.18, H]) put(part(new THREE.SphereGeometry(0.035, 6, 5), iron, { x, y, z }), x, z);
+    // the strap from the corner up to the crown ring
+    put(rod(V3(x, H + 0.04, z), V3(x * 0.12, H + 0.42, z * 0.12), 0.026, 0.022, iron, 5), x, z, false);
+  }
+  put(part(new THREE.TorusGeometry(0.12, 0.03, 6, 14), iron, { y: H + 0.47 }), 0, 0, false);
+  // the door: its stiles, bands and bars on a frame that turns on its hinges at its left stile
+  const leaf = new THREE.Group();
+  const dh = H - 0.12;
+  for (const x of [0, CAGE.door]) leaf.add(part(new THREE.BoxGeometry(0.06, dh, 0.05), iron, { x, y: dh / 2 + 0.06 }));
+  for (const y of [0.1, 1.18, dh]) leaf.add(part(new THREE.BoxGeometry(CAGE.door, 0.065, 0.045), iron, { x: CAGE.door / 2, y }));
+  for (let i = 1; i < 3; i++) leaf.add(part(new THREE.CylinderGeometry(0.024, 0.024, dh - 0.1, 6), bar, { x: (CAGE.door * i) / 3, y: dh / 2 + 0.06 }));
+  // the hasp on the door's free edge
+  leaf.add(part(new THREE.BoxGeometry(0.1, 0.05, 0.03), iron, { x: CAGE.door + 0.02, y: 1.05, z: 0.035 }));
+  const open = state === "open";
+  leaf.position.set(-door, 0, s + 0.035);
+  leaf.rotation.y = open ? -CAGE_DOOR_OPEN : 0;
+  put(leaf, open ? -door + 0.3 : 0, s, true);
+  // the hinges
+  for (const y of [0.4, 1.8]) put(part(new THREE.CylinderGeometry(0.035, 0.035, 0.12, 8), iron, { x: -door, y, z: s + 0.035 }), -door, s);
+  // the padlock: through the hasp, shut; hung open from the post's staple
+  const lock = new THREE.Group();
+  lock.add(part(new THREE.BoxGeometry(0.1, 0.12, 0.05), M.brass, { y: -0.06 }));
+  lock.add(part(new THREE.TorusGeometry(0.038, 0.011, 5, 10, Math.PI), iron, { y: 0.0 }));
+  lock.add(part(new THREE.BoxGeometry(0.018, 0.03, 0.06), T.rust, { y: -0.075, z: 0.0 }));
+  lock.position.set(door + 0.03, 1.02, s + 0.08);
+  if (open) {
+    lock.position.set(door + 0.04, 0.96, s + 0.06);
+    lock.rotation.set(0.5, 0, 0.6);
+  }
+  put(lock, door, s, true);
+  return g;
+}
+
+/**
+ * The cage key (§D R13): a heavy black-iron key on an iron ring, a scrap of leather thong knotted
+ * through it, lying where it was dropped. Iron, not the stair key's gold: the client's amber pool
+ * and prompt mark it as something to take.
+ */
+export function cageKey() {
+  const M = materials();
+  const g = new THREE.Group();
+  const key = joint(g, 0, 0.035, 0);
+  key.rotation.y = -0.5;
+  // the bow: a broad ring, and the shank from it to the bit
+  key.add(part(new THREE.TorusGeometry(0.085, 0.03, 8, 18), M.iron, { x: -0.26, rx: Math.PI / 2 }));
+  key.add(part(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 10), M.iron, { x: -0.15, rz: Math.PI / 2 }));
+  key.add(part(new THREE.CylinderGeometry(0.026, 0.026, 0.36, 8), M.iron, { x: 0.04, rz: Math.PI / 2 }));
+  key.add(part(new THREE.CylinderGeometry(0.026, 0.026, 0.025, 10), M.brass, { x: -0.11, rz: Math.PI / 2 }));
+  // the bit, two wards
+  for (const [x, w] of [
+    [0.16, 0.05],
+    [0.21, 0.04],
+  ])
+    key.add(part(new THREE.BoxGeometry(0.04, 0.026, w + 0.06), M.iron, { x, z: (w + 0.06) / 2 }));
+  // the ring it hangs on, lying through the bow, and the thong knotted to it
+  key.add(part(new THREE.TorusGeometry(0.075, 0.012, 6, 18), M.iron, { x: -0.36, z: 0.04, rx: Math.PI / 2 }));
+  key.add(rod(V3(-0.42, 0, 0.08), V3(-0.56, -0.01, 0.2), 0.014, 0.012, M.leather, 5));
+  key.add(rod(V3(-0.42, 0, 0.06), V3(-0.53, -0.01, -0.06), 0.014, 0.012, M.leather, 5));
+  return scaled(g, 2.3);
+}

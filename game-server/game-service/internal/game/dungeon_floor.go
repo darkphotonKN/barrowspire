@@ -92,6 +92,9 @@ type dungeonFloor struct {
 	// respites are the floor's respite rooms and where their fixtures stand,
 	// held while it is planned (§G R40)
 	respites []respite
+	// encounter is the floor's encounter, its room and its NPCs' spots, nil
+	// with none (FS-4EC7Z §A R1-R2)
+	encounter *encounterPlan
 }
 
 func newDungeonFloor(layout levelgen.DungeonLayout) *dungeonFloor {
@@ -173,6 +176,11 @@ func (s *Session) generateDungeonFloor(depth, arriving int) (*dungeonFloor, dung
 		// the merchant's after the fountain's, in a room of its own (FS-9JV5K §A R1)
 		if draw.merchant {
 			s.planRespite(d, respiteMerchant, constants.ContainerWidthRadius, constants.ContainerHeightRadius, d.merchantRoomOpen)
+		}
+		// the encounter's after the respites', in a room none of theirs
+		// (FS-4EC7Z §A R1-R2)
+		if kind, ok := encounterFor(s.spawnRand, depth, s.isTopFloor(depth), s.tuning); ok {
+			s.planEncounter(d, kind)
 		}
 		slog.Debug("Dungeon floor generated",
 			"sessionID", s.ID, "floor", depth, "seed", seed, "attempt", layout.Attempt, "rooms", len(layout.Rooms))
@@ -293,6 +301,8 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixture
 	// the fountain and the merchant, before the containers (FS-5FZ4J §H R45)
 	s.layFountain(d)
 	s.layMerchant(depth, d)
+	// the encounter's NPCs, in a room the containers keep out of (FS-4EC7Z §A R2)
+	s.layEncounter(d)
 
 	s.layDungeonContainers(d)
 

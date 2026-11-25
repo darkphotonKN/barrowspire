@@ -302,10 +302,14 @@ func (d *dungeonFloor) cellCentre(c components.Cell) point {
 // quietRooms is the rooms the floor's build leaves empty of anything else
 // that stands on the ground, monsters and containers both: a Weighted Plates
 // room, found by its plates (FS-5FZ4J §C R17), every hidden room, which
-// holds only its own contents (§F R39), and every respite room (§D R21, §G
-// R40). Never nil.
+// holds only its own contents (§F R39), every respite room (§D R21, §G
+// R40), and the encounter room, which holds its NPCs and no rolled monster
+// (FS-4EC7Z §A R2). Never nil.
 func (s *Session) quietRooms(d *dungeonFloor) map[int]bool {
 	quiet := map[int]bool{}
+	if d.encounter != nil {
+		quiet[d.encounter.room] = true
+	}
 	for _, h := range d.layout.Hidden {
 		quiet[h.Room] = true
 	}

@@ -136,6 +136,16 @@ type ClientGameState struct {
 	// Merchant is the floor's wandering merchant and his wares, sent whole;
 	// absent where there is none. FS-9JV5K §A R4.
 	Merchant *MerchantState `json:"merchant,omitempty"`
+	// EncounterNPCs are a run floor's encounter NPCs, cut by interest as
+	// monsters are; absent in the hub, a field and on a floor without one.
+	// FS-4EC7Z §F R22.
+	EncounterNPCs []*EncounterNPCState `json:"encounter_npcs,omitempty"`
+	// Cages are a run floor's Captives' cage, EncounterKeys its cage key while
+	// it lies, both sent whole; CageKeyCarried is set while the party carries
+	// the key. All absent where there are none. FS-4EC7Z §F R23.
+	Cages          []*CageState         `json:"cages,omitempty"`
+	EncounterKeys  []*EncounterKeyState `json:"encounter_keys,omitempty"`
+	CageKeyCarried bool                 `json:"cage_key_carried,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -152,6 +162,9 @@ type CurrentPlayerState struct {
 	// absent when they have none. Nobody else is told it. FS-MQYEX
 	// §Requirements 18–19.
 	TimedOpen *TimedOpenState `json:"timed_open,omitempty"`
+	// Contract is the delve's contract when the recipient took it; absent
+	// for everyone else and when none was taken. FS-4EC7Z §F R25.
+	Contract *ContractState `json:"contract,omitempty"`
 	// AbilityCooldown is the recipient's right-click ability's cooldown, a
 	// mercenary's the whiff lockout; absent only for a delver with no ability.
 	// Never on another player. FS-Q18Q3 §A R1–R2, R6.
@@ -250,6 +263,17 @@ type BackendGameState struct {
 	HallowedAltar *HallowedAltarState
 	// Merchant is the floor's wandering merchant (FS-9JV5K §A R4)
 	Merchant *MerchantState
+	// EncounterNPCs are the floor's encounter NPCs (FS-4EC7Z §F R22)
+	EncounterNPCs []*EncounterNPCState
+	// Cages, EncounterKeys and CageKeyCarried are the floor's Captives' cage
+	// and key (FS-4EC7Z §F R23)
+	Cages          []*CageState
+	EncounterKeys  []*EncounterKeyState
+	CageKeyCarried bool
+	// Contract is the delve's contract and ContractTaker the member who took
+	// it, told to them alone; nil before one is taken (FS-4EC7Z §F R25)
+	Contract      *ContractState
+	ContractTaker uuid.UUID
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.

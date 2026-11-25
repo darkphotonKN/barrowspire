@@ -106,10 +106,13 @@ func fabledChanceFor(record systems.KillRecord) float64 {
 	return base * floorFactor(record.Floor)
 }
 
-// monsterDropFor is the drop table row a kill rolls: Vorsk's own, else the
-// boss's, else an elite's, else its archetype's. FS-3103M §G R21.
+// monsterDropFor is the drop table row a kill rolls: none for a contract's
+// mark, whose reward is Contract Settled (FS-4EC7Z §E R19); Vorsk's own, else
+// the boss's, else an elite's, else its archetype's. FS-3103M §G R21.
 func monsterDropFor(record systems.KillRecord) (MonsterDrop, bool) {
 	switch {
+	case record.Archetype == components.MonsterArchetypeContractMark:
+		return MonsterDrop{}, false
 	case record.Archetype == components.MonsterArchetypeDemon:
 		return VorskMonsterDrop, true
 	case record.Boss:

@@ -41,6 +41,8 @@ import {
   GLYPHS,
   bridgeCell,
   bridgeLever,
+  cage,
+  cageKey,
   dartWall,
   fireJet,
   fountain,
@@ -145,6 +147,7 @@ import {
 } from "./models/chapelBuilding.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK, MERCHANT } from "./characters/folk.js";
+import { ENCOUNTER } from "./characters/encounter.js";
 
 export const LICENCE = "Barrowspire original work (procedural, no third-party assets)";
 const src = (file, fn) => `procedural: tools/bake/page/${file}#${fn}`;
@@ -484,6 +487,23 @@ function merchantSheets() {
     build: c.build,
     animations: c.animations,
     source: `authored: tools/bake/page/characters/folk.js#${c.fn}`,
+  }));
+}
+
+/**
+ * The dungeon encounters' cast (FS-4EC7Z §H R36): the pilgrim, the captive and the cutthroat, each
+ * with its variants as `<anim>_<letter>` clips, and the contract mark's two looks, on the shared rig
+ * in eight facings, packed on group `encounter`, which the run fetches on demand the first time a
+ * state carries one of them (ADR-0071 Decision 6; src/render/art/sceneArt.ts `ENCOUNTER_ART`).
+ */
+function encounterSheets() {
+  return ENCOUNTER.map((c) => ({
+    name: c.sheet,
+    group: c.group,
+    kind: "character",
+    build: c.build,
+    animations: c.animations,
+    source: `authored: tools/bake/page/characters/encounter.js#${c.fn}`,
   }));
 }
 
@@ -918,7 +938,19 @@ function chapelBuildingSheets() {
  *  - `secret_cracks`: a decal at a masonry wall piece's own spot, over it, on every piece of the
  *    door's face: `x`/`y` on a back piece, `front_x`/`front_y` on a cut-away one.
  *  - `trap_*`: `armed`/`sprung`; the gas vent's `puff` is its short effect (GAS_PUFF, not looped).
+ *  - `cage` (FS-4EC7Z §H R36): `shut`/`open`, the whole cage; and each split in two layers drawn
+ *    either side of the captives inside it, `<state>_back` under them (with the cage's shadow) and
+ *    `<state>_front` over them, all framed with the whole, so the three lie on one spot.
+ *  - `cage_key`: the key where it lies.
  */
+const CAGE_STATES = Object.fromEntries(
+  ["shut", "open"].flatMap((s) => [
+    [s, still(() => cage(s))],
+    [`${s}_back`, still(() => cage(s, "back"))],
+    [`${s}_front`, still(() => cage(s, "front"))],
+  ]),
+);
+
 function sealedSheets() {
   const sheet = (name, file, fn, animations, opts = {}) => ({
     name,
@@ -964,6 +996,10 @@ function sealedSheets() {
     sheet("hallowed_altar", "models/interactables.js", "altar", states(["dormant", "prayed"], (s) => altar(s, "hallowed")), {
       light: { at: HALLOWED_CANDLES, radius: 140, color: "amberBright", flicker: 0.3 },
     }),
+    // the Captives' cage and its key (FS-4EC7Z §H R36), on a page of their own after the props
+    // above, so the committed sealed-0 keeps its bytes (lib/pack.mjs `appendPage`)
+    sheet("cage", S, "cage", CAGE_STATES, { appendPage: true }),
+    sheet("cage_key", S, "cageKey", { default: still(cageKey) }, { appendPage: true }),
   ];
 }
 
@@ -980,6 +1016,7 @@ export const CATALOGUE = [
   ...characterSheets(),
   ...folkSheets(),
   ...merchantSheets(),
+  ...encounterSheets(),
   ...fxSheets(),
   ...towerSheets(),
   ...spireSheets(),

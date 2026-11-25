@@ -24,7 +24,8 @@ func newUniqueEffects(em *ecs.EntityManager) *uniqueEffects {
 }
 
 func (u *uniqueEffects) ConsumeKill(record systems.KillRecord) {
-	if record.KillerMemberID == uuid.Nil {
+	// a hired ally's kill is its hirer's for loot alone (FS-4EC7Z §C R11)
+	if record.KillerMemberID == uuid.Nil || record.ByAlly {
 		return
 	}
 	killer, ok := u.inPlayDelver(record.KillerMemberID)

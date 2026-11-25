@@ -269,6 +269,14 @@ describe("minimapContent (§E.22)", () => {
     expect(minimapContent(grid, states([stairs], [lever, door]), FIXTURES).fixtures).toEqual(FIXTURES);
   });
 
+  // FS-4EC7Z §G R35 (I-4EC7Z-6): a revealed secret door stands in a wall cell, in no region; it is
+  // judged by the ground beside it
+  it("should hold a fixture in no region once a region it is seen from is explored", () => {
+    const door: MinimapFixture = { kind: "secret-door", at: at(-500, -500), seenAt: [at(-400, -400), IN_ROOM] };
+    expect(minimapContent(grid, () => "unexplored", [door]).fixtures).toEqual([]);
+    expect(minimapContent(grid, states([ROOM]), [door]).fixtures).toEqual([door]);
+  });
+
   it("should hold no fixture standing in no region", () => {
     const off = { kind: "stairs" as const, at: at(-500, -500) };
     expect(regionAt(grid, off.at)).toBe(0);
@@ -919,6 +927,15 @@ describe("the minimap's look (FS-56CKV §A)", () => {
       const { ring, seat } = glyph(door);
       // the doorway's middle column, under the arch's crown
       for (let y = seat.y; y <= seat.y + 3; y++) expect(ring.has(`${seat.x},${y}`)).toBe(true);
+    });
+
+    // FS-4EC7Z §G R35 (I-4EC7Z-6)
+    it("should draw a revealed secret door as a door glyph of its own, apart from the three fixtures", () => {
+      const door = glyph({ kind: "secret-door", at: FIXTURES[0].at });
+      const shapeOf = ({ ink, seat }: ReturnType<typeof glyph>) =>
+        [...ink].map((k) => k.split(",").map(Number)).map(([x, y]) => `${x - seat.x},${y - seat.y}`).sort().join(";");
+      expect(door.ink.size).toBeGreaterThan(0);
+      expect(FIXTURES.map(glyph).map(shapeOf)).not.toContain(shapeOf(door));
     });
 
     it("should keep the glyph's ink 3:1 against its ring", () => {

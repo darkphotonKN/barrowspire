@@ -192,6 +192,16 @@ describe("budgetLights: the hallowed altar's candles (FS-5FZ4J §J R51, FS-8RBQY
   });
 });
 
+// FS-9JV5K §F R21 (I-9JV5K-5): the merchant's lantern marks a trader to reach, as an interactable's pool does
+describe("budgetLights: the merchant's lantern (FS-9JV5K §F R21, FS-8RBQY §C.6)", () => {
+  it("should drop the lantern after the altar's candles and before the interactable pools; never the stairs", () => {
+    const floor = [...row("interactable", 1, 400), ...row("merchant_lantern", 1, 600), ...row("hallowed_altar", 1, 500), ...row("stairs", 1, 200)];
+    const left = (cap: number) => (["hallowed_altar", "merchant_lantern", "interactable", "stairs"] as const).map((k) => count(budgetLights(floor, cap), k));
+    expect(left(3)).toEqual([0, 1, 1, 1]);
+    expect(left(2)).toEqual([0, 0, 1, 1]);
+  });
+});
+
 describe("FloorLights: a dungeon floor's fixed lights, by chunk and region, under the cap (FS-KE075 §H.45, FS-SRA9J §C.12)", () => {
   type Src = { x: number; y: number; name: string };
   const src = (name: string, x: number, y = 0): Src => ({ x, y, name });

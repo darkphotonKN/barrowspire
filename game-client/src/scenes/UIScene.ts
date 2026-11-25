@@ -50,6 +50,10 @@ import { mountChat } from "@/ui/chatPiece";
 import { LoreLines } from "@/ui/loreLine";
 import { mountLore } from "@/ui/uiSceneLore";
 import { LoreDust } from "@/render/effects/loreDust";
+import { UiWaresSlot } from "@/ui/uiSceneWares";
+import { WaresPanel } from "@/ui/WaresPanel";
+import { PurseReader } from "@/ui/purse";
+import { apiClient } from "@/utils/api";
 import { onSceneEnd } from "./sceneEnd";
 
 /**
@@ -131,6 +135,8 @@ export class UIScene extends Phaser.Scene {
   private badge?: UiControlsBadge;
   /** The chat window, built for each world (FS-TQZ5J § Change: Batch 6, R125). */
   private chat?: UiChatSlot;
+  /** The run's wares panel, drawn from the run's data (FS-9JV5K §F R22). */
+  private wares?: UiWaresSlot;
   /** The resident art the party frames cut their busts from, registered as a bust is first cut. */
   private art?: ArtLibrary;
   private keys?: MenuKeyObjects;
@@ -157,6 +163,7 @@ export class UIScene extends Phaser.Scene {
       book: () => this.book?.isOpen() ?? false,
     });
     this.mountInterface(bridge);
+    this.mountWaresSlot(bridge);
     this.mountMailboxSlot(bridge);
     this.mountChatSlot(bridge);
     // the ability bar, the bars and the level bar, drawn from what each world hands (§ Change: Batch 5, R67;
@@ -202,6 +209,7 @@ export class UIScene extends Phaser.Scene {
       record: this.record?.isOpen() ?? false,
       letter: bridge?.world?.windows().letter ?? false,
       book: this.book?.isOpen() ?? false,
+      wares: this.wares?.isOpen() ?? false,
     };
   }
 
@@ -404,6 +412,8 @@ export class UIScene extends Phaser.Scene {
       book: { isOpen: () => book.isOpen(), close: () => void book.close() },
       // Esc's first step (FS-84N1G R17)
       controls: { isOpen: () => this.controls?.isOpen() ?? false, dismiss: () => this.controls?.dismiss() },
+      // the run's wares panel, after the letter panel (FS-9JV5K §F R22)
+      wares: { isOpen: () => this.wares?.isOpen() ?? false, close: () => this.wares?.close() },
     });
     const party = new UiPartySlot((world) => this.partyPieces(bridge, world));
     // the gear overlay and its source, and the container view, for each world (§ Change: Phase 3, R50)
@@ -547,6 +557,30 @@ export class UIScene extends Phaser.Scene {
       this.dialogue = undefined;
       this.corner = undefined;
       this.party = undefined;
+    });
+  }
+
+  /**
+   * The run's wares panel (FS-9JV5K §F R22, R23): drawn here from the run's data, its icons cut from the
+   * resident art, its purse line read from the wallet on a shelf of its own (FS-7TGZ3), its Buy and its
+   * close asked of the run; taken down as the run leaves and with the game.
+   */
+  private mountWaresSlot(bridge: UiBridge): void {
+    const wares = new UiWaresSlot(
+      bridge,
+      (wiring) => new WaresPanel(this, () => this.residentArt(), wiring),
+      (shelf) => new PurseReader(apiClient, shelf),
+    );
+    this.wares = wares;
+    wares.world(bridge.world);
+    const stop = bridge.onWorld((report) => wares.world(report));
+    const stopScreen = bridge.onScreen({ wares: (message) => wares.hear(message) });
+    relayoutOn(this, () => wares.relayout());
+    onSceneEnd(this, () => {
+      stop();
+      stopScreen();
+      wares.destroy();
+      this.wares = undefined;
     });
   }
 

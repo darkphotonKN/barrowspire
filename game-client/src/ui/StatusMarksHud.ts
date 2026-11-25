@@ -1,7 +1,8 @@
 /**
  * The player's status marks on the UI scene (FS-5FZ4J §J R55; ADR-0086: screen-fixed): a small
  * square per mark just right of the own health bar, each a well of the HUD panel in a brass rim with
- * its glyph drawn in code; the Blessing's a haloed cross in the hallowed altar's gold. The pointer
+ * its glyph drawn in code; the Blessing's a haloed cross in the hallowed altar's gold, Contract Settled's
+ * two crossed blades (FS-4EC7Z §G R34). The pointer
  * over a mark shows its hover line (`STATUS_MARK_LINES`) under it, in the item-tip band (2200), heard
  * by the mark's own ground, as the ability bar's tooltips are. Built by the HUD slot on the first
  * mark a run hands, redrawn only on a change; none takes every mark down.
@@ -33,8 +34,21 @@ function drawBlessing(g: Graphics, r: MarkRect): void {
   g.fillRect(r.x + 5, cy - 2, r.width - 10, 2);
 }
 
+/** Contract Settled's glyph (FS-4EC7Z §G R34): two blades crossed, in its ember steel. */
+function drawSettled(g: Graphics, r: MarkRect): void {
+  g.fillStyle(palette.contractSettled, 1);
+  // each blade a stepped diagonal of 2 px squares, corner to corner, its hilt a cross-bar
+  for (let i = 0; i < r.width - 8; i += 2) {
+    g.fillRect(r.x + 4 + i, r.y + 4 + i, 2, 2);
+    g.fillRect(r.x + r.width - 6 - i, r.y + 4 + i, 2, 2);
+  }
+  g.fillRect(r.x + 3, r.y + r.height - 6, 5, 2);
+  g.fillRect(r.x + r.width - 8, r.y + r.height - 6, 5, 2);
+}
+
 const GLYPHS: Readonly<Record<StatusMark, (g: Graphics, r: MarkRect) => void>> = {
   blessed: drawBlessing,
+  contract_settled: drawSettled,
 };
 
 interface DrawnMark {

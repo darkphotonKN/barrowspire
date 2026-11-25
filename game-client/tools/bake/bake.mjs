@@ -167,6 +167,7 @@ function assemble({ tile, facings, sheets }) {
       frameCount: frameList(s).length,
       animations: Object.entries(s.animations).map(([name, a]) => ({ name, frameCount: a.frames.flat().length })),
       ...(s.trim ? { frames: frameList(s).map((b64) => ({ w: cutOf(s, b64).rect.w, h: cutOf(s, b64).rect.h })) } : {}),
+      ...(s.appendPage ? { appendPage: true } : {}),
     })),
   );
   // where each sheet's frames went: a whole sheet on one page, or (an oversized sheet, FS-Q14EV

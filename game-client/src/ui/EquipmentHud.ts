@@ -32,6 +32,8 @@ export interface HudPanel {
   mayEquip?: (item: ItemState, slot: EquipmentSlot) => boolean;
   /** Asked before an unequip: false leaves the item worn and nothing is sent. */
   mayUnequip?: (item: ItemState) => boolean;
+  /** A bag antidote drunk where it lies (FS-9JV5K §F R24); unset, it is worn as any consumable. */
+  onDrink?: (item: ItemState) => void;
   /** Whether a screen point lies over an open panel, where a press is the panel's (FS-HRH2J R8). */
   covers(x: number, y: number): boolean;
   /** Opens or closes the inventory. */
@@ -68,6 +70,8 @@ export interface HudPort {
   send(action: typeof ActionType.Equip | typeof ActionType.Unequip, payload: EquipPayload): void;
   notice(text: string): void;
   gearChanged?(): void;
+  /** A bag item drunk by its entity id: the run's `use_item` (FS-9JV5K §F R24). None, nothing is drunk from the bag. */
+  drink?(item: string): void;
 }
 
 /** What one state says the player carries and wears; either may be absent. */
@@ -119,6 +123,9 @@ export class EquipmentHud {
       this.worn[slot] = null;
       this.carried.push(item);
     };
+    // nothing moves: the server spends it, and the next state takes it from the bag (FS-9JV5K §D R17)
+    const drink = port.drink;
+    if (drink) panel.onDrink = (item) => drink(item.entity_id);
   }
 
   /** The inventory as drawn: the server's, plus items taken and still pending. */

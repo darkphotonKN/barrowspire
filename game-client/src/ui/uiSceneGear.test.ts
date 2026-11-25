@@ -338,6 +338,14 @@ describe("the gear's sends and a take are requests (FS-TQZ5J § Change: Phase 3,
     ]);
   });
 
+  // FS-9JV5K §F R24 (I-9JV5K-5)
+  it("should ask the world to drink a bag item by its entity id", () => {
+    const { wirings, enter } = onSlot();
+    const w = enter("run");
+    wirings[0].drink("antidote-1");
+    expect(w.asked).toEqual([{ kind: "drink", item: "antidote-1" }]);
+  });
+
   it("should ask the world to take an item from the container", () => {
     const { wirings, enter } = onSlot();
     const w = enter("run");

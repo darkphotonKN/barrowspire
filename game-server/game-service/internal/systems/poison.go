@@ -8,13 +8,14 @@ import (
 )
 
 /*
-PoisonSystem ticks delvers' poison (FS-5FZ4J §D R29): a poisoned delver in
-play loses PercentPerSecond of their max health a second, a fraction a tick,
-until the poison's time runs out. It is not a hit: it writes health straight,
-so it breaks no timed interact, counts as no attacker and credits no monster;
-a delver it brings to 0 dies by the elimination as by any hit. Poison ends
-with its time, with a cure (CurePoison), or with the delver's play: dead,
-escaped or left behind.
+PoisonSystem ticks poisoned bodies (FS-5FZ4J §D R29): a poisoned delver in
+play, or a live encounter NPC (an ally or a peaceful one, FS-4EC7Z §C R9,
+Edge States), loses PercentPerSecond of its max health a second, a fraction a
+tick, until the poison's time runs out. It is not a hit: it writes health
+straight, so it breaks no timed interact, counts as no attacker and credits
+no monster; a delver it brings to 0 dies by the elimination as by any hit, an
+encounter NPC as by the encounter's tick. Poison ends with its time, with a
+cure (CurePoison), or with the body's play: dead, escaped or left behind.
 */
 type PoisonSystem struct {
 	PercentPerSecond float64
@@ -35,7 +36,7 @@ func (s *PoisonSystem) Update(dt float64, entities []*ecs.Entity) {
 			continue
 		}
 		hc, hasHealth := e.GetComponent(ecs.ComponentTypeHealth)
-		if !hasHealth || !InPlay(e) {
+		if !hasHealth || !poisonable(e) {
 			e.RemoveComponent(ecs.ComponentTypePoison)
 			continue
 		}
@@ -51,6 +52,15 @@ func (s *PoisonSystem) Update(dt float64, entities []*ecs.Entity) {
 			e.RemoveComponent(ecs.ComponentTypePoison)
 		}
 	}
+}
+
+// poisonable is whether poison still takes from e: a delver in play or a live
+// encounter NPC.
+func poisonable(e *ecs.Entity) bool {
+	if e.HasComponent(ecs.ComponentTypeEncounterNPC) {
+		return alive(e)
+	}
+	return InPlay(e)
 }
 
 // Poison poisons entity for seconds: a poisoning already running is

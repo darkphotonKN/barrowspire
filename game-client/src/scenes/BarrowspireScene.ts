@@ -6,7 +6,7 @@
 import * as Phaser from "phaser";
 import { ActionType, type SettlementPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
-import { drawPlayerLegs, drawMercenary } from "@/utils/characterTextures";
+import { drawPlayerLegs, drawMercenary, placeholderTexture } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
 import { useGameStore } from "@/stores/gameStore";
 import { usePartyStore } from "@/stores/partyStore";
@@ -40,6 +40,8 @@ import { placeCard } from "@/ui/placeCard";
 import { tremble, type LoreLine } from "@/ui/loreLine";
 import { burnHeard, loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
 import { SealReplies, SealWatch } from "@/ui/sealLines";
+import { EncounterWatch, encounterLineText, encounterReplyNotice } from "@/ui/encounterLines";
+import { ContractWatch, contractLine } from "@/ui/contractLines";
 import { StatusWatch } from "@/ui/statusLines";
 import { statusMarks } from "@/ui/statusMarks";
 import { SealWindowClock } from "@/ui/sealWindow";
@@ -54,7 +56,8 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { healthPotionCount } from "@/ui/potions";
+import { DrinkInFlight, healthPotionCount, drinkRefusal, type UseItemReply } from "@/ui/potions";
+import { WaresTrade, type BuyReply, type ShownWares } from "@/ui/wares";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { GameplaySounds } from "@/audio/gameplaySounds";
@@ -140,8 +143,8 @@ import {
   type Rect,
   type WorldPlane,
 } from "@/render/iso";
-import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
-import { SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
+import { artSprite, onDemandArt, preloadArt, registerArt, type OnDemandArt } from "@/render/art/phaser";
+import { ENCOUNTER_ART, SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
 import { SpecLooks, withOwnLook, type LookBodies } from "@/render/art/specLooks";
 import { FloorPoolArt } from "@/render/art/floorArt";
 import { drawTorchBar } from "@/ui/torchBar";
@@ -156,7 +159,7 @@ import { FOG_FLOOR_AMBIENT, HALO_DEPTH, LightMap, type LightSource } from "@/ren
 import { ensurePointerLook, findPointerLook, type PointerLook } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
-import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
+import { ANTIDOTE_LOOK, HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
 import { Auras } from "@/render/effects/aura";
 import { prefersReducedMotion } from "@/render/effects/mist";
 import { playSlash } from "@/render/effects/slash";
@@ -248,6 +251,11 @@ import {
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SummoningSet, type SummoningLook, type SummoningTarget } from "@/render/world/altar";
 import { RespiteSet } from "@/render/world/respites";
+import { MerchantSet, merchantLantern, type MerchantLook } from "@/render/world/merchant";
+import { EncounterSet } from "@/render/world/encounters";
+import { EncounterBodies } from "@/render/world/encounterBodies";
+import { OverheadLines } from "@/render/world/overheadLines";
+import { CageSet } from "@/render/world/cage";
 import { SEAL_GROUND_DEPTH, SealSet, type SealBand, type SealStage, type WallFace } from "@/render/world/seal";
 import type { SealLook } from "@/render/world/sealLooks";
 import { TrapSet } from "@/render/world/traps";
@@ -359,6 +367,15 @@ export { TOP_RIGHT_EDGE };
  * player has no bar over their own head (FS-8AY7S req 26), so their name sits there too.
  */
 const NAME_GAP = 5;
+
+/** What goes with the merchant's body (FS-9JV5K §F R21): the animator it plays, its nameplate, its lantern. */
+interface MerchantParts {
+  name: Phaser.GameObjects.Text;
+  anim?: CharacterAnimator;
+  lantern?: LightSource;
+  /** Where he stands: his lantern hangs over it. */
+  at?: Point;
+}
 /**
  * A teammate's overhead health bar (FS-8AY7S req 27): the monsters' bar, health only, sat
  * `gap` px over the marker base. Their name lifts clear of it. Drawn only while the scene's
@@ -836,6 +853,64 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private respites = new RespiteSet<Phaser.GameObjects.Sprite>(this.sealStage);
   /**
+   * The floor's wandering merchant, from state (FS-9JV5K §F R21): his own sheet on the on-demand
+   * `merchant` group, his stand-in until it lands, with his nameplate and lantern light, which go
+   * with his body ({@link merchantParts}).
+   */
+  private merchant = new MerchantSet<Phaser.GameObjects.Sprite>(
+    {
+      add: (look, at) => this.addMerchant(look, at),
+      wear: (body, look) => this.dressMerchant(body, look),
+      stand: (body, at) => this.standMerchant(body, at),
+    },
+    () => (this.art ? { has: (sheet) => this.art.has(sheet), fetch: (group, landed) => this.onDemand?.fetch(group, landed) } : undefined),
+  );
+  /** The merchant's nameplate and lantern, by his body: what goes with it. */
+  private readonly merchantParts = new Map<Phaser.GameObjects.Sprite, MerchantParts>();
+  /** The wares panel's run side (FS-9JV5K §F R22, R23): whose panel is open and the purchase in flight. */
+  private readonly trade = new WaresTrade();
+  /** The gear's Drink in flight (FS-9JV5K §F R24): a second press on it sends nothing until it is answered. */
+  private readonly drinking = new DrinkInFlight();
+  /** The wares last handed to the UI scene, as a key: a state that changes nothing hands nothing. */
+  private shownWaresKey = "";
+  /** The scene's on-demand art (ADR-0071), what the merchant's group is fetched through. */
+  private onDemand?: OnDemandArt;
+  /**
+   * The encounter NPCs' bodies, plates and over-head lines on this scene (FS-4EC7Z §G R29, R30): the
+   * stage the encounter set and the lines draw through.
+   */
+  private readonly encounterBodies = new EncounterBodies(this, () => this.art);
+  /**
+   * A floor's encounter NPCs, from state (FS-4EC7Z §G R29): their looks on the on-demand `encounter`
+   * group, its stand-in until it lands, each with its plate (an ally's the ally plate); E talks.
+   */
+  private encounters = new EncounterSet<Phaser.GameObjects.Sprite>(this.encounterBodies, () =>
+    this.art
+      ? {
+          has: (sheet) => this.art.has(sheet),
+          carries: (sheet, clip) => this.art.animationKey(sheet, clip) !== undefined,
+          fetch: () => this.fetchEncounterArt(),
+        }
+      : undefined,
+  );
+  /** What the encounter NPCs say, over their heads for 4 s, once per `line_at` (FS-4EC7Z §G R30). */
+  private npcLines = new OverheadLines<Phaser.GameObjects.Text>(this.encounterBodies, encounterLineText);
+  /** The Captives' cage and its key, from state (FS-4EC7Z §G R31): baked props on the resident `sealed` group. */
+  private cages = new CageSet<Phaser.GameObjects.Sprite>({
+    add: (look, at, depthAt) => {
+      const { sprite } = addProp(this, this.art, look.sheet, at, { animation: look.frame });
+      sprite.setDepth(worldDepth(depthAt.x, depthAt.y, 1));
+      return sprite;
+    },
+    show: (sprite, look) => showState(sprite, this.art, look.sheet, look.frame),
+  });
+  /** The encounters' events against the previous broadcast, a first one the baseline (FS-4EC7Z §G R31, R33). */
+  private encounterWatch = new EncounterWatch();
+  /** The player's contract's end against the previous broadcast, a first one the baseline (FS-4EC7Z §G R34). */
+  private contractWatch = new ContractWatch();
+  /** The contract's heading line last handed to the UI scene: a state that changes nothing hands nothing. */
+  private shownContractLine: string | null = null;
+  /**
    * A floor's detected traps, from state (FS-5FZ4J §J R51): baked props on the resident `sealed`
    * group, faint while they wait, sprung at full strength when they fire.
    */
@@ -1219,6 +1294,8 @@ export class BarrowspireScene extends Phaser.Scene {
     socketManager.off("end_game");
     socketManager.off("settlement");
     socketManager.off("leave_run");
+    socketManager.off("buy");
+    socketManager.off("use_item");
     socketManager.offError("leave_run");
     socketManager.offError("forfeit_run");
 
@@ -1266,6 +1343,17 @@ export class BarrowspireScene extends Phaser.Scene {
     this.summoning.forget();
     this.seal.forget();
     this.respites.forget();
+    this.merchant.forget();
+    this.merchantParts.clear();
+    this.encounters.forget();
+    this.encounterBodies.forget();
+    this.npcLines.forget();
+    this.cages.forget();
+    this.shownContractLine = null;
+    this.trade.reset();
+    this.drinking.reset();
+    this.shownWaresKey = "";
+    this.onDemand = undefined;
     this.sealLights.clear();
     this.traps.forget();
     this.trails.forget();
@@ -1377,6 +1465,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.sealWatch.reset();
     this.statusWatch.reset();
     this.sealWindow.forget();
+    this.encounterWatch.reset();
+    this.contractWatch.reset();
   }
 
   /**
@@ -1434,6 +1524,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the run's end carries the last word; the menu never covers it (FS-9K8EZ req 6): the UI
     // scene's yields as it hears the end
     this.takeDownResolvedView();
+    this.closeWares();
     this.ui.changed();
     // the run is over: a Shadow Shot hold ends with nothing sent (FS-JTNPR req 15), an armed page disarms
     // (FS-X2CMM R41)
@@ -3286,19 +3377,27 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * What E does for the nearest in reach of a seal piece or the shut gate, the hallowed altar and a
-   * chest (FS-5FZ4J §J R52), as containers are reached; nothing with none in reach. A tie goes to
-   * the seal, then the altar.
+   * What E does for the nearest in reach of a seal piece or the shut gate, the hallowed altar, the
+   * wandering merchant (his wares panel, FS-9JV5K §F R21), an encounter NPC, the cage key and the shut
+   * cage (FS-4EC7Z §G R29, R31) and a chest (FS-5FZ4J §J R52), as
+   * containers are reached; nothing with none in reach. A tie goes to the seal, then the altar.
    */
   private nearestReach(): (() => void) | null {
     const me = this.playerPos;
     if (!this.player || !me) return null;
     const sealed = this.seal.reach(me);
     const respite = this.respites.reach(me);
+    const merchant = this.merchant.reach(me);
+    const npc = this.encounters.reach(me);
+    const cage = this.cages.reach(me);
     const chest = this.getNearbyChest();
     const reaches: { distance: number; act: () => void }[] = [];
     if (sealed) reaches.push({ distance: sealed.distance, act: () => socketManager.sendMessage(ActionType.Interact, { entity_id: sealed.target.entityId }) });
     if (respite) reaches.push({ distance: respite.distance, act: () => socketManager.sendMessage(ActionType.Interact, { entity_id: respite.target.entityId }) });
+    if (merchant) reaches.push({ distance: merchant.distance, act: () => this.openWares() });
+    // an encounter NPC to talk to, the cage key to take, the shut cage to open (FS-4EC7Z §G R29, R31)
+    for (const r of [npc, cage])
+      if (r) reaches.push({ distance: r.distance, act: () => socketManager.sendMessage(ActionType.Interact, { entity_id: r.target.entityId }) });
     if (chest) reaches.push({ distance: chest.distance, act: () => this.toggleChest(chest.entityId) });
     let best: (typeof reaches)[number] | undefined;
     for (const r of reaches) if (!best || r.distance < best.distance) best = r;
@@ -3474,12 +3573,14 @@ export class BarrowspireScene extends Phaser.Scene {
     this.setupCustomCursor();
     this.occluders = new Occluders();
     const onDemand = onDemandArt(this, this.art);
+    this.onDemand = onDemand;
     this.monsters = new MonsterRoster(
       phaserMonsterStage(this),
       this.art,
       this.monsterTargeting,
       this.monsterEffects,
-      onDemand,
+      // the encounters' group answers both its NPCs and its hostile humans, whichever asks first
+      { fetch: (group, landed) => (group === ENCOUNTER_ART.group ? this.fetchEncounterArt() : onDemand.fetch(group, landed)) },
     );
     this.hounds = new HoundSet(phaserHoundStage(this, TRAIL_BED_DEPTH), this.art);
     this.poolArt = new FloorPoolArt(onDemand, (group) => this.monsters?.redress(group));
@@ -3567,6 +3668,8 @@ export class BarrowspireScene extends Phaser.Scene {
         // an armed page lives while the book is open and nothing opens over it: the book closing (by
         // its ×, Esc, K, or stepping aside for another window) or the menu opening disarms (FS-X2CMM R41)
         if (!ui.book || (ui.menuOpen && !was.menuOpen) || gearOpened(ui, was)) this.combat.disarm();
+        // the menu opens over no window: the wares panel shuts, silently (FS-3EBCA R17)
+        if (ui.menuOpen && !was.menuOpen) this.closeWares();
       },
       answer: answering({
         // the gear overlay's wear and take off, sent as the run has always sent them (§ Change: Phase 3, R54)
@@ -3574,6 +3677,10 @@ export class BarrowspireScene extends Phaser.Scene {
         unequip: (item) => socketManager.sendMessage(ActionType.Unequip, { item_entity_id: item }),
         // Burn tome?'s Burn: the one interact for the altar (FS-3103M R25)
         burn: (altar) => socketManager.sendMessage(ActionType.Interact, { entity_id: altar }),
+        // the wares panel's Buy: one purchase at a time, Paying… until its reply (FS-9JV5K §F R23)
+        buy: (ware) => this.buyWare(ware),
+        // the gear overlay's Drink on a bagged antidote (FS-9JV5K §F R24)
+        drink: (item) => this.drink(item),
         // a dread lore line started on the UI scene: this camera trembles, as it did under the run's own
         // lines (FS-XWHZP R10; FS-TQZ5J § Change: Merge with main, 2026-11-14)
         tremor: (durationMs, intensity) => tremble(this.cameras.main, durationMs, intensity),
@@ -3589,7 +3696,7 @@ export class BarrowspireScene extends Phaser.Scene {
         // Leave the barrow is the card's own path (FS-QPDKN req 13): one send, one pending flag
         // the record's Close: its one sound played here, then the close (FS-QPDKN § Change: The party
         // death flow and the spectate switcher, R153)
-        close: { record: () => this.recordClosePressed() },
+        close: { record: () => this.recordClosePressed(), wares: () => this.closeWares() },
         leaveRun: () => this.leaveTheBarrow(),
         fall: () => this.fallWhereYouStand(),
         // the OPTIONS Music row, applied to the tower's music at once (§ Change: The tower's music, W6)
@@ -4049,7 +4156,7 @@ export class BarrowspireScene extends Phaser.Scene {
       const line = loreForReply(payload);
       if (line) this.sayLore(line);
       // a sealed floor's replies, as HUD notices in their tones (FS-5FZ4J §I R49, §J R53)
-      const notice = this.sealReplies.notice(payload, this.lastGameState?.seal);
+      const notice = this.sealReplies.notice(payload, this.lastGameState?.seal) ?? encounterReplyNotice(payload);
       if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     });
 
@@ -4059,6 +4166,10 @@ export class BarrowspireScene extends Phaser.Scene {
       const refusal = equipRefusal(reply);
       if (refusal) this.showNotification(refusal, NOTICE_BACKING.refused);
     });
+
+    // a purchase answered (FS-9JV5K §F R23) and an antidote drunk or refused (R24)
+    socketManager.on("buy", (reply: BuyReply) => this.waresAnswered(reply));
+    socketManager.on("use_item", (reply: UseItemReply) => this.itemUsed(reply));
 
     // end_game: the run is over. No card (FS-GV8WN R24); interaction locks
     const endGame = () => this.endRun();
@@ -4107,6 +4218,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // a late frame from the floor the party has climbed from (FS-KE075 §H.41)
     if (held && state.floor !== undefined && state.floor < held.floor) return;
     this.lastGameState = state;
+    // a drunk antidote gone from the bag: the drink is answered (FS-9JV5K §F R24)
+    this.drinking.see(state.current_player?.inventory ?? []);
 
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
     // the new one, so nothing waits on the transition, which only plays over the result.
@@ -4230,6 +4343,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.showSeal(state, arrived);
     // its detected traps, and the player's own poison said (FS-5FZ4J §J R51, R53)
     this.showHazards(state);
+    // its encounter NPCs, the cage and key, their lines, and the player's contract (FS-4EC7Z §G)
+    this.showEncounters(state);
     this.updateFloorIndicator(state);
 
     // Run dressing, once the floor's static entities are known (FS-8RBQY §C.4–§C.5); then every
@@ -4676,6 +4791,8 @@ export class BarrowspireScene extends Phaser.Scene {
       ...[...this.switches.values()].map(({ pos }) => ({ kind: "switch" as const, at: pos })),
       ...[...this.escapeDoors.values()].map(({ pos }) => ({ kind: "escape-door" as const, at: pos })),
       ...[...this.stairs.placed()].map(({ pos }) => ({ kind: "stairs" as const, at: pos })),
+      // a secret door the Cutthroats' tip revealed, while it is shut (FS-4EC7Z §G R35)
+      ...this.seal.revealedDoors().map(({ at, seenAt }) => ({ kind: "secret-door" as const, at, seenAt })),
     ];
     // a shut gate draws as a wall stroke (FS-5FZ4J §J R56)
     minimap.show((id) => dungeon.seen.state(id), fixtures, this.seal.shutGates());
@@ -4889,6 +5006,13 @@ export class BarrowspireScene extends Phaser.Scene {
     // next floor's seal is said on arrival (FS-5FZ4J §J R53)
     this.seal.clear();
     this.respites.clear();
+    // the merchant goes with his floor, his panel with him; a purchase in flight still answers (FS-9JV5K §B R12)
+    this.merchant.clear();
+    this.closeWares();
+    // the encounters go with their floor, their lines with them; an ally never climbs (FS-4EC7Z §C R12)
+    this.encounters.clear();
+    this.cages.clear();
+    this.npcLines.clear();
     this.sealLights.clear();
     this.sealWindow.reset();
     this.traps.clear();
@@ -5242,6 +5366,171 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The wandering merchant's body (FS-9JV5K §F R21): his sheet's idle at his position, sorted by his
+   * footprint as a body is, under his stand-in's wash until his own sheet lands; his nameplate,
+   * "Wandering Merchant" in the function-NPC ink over his head; and his soft lantern among the
+   * floor's fixed lights. Both go when his body does.
+   */
+  private addMerchant(look: MerchantLook, at: Point): Phaser.GameObjects.Sprite {
+    const body = this.add.sprite(0, 0, placeholderTexture("warrior", "down"));
+    const name = this.add
+      .text(0, 0, "Wandering Merchant", {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: "12px",
+        color: toCss(palette.markerFunction),
+        stroke: toCss(palette.markerStroke),
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(MARKER_DEPTH.name);
+    const parts: MerchantParts = { name };
+    this.merchantParts.set(body, parts);
+    this.dressMerchant(body, look);
+    this.standMerchant(body, at);
+    body.once("destroy", () => {
+      name.destroy();
+      this.unlightMerchant(parts);
+      this.merchantParts.delete(body);
+    });
+    return body;
+  }
+
+  /** His body in `look`: its idle facing the viewer, under the stand-in's wash or none. */
+  private dressMerchant(body: Phaser.GameObjects.Sprite, look: MerchantLook): void {
+    const anim = new CharacterAnimator(this.art, { sheet: look.sheet }, "se");
+    const parts = this.merchantParts.get(body);
+    if (parts) parts.anim = anim;
+    if (anim.baked) {
+      anim.dress(body);
+      // he never walks: standing still, his idle is what the animator chooses
+      anim.show(body, anim.step({ x: 0, y: 0 }, 0, 0, false));
+    }
+    if (look.tint === undefined) body.clearTint();
+    else body.setTint(look.tint);
+    this.placeMerchantName(body);
+    this.lightMerchant(body);
+  }
+
+  /** His body stood at `at`, his nameplate over his head, his lantern over him. */
+  private standMerchant(body: Phaser.GameObjects.Sprite, at: Point): void {
+    const parts = this.merchantParts.get(body);
+    if (parts) parts.at = at;
+    standAt(body, at, 1);
+    this.placeMerchantName(body);
+    this.lightMerchant(body);
+  }
+
+  /**
+   * His lantern among the floor's fixed lights, hung at its lit glass by his sheet's crown (R21), hung
+   * again as his own sheet lands or he is stood elsewhere.
+   */
+  private lightMerchant(body: Phaser.GameObjects.Sprite): void {
+    const parts = this.merchantParts.get(body);
+    const dungeon = this.dungeon;
+    if (!parts?.at || !dungeon) return;
+    this.unlightMerchant(parts);
+    const { at } = parts;
+    // the crown is screen px at his drawn size (manifest `crown`), and he stands at size 1
+    parts.lantern = merchantLantern(worldToScreen(at.x, at.y), tileHash(Math.round(at.x), Math.round(at.y), 31), parts.anim?.crown);
+    dungeon.lights.add("merchant_lantern", parts.lantern, at);
+    this.lightNearChunks();
+  }
+
+  /** His lantern off the floor's lights, if it is lit. */
+  private unlightMerchant(parts: MerchantParts): void {
+    if (!parts.lantern) return;
+    this.dungeon?.lights.remove([parts.lantern]);
+    parts.lantern = undefined;
+    this.lightNearChunks();
+  }
+
+  /** His nameplate over his sheet's head (its `crown`), as a player's name stands. */
+  private placeMerchantName(body: Phaser.GameObjects.Sprite): void {
+    const parts = this.merchantParts.get(body);
+    if (!parts) return;
+    const base = markerBase(body, parts.anim?.crown, false, parts.anim?.artScale ?? 1) ?? body.y;
+    parts.name.setPosition(body.x, base - NAME_GAP);
+  }
+
+  /**
+   * E on the merchant (FS-9JV5K §F R21, R22): his wares panel, on the UI scene, with what he lists
+   * now. Never offered to a player out of the delve (Edge States: a spectating player).
+   */
+  private openWares(): void {
+    const merchant = this.merchant.current();
+    if (!merchant || this.runEnded || resolved(this.lastGameState?.current_player)) return;
+    this.showWares(this.trade.open(merchant));
+  }
+
+  /**
+   * Each broadcast while the panel is open: what is in reach and in play handed to the trade, whose
+   * {@link WaresTrade.follow} says whether the panel shows again or shuts (R22).
+   */
+  private keepWares(state: ClientGameState): void {
+    const me = this.playerPos;
+    const inReach = me !== undefined && this.merchant.reach(me) !== null;
+    const next = this.trade.follow(this.merchant.current(), inReach, !resolved(state.current_player));
+    if (next?.kind === "show") this.showWares(next.wares);
+    else if (next?.kind === "close") this.closeWares();
+  }
+
+  /** The panel's data to the UI scene, only when it changed. */
+  private showWares(wares: ShownWares): void {
+    const key = JSON.stringify(wares);
+    if (key === this.shownWaresKey) return;
+    this.shownWaresKey = key;
+    this.ui.wares({ kind: "show", wares });
+  }
+
+  /** The wares panel shut, by the player, the menu, his leaving or the run's end: the UI scene takes it down. */
+  private closeWares(): void {
+    if (!this.trade.openFor) return;
+    this.trade.close();
+    this.shownWaresKey = "";
+    this.ui.wares({ kind: "close" });
+  }
+
+  /** Buy on a ware (R23): the `buy` sent, the row Paying… until its reply; nothing while one is in flight. */
+  private buyWare(ware: string): void {
+    const payload = this.trade.buy(ware);
+    if (!payload) return;
+    socketManager.sendMessage(ActionType.Buy, payload);
+    const merchant = this.merchant.current();
+    if (merchant) this.showWares(this.trade.view(merchant));
+  }
+
+  /**
+   * The `buy` reply (R23): Paying… ends; a success's notice, a refusal's line on the open panel (or a
+   * notice once it is shut), and the purse line reads the wallet again.
+   */
+  private waresAnswered(reply: BuyReply): void {
+    const { notice } = this.trade.answer(reply ?? { success: false });
+    if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    this.ui.wares({ kind: "answered" });
+    const merchant = this.merchant.current();
+    if (this.trade.openFor && merchant) this.showWares(this.trade.view(merchant));
+  }
+
+  /** The gear's Drink on a bag antidote (R24): its `use_item`, unless one is still to be answered. */
+  private drink(item: string): void {
+    if (this.drinking.press(item)) socketManager.sendMessage(ActionType.UseItem, { item_entity_id: item });
+  }
+
+  /**
+   * The `use_item` reply (R24): a refusal in its words, nothing spent; a success plays the potion
+   * shimmer in the poison tint's colours and clears nothing else (the state's `poisoned_for` going
+   * clears the tint).
+   */
+  private itemUsed(reply: UseItemReply): void {
+    const refusal = drinkRefusal(reply ?? { success: false });
+    if (refusal) {
+      this.drinking.refused();
+      return this.showNotification(refusal, NOTICE_BACKING.refused);
+    }
+    this.shimmers?.playGranted(ANTIDOTE_LOOK, this.playerAnim?.crown);
+  }
+
+  /**
    * A sealed floor's seal from this broadcast (FS-5FZ4J §J R51, R53): its pieces, gate and pits,
    * once the floor's cell grid stands; its events as HUD notices, the seal named on `arrival`'s
    * first broadcast as on a climb's; the Braziers window's countdown, handed to the HUD only on a change.
@@ -5252,6 +5541,9 @@ export class BarrowspireScene extends Phaser.Scene {
     if (dungeon) this.seal.sync(state, dungeon.grid, dungeon.faces);
     // the floor's fountain and the hallowed altar, its candles among the floor's lights (FS-5FZ4J §J R51)
     if (dungeon) this.respites.sync(state);
+    // the wandering merchant, his lantern among the floor's lights, and his panel kept to him (FS-9JV5K §F R21, R22)
+    if (dungeon) this.merchant.sync(state);
+    this.keepWares(state);
     for (const notice of this.sealWatch.see(state, arrival)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     const { view, changed } = this.sealWindow.see(state.seal);
     if (changed) this.ui.hud({ world: "run", kind: "window", window: view });
@@ -5325,6 +5617,44 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!sprite.active) return;
       showState(sprite, this.art, settle.look.sheet, settle.look.frame);
       sprite.setAlpha(settle.alpha);
+    });
+  }
+
+  /**
+   * A floor's encounters from this broadcast (FS-4EC7Z §G): its encounter NPCs and their over-head
+   * lines, the cage and its key, their events as HUD notices (the cage key taken, the pilgrims lost);
+   * and the player's own contract (R34): its end said as a notice, its heading line and Contract
+   * Settled's mark handed to the UI scene (the mark rides `statusMarks`). A taker who died still hears
+   * it lost; while they watch a teammate nothing of it is said.
+   */
+  private showEncounters(state: ClientGameState): void {
+    this.encounters.sync(state);
+    this.cages.sync(state);
+    this.npcLines.sync(state.encounter_npcs ?? [], this.time.now);
+    for (const notice of this.encounterWatch.see(state)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    const me = this.watchedPlayerId === undefined ? state.current_player : null;
+    for (const notice of this.contractWatch.see(me ? me.contract : null)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    const line = contractLine(me?.contract);
+    if (line !== this.shownContractLine) {
+      this.shownContractLine = line;
+      this.ui.hud({ world: "run", kind: "contract", line });
+    }
+  }
+
+  /** One frame of the encounter NPCs: eased and played, and their lines over their heads (FS-4EC7Z §G R29, R30). */
+  private stepEncounters(time: number): void {
+    this.encounters.step();
+    this.npcLines.step(time, (id) => {
+      const drawn = this.encounters.drawn(id);
+      return drawn && { at: this.encounterBodies.head(drawn.body), shown: drawn.body.visible };
+    });
+  }
+
+  /** The encounters' group (ADR-0071), once a scene; landed, its NPCs and its hostile humans wear their own looks. */
+  private fetchEncounterArt(): void {
+    this.onDemand?.fetch(ENCOUNTER_ART.group, () => {
+      this.encounters.landed();
+      this.monsters?.redress(ENCOUNTER_ART.group);
     });
   }
 
@@ -5643,6 +5973,9 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.summoning.placed(),
       ...this.seal.placed(),
       ...this.respites.placed(),
+      ...this.merchant.placed(),
+      ...this.encounters.placed(),
+      ...this.cages.placed(),
       ...this.traps.placed(),
       ...this.dressingAt,
     ])
@@ -5723,10 +6056,19 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.summoning.placed(),
       ...this.seal.placed(),
       ...this.respites.placed(),
+      ...this.merchant.placed(),
+      ...this.cages.placed(),
       ...this.traps.placed(),
       ...this.dressingAt,
     ];
     for (const { sprite, pos } of placed) sprite.setVisible(!unseen(pos));
+    // encounter NPCs are bodies that move, hidden as monsters are, their plates with them (FS-4EC7Z §G R29)
+    for (const { sprite, pos } of this.encounters.placed()) {
+      sprite.setVisible(!hiddenAt(pos) && !this.fogHides(pos));
+      this.encounterBodies.show(sprite);
+    }
+    // the merchant's nameplate over the dark goes with his body, never left to the blackout (§C.2)
+    for (const { sprite } of this.merchant.placed()) this.merchantParts.get(sprite)?.name.setVisible(sprite.visible);
     for (const { bed, glow, trail } of this.trails.placed()) {
       // a trail is a line on the floor: hidden once neither end is in sight
       const shown = !unseen(trail.from) || !unseen(trail.to);
@@ -6406,6 +6748,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.escapedPlayers = undefined;
     this.sealWatch.reset();
     this.statusWatch.reset();
+    this.encounterWatch.reset();
+    this.contractWatch.reset();
   }
 
   /**
@@ -6435,6 +6779,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.monsters?.update(delta);
     this.hounds?.update(delta);
     this.stunTells?.show(this.monsters?.stunned() ?? []);
+    this.stepEncounters(time);
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {
       // still update other players smoothly, and keep hiding what stands in the rooms

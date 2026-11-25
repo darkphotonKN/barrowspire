@@ -4,7 +4,8 @@
  * without a canvas.
  */
 
-import type { EquipmentState } from "@/types/gameState";
+import { itemIcon } from "@/render/art/itemIcons";
+import { getItemType, type EquipmentState, type ItemState } from "@/types/gameState";
 
 /** The slots a potion is drunk from, in the order the server tries them (R5). */
 const CONSUMABLE_SLOTS = [
@@ -24,4 +25,67 @@ export function healthPotionCount(
   return CONSUMABLE_SLOTS.filter(
     (slot) => (equipment[slot]?.healing_amount ?? 0) > 0,
   ).length;
+}
+
+/**
+ * Whether a bag item is drunk from the bag (FS-9JV5K §F R24): the antidote, which the bag offers
+ * Drink for in place of equip. Known by the icon resolver's own rule for the `ANTIDOTE` template (its
+ * name: the template code is not on the wire, R25), so the icon and the action never disagree.
+ */
+export function drinksFromBag(item: ItemState): boolean {
+  return itemIcon({ ...item, item_type: getItemType(item) }) === "antidote";
+}
+
+/** The server's `use_item` reply (game-service `use_item.go`): `reason` on a refusal. */
+export interface UseItemReply {
+  success: boolean;
+  reason?: string;
+  message?: string;
+}
+
+/** Each refusal's line (R24); nothing was drunk, so the antidote stays in the bag. */
+const USE_REFUSALS: Readonly<Record<string, string>> = {
+  not_poisoned: "You are not poisoned.",
+  not_in_bag: "That is no longer in your bag.",
+  not_usable: "That cannot be drunk.",
+};
+
+/** A refused drink's line, or none on a success: the client's words, else the server's, else its own. */
+export function drinkRefusal(reply: UseItemReply): string | null {
+  if (reply.success) return null;
+  const known = reply.reason !== undefined && Object.hasOwn(USE_REFUSALS, reply.reason) ? USE_REFUSALS[reply.reason] : undefined;
+  if (known) return known;
+  const words = reply.message?.trim();
+  return words ? `${words[0].toUpperCase()}${words.slice(1)}${/[.!?]$/.test(words) ? "" : "."}` : USE_REFUSALS.not_usable;
+}
+
+/**
+ * The one drink in flight (FS-9JV5K §F R24): the antidote whose `use_item` is sent and not yet
+ * answered, so Drink pressed again sends nothing. It ends as a state's bag drops that antidote (it was
+ * drunk) or a refusal answers (it is still there, to be drunk again).
+ */
+export class DrinkInFlight {
+  private pending?: string;
+
+  /** Drink pressed on `item`: whether to send its `use_item`; never while one is still to be answered. */
+  press(item: string): boolean {
+    if (this.pending !== undefined) return false;
+    this.pending = item;
+    return true;
+  }
+
+  /** A state's bag: the drink is over once its antidote is gone from it. */
+  see(bag: readonly Pick<ItemState, "entity_id">[]): void {
+    if (this.pending !== undefined && !bag.some((item) => item.entity_id === this.pending)) this.pending = undefined;
+  }
+
+  /** The drink refused: nothing was spent, so it may be pressed again. */
+  refused(): void {
+    this.pending = undefined;
+  }
+
+  /** A new run: nothing in flight. */
+  reset(): void {
+    this.pending = undefined;
+  }
 }

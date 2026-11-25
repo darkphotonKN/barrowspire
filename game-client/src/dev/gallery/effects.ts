@@ -44,7 +44,7 @@ import type {
 } from "@/render/effects/runtime";
 import { playHeavyShotRelease } from "@/render/effects/heavyShot";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
-import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
+import { ANTIDOTE_LOOK, HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { StunTells } from "@/render/effects/stun";
@@ -625,6 +625,16 @@ export const EFFECT_CARDS: EffectCard[] = [
       const shimmers = new ShimmerFx(s.scene, s.art, s.lights);
       shimmers.follow(s.at);
       shimmers.playGranted(HEAL_LOOK, s.crown);
+    },
+  },
+  {
+    module: "shimmer",
+    name: "Antidote shimmer (granted base)",
+    demo: (s) => {
+      // as an antidote drunk from the bag plays it, in the poison tint's colours (FS-9JV5K §F R24)
+      const shimmers = new ShimmerFx(s.scene, s.art, s.lights);
+      shimmers.follow(s.at);
+      shimmers.playGranted(ANTIDOTE_LOOK, s.crown);
     },
   },
   {

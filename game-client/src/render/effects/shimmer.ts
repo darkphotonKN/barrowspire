@@ -57,6 +57,17 @@ export const HEAL_LOOK: Look = {
   light: "oxblood",
 };
 
+/**
+ * Poison ended by an antidote (FS-9JV5K §F R24): the potion shimmer in the poison tint's colour, drawn
+ * from the tint's two parents (`palette.poisoned` is arcane warmed toward bright brass), so the cure
+ * reads as the poison's own colour going, never as health's red.
+ */
+export const ANTIDOTE_LOOK: Look = {
+  glint: "arcane",
+  centre: "brassBright",
+  light: "arcane",
+};
+
 /** Every object and the light of a granted shimmer are gone by now (R12; FS-KYPQ9 §B.2's 1200). */
 export const SHIMMER_GRANTED_MS = 1150;
 

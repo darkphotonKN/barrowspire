@@ -74,6 +74,15 @@ const (
 	MonsterArchetypeDarkReaper  MonsterArchetype = "dark_reaper"
 )
 
+// The hostile humans (FS-4EC7Z §F R24): a Cutthroat turned in the parley
+// (§D R14), never rolled in a floor's pool. Its look on the wire is the
+// Cutthroat it was.
+const MonsterArchetypeCutthroat MonsterArchetype = "cutthroat"
+
+// The contract's mark (FS-4EC7Z §E R17, §F R24): a champion-scaled human
+// duelist in one of two looks, spawned by a contract, never rolled.
+const MonsterArchetypeContractMark MonsterArchetype = "contract_mark"
+
 // MonsterAction is what a monster is doing, as the state broadcast names it.
 // `attack` covers the wind-up and the strike, a demon's slam included.
 // FS-77AB6 §Requirements 32. `claw` is a demon's fire claw, from the tick it
@@ -112,6 +121,10 @@ type MonsterComponent struct {
 	// Name is server-authored, elite prefix included and level excluded: every
 	// client shows the same one and adds the level itself.
 	Name string
+	// Look is its art variant within its archetype, for a hostile human (a
+	// turned Cutthroat's is the one it wore, FS-4EC7Z §F R24); empty for
+	// every archetype whose look is the archetype itself.
+	Look string
 
 	// Home is where it was spawned, the anchor it wanders around and leashes to.
 	HomeX, HomeY float64
@@ -187,6 +200,27 @@ type MonsterComponent struct {
 	StunRemaining float64
 	// CorpseRemaining is how long a dead monster still lies before it is removed.
 	CorpseRemaining float64
+
+	// PoisonSeconds, copied from its sheet at spawn, is how long each of its
+	// hits that costs health poisons for: its poison blades (FS-4EC7Z §E
+	// R18). 0 for a monster whose hits do not poison.
+	PoisonSeconds float64
+	// Flight is its flight to a far room, a contract mark's at a quarter of
+	// its health (FS-4EC7Z §E R18); the zero value while it does not flee.
+	Flight Flight
+}
+
+/*
+Flight is a monster's run to a point (FS-4EC7Z §E R18): while Fleeing it
+walks there, by path on a dungeon floor, turning on no one and answering no
+hit, until it is within reach of the point or Remaining runs out, and then it
+has Arrived. Whoever set the flight takes the arrival up and clears it.
+*/
+type Flight struct {
+	Fleeing   bool
+	X, Y      float64
+	Remaining float64
+	Arrived   bool
 }
 
 func (m *MonsterComponent) Type() ecs.ComponentType {

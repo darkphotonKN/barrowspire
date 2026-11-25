@@ -311,6 +311,9 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   opens and a key fits), "puzzle" for the seal itself (the puzzle is how a seal is broken).
 - **Seal piece** — one interactable a seal is broken through: a lever, a pressure plate, the stair
   key, the bridge lever, a brazier. Stands on a branch other than the stairs'.
+- **Lore piece** — an interactable that tells, never breaks a seal: the Lever Order's **mural**
+  (answers the glyph order) and a hidden room's **lore shrine**. Not a seal piece and wakes nothing;
+  on the wire it rides `seal_pieces` beside them. *Avoid*: calling the mural a seal piece.
 - **Solvable by one** — every seal, gap and hidden room the way up depends on can be passed by one
   living delver of any class with no book page (ADR-0092). A shortcut (a book page, an ally, a
   second delver) is faster, never required.
@@ -378,7 +381,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   party), **Cutthroats** (talk first; half turn hostile, the rest reveal the hidden room). An
   encounter NPC is not a monster until it turns, and never a hub NPC.
 - **Hired ally** — an encounter NPC fighting on the party's side: hired (FS-X2CMM's Strike a
-  Deal) or freed. Follows its **hirer** (the party, for freed captives), fights monsters, holds a
+  Deal) or freed. Follows its **hirer** (the delver who hired it, or who opened the cage for freed captives), fights monsters, holds a
   pressure plate, triggers traps, is targeted by monsters, never climbs. At most 3 a party. Its
   kills give no experience and count as the hirer's for loot.
 - **Contract** — the once-a-delve job the mercenary takes (FS-X2CMM's Take a Contract): a **mark**

@@ -53,9 +53,10 @@ func (c *Client) Close() error {
 * debited: success, the gold was taken by an earlier call.
 *
 * FailedPrecondition is types.ErrNotEnoughGold, NotFound types.ErrNoWallet,
-* and Unavailable, DeadlineExceeded and Aborted types.ErrWalletTransient: the
-* same key may be tried again. Anything else, Unauthenticated included, is a
-* plain error and final.
+* Unavailable, DeadlineExceeded and Aborted types.ErrWalletTransient (the same
+* key may be tried again), and Unauthenticated and InvalidArgument
+* types.ErrWalletRefused (nothing was taken). Anything else, Internal
+* included, is a plain error and final: the debit may have committed.
 **/
 func (c *Client) Debit(ctx context.Context, amount int64, key string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
@@ -77,6 +78,8 @@ func debitError(err error) error {
 		return fmt.Errorf("%w: %w", types.ErrNoWallet, err)
 	case codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
 		return fmt.Errorf("%w: %w", types.ErrWalletTransient, err)
+	case codes.Unauthenticated, codes.InvalidArgument:
+		return fmt.Errorf("%w: %w", types.ErrWalletRefused, err)
 	default:
 		return err
 	}

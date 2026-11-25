@@ -38,8 +38,10 @@ func trapCount(depth int) int {
 
 // springTraps runs the floor's traps for the tick, after the walk, and applies
 // what fired: a spike plate's, dart wall's or fire jet's hit, queued for this
-// tick's combat; a tripwire's ambush, woken on the delver who tripped it; a gas
-// vent's poison on each delver in its cloud (FS-5FZ4J §D R25-R29).
+// tick's combat; a tripwire's ambush, woken on the body who tripped it; a gas
+// vent's poison on each body in its cloud (FS-5FZ4J §D R25-R29). A hired ally
+// fires a trap as a delver does, though its hit passes the ally by as every
+// trap's passes an encounter NPC (FS-4EC7Z §A R3, §C R9).
 func (s *Session) springTraps(dt float64, entities []*ecs.Entity) {
 	traps := systems.TrapSystem{
 		CellSize:    s.dungeonCellSize(),
@@ -128,7 +130,8 @@ func cellsApart(a, b components.Cell) int {
 * (FS-5FZ4J §D R23): walkable; not in the start room nor within
 * TrapStartClearCells of it, which holds every start spot of the party; not a
 * doorway; not a barrier's cell, the gate's or a secret door's; not in a hidden
-* room; not a seal piece's cell, a stone block's included; and clear of
+* room nor in the encounter room (FS-4EC7Z §A R2, amended 2026-11-25); not a
+* seal piece's cell, a stone block's included; and clear of
 * everything the build has held so far, fixtures, containers, the tome and
 * altars and the whole Weighted Plates room among them.
 **/
@@ -141,10 +144,13 @@ func (s *Session) trapGround(d *dungeonFloor) (off, on []components.Cell) {
 		}
 	}
 	hold(d.layout.Stairs.Barrier)
-	hiddenRegion := map[int]bool{}
+	shutRegion := map[int]bool{}
 	for _, h := range d.layout.Hidden {
 		hold(h.Barrier)
-		hiddenRegion[d.roomRegion(h.Room)] = true
+		shutRegion[d.roomRegion(h.Room)] = true
+	}
+	if d.encounter != nil {
+		shutRegion[d.roomRegion(d.encounter.room)] = true
 	}
 	for _, e := range s.EntityManager.GetAllEntities() {
 		if pc, ok := e.GetComponent(ecs.ComponentTypeSealPiece); ok {
@@ -163,7 +169,7 @@ func (s *Session) trapGround(d *dungeonFloor) (off, on []components.Cell) {
 			c, i := components.Cell{X: x, Y: y}, y*cols+x
 			region := d.region[i]
 			switch {
-			case region == 0, d.doorway[i], barred[c], hiddenRegion[region]:
+			case region == 0, d.doorway[i], barred[c], shutRegion[region]:
 				continue
 			case x >= start.X-TrapStartClearCells && x < start.X+start.W+TrapStartClearCells &&
 				y >= start.Y-TrapStartClearCells && y < start.Y+start.H+TrapStartClearCells:

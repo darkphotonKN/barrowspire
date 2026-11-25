@@ -135,6 +135,24 @@ const (
 	ComponentTypeBlessed           ComponentType = "Blessed"
 	// the wandering merchant and his wares (FS-9JV5K §A R1-R4)
 	ComponentTypeMerchant ComponentType = "Merchant"
+	// a floor's encounter, its humanoid NPCs and the Lost Pilgrims' plea and
+	// wave (FS-4EC7Z §A-§B)
+	ComponentTypeEncounter    ComponentType = "Encounter"
+	ComponentTypeEncounterNPC ComponentType = "EncounterNPC"
+	ComponentTypePilgrimWave  ComponentType = "PilgrimWave"
+	// a hired ally's fighting and following, and the Captives' cage and key
+	// (FS-4EC7Z §C-§D)
+	ComponentTypeAlly     ComponentType = "Ally"
+	ComponentTypeCaptives ComponentType = "Captives"
+	ComponentTypeCage     ComponentType = "Cage"
+	ComponentTypeCageKey  ComponentType = "CageKey"
+	// the Cutthroats' parley and hire (FS-4EC7Z §D R14-R15)
+	ComponentTypeCutthroats ComponentType = "Cutthroats"
+	// the delve's contract, its mark and the taker's Contract Settled
+	// (FS-4EC7Z §E R16-R19)
+	ComponentTypeContract        ComponentType = "Contract"
+	ComponentTypeMark            ComponentType = "Mark"
+	ComponentTypeContractSettled ComponentType = "ContractSettled"
 )
 
 type Entity struct {

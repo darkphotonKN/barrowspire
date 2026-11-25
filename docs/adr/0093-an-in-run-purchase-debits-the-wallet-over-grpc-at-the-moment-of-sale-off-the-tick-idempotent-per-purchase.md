@@ -9,6 +9,8 @@ Builds on: [ADR-0005](0005-wallet-owns-balance-ledger-is-a-reconciliation-record
 owns the balance), [ADR-0009](0009-idempotency-belongs-to-the-caller.md) (the caller mints the
 key), [ADR-0044](0044-the-mailbox-lives-in-notification-and-a-claim-is-idempotent-by-caller-keys.md)
 (the idempotent credit this debit mirrors)
+Amended by: [ADR-0096](0096-an-in-run-purchase-whose-debit-outcome-is-unknown-is-released-and-logged-not-re-driven.md) — the
+Consequences' accepted gaps (an unknown debit outcome is a second one)
 Does not touch: [ADR-0011](0011-settlement-write-path-is-a-temporal-activity-per-owning-service.md)
 (the marketplace settlement saga keeps its Temporal activities)
 

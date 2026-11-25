@@ -510,3 +510,22 @@ func TestGrid_Walkable_ReadsTheCellByColumnAndRow(t *testing.T) {
 	assert.False(t, g.Walkable(-1, 0), "off the grid")
 	assert.False(t, g.Walkable(3, 1), "off the grid")
 }
+
+// WalkDistances walks round rock 4-neighbour, leaves what it cannot reach at
+// -1, and stops at a cell a barrier has shut. FS-4EC7Z §E R17-R18.
+func TestWalkDistances_RoundRockAndStoppedByAShutCell(t *testing.T) {
+	g, _ := gridOf(t,
+		"...#.",
+		".#.#.",
+		".....",
+	)
+	dist := g.WalkDistances(0)
+	assert.Equal(t, 0, dist[0])
+	assert.Equal(t, 2, dist[2], "two steps along the top")
+	assert.Equal(t, -1, dist[3], "rock")
+	assert.Equal(t, 8, dist[4], "round the rock by the bottom row")
+
+	g.SetWalkable(3, 2, false)
+	assert.Equal(t, -1, g.WalkDistances(0)[4], "shut off")
+	assert.Equal(t, -1, g.WalkDistances(3)[0], "from rock, nothing")
+}

@@ -149,3 +149,33 @@ func (g *Grid) ground(x, y int) bool {
 func (g *Grid) valid(cell int) bool {
 	return cell >= 0 && cell < len(g.walkable) && g.walkable[cell]
 }
+
+// WalkDistances is the 4-neighbour walk in cells from cell from to every
+// cell over the walkable ones, as the grid stands now (a shut barrier
+// blocks it): -1 for a cell it cannot reach, and for every cell when from is
+// not walkable. FS-4EC7Z §E R17-R18.
+func (g *Grid) WalkDistances(from int) []int {
+	dist := make([]int, len(g.walkable))
+	for i := range dist {
+		dist[i] = -1
+	}
+	if !g.valid(from) {
+		return dist
+	}
+	dist[from] = 0
+	queue := []int{from}
+	for i := 0; i < len(queue); i++ {
+		c := queue[i]
+		x, y := c%g.cols, c/g.cols
+		for _, n := range [4][2]int{{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}} {
+			if !g.ground(n[0], n[1]) {
+				continue
+			}
+			if next := n[1]*g.cols + n[0]; dist[next] < 0 {
+				dist[next] = dist[c] + 1
+				queue = append(queue, next)
+			}
+		}
+	}
+	return dist
+}

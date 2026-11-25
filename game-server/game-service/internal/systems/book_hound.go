@@ -139,7 +139,7 @@ func (s *MonsterAISystem) runHounds(deltaTime float64, entities []*ecs.Entity) {
 
 		goal, near, ok := s.houndGoal(entity, hound, at, entities)
 		if ok && distance(at, goal) > near {
-			x, y := s.along(&hound.Route, at, goal.X, goal.Y)
+			x, y := router{s.grid}.towards(&hound.Route, at, goal.X, goal.Y)
 			velocity.VX, velocity.VY = unitToward(at, x, y)
 		} else {
 			velocity.VX, velocity.VY = 0, 0

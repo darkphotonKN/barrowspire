@@ -76,3 +76,23 @@ func asList(v any) []any {
 	list, _ := v.([]any)
 	return list
 }
+
+// FS-4EC7Z §F R28: a secret door the Cutthroats revealed carries revealed:
+// true on its barriers entry; any other barrier carries no revealed key.
+func TestSerialize_RevealedSecretDoorCarriesRevealed(t *testing.T) {
+	em := ecs.NewEntityManager()
+	_, _, _, _ = sealedFloor(em)
+	door := em.CreateEntity()
+	door.AddComponent(&components.BarrierComponent{Kind: components.BarrierSecretDoor, Cells: []components.Cell{{X: 5, Y: 5}}})
+	door.AddComponent(components.NewOpenableComponent(false))
+	door.AddComponent(&components.DetectableComponent{Spots: []components.Spot{{X: 440, Y: 440}}, Detected: true, Revealed: true})
+
+	for _, b := range asList(sealWireOf(t, em, types.WorldTypeRun)["barriers"]) {
+		barrier := b.(map[string]any)
+		if barrier["entity_id"] == door.ID.String() {
+			assert.Equal(t, true, barrier["revealed"])
+			continue
+		}
+		assert.NotContains(t, barrier, "revealed", "%s", barrier["kind"])
+	}
+}

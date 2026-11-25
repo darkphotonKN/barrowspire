@@ -690,3 +690,106 @@ function withEmbers(cloth) {
   m.emissiveIntensity = 1.8;
   return m;
 }
+
+// --- the dungeon encounters (FS-4EC7Z §H R36; encounter.js) -------------------------------------
+
+/**
+ * The encounter cast's variant tones (FS-4EC7Z §H R36), by kind and the variant letter the
+ * server's `look` ends in (`pilgrim_b`): each variant re-dyes the same figure's slots, as a hub
+ * resident's palette does (FOLK_PALETTES). Undyed and plant-dyed homespun, road-worn, nothing a
+ * player's heraldic red and nothing in the friendly green; hair tones carry the brows (FS-67QQY
+ * R11). The captives' cloth is rag, the cutthroats' leather and wool.
+ */
+export const ENCOUNTER_TONES = {
+  pilgrim: {
+    // oatmeal undyed wool warmed toward rose (a khaki habit reads as grave-rot at 1x, GEAR.shirt),
+    // under a brown hood, grey-haired
+    a: { robe: mix(mix("vellumDark", "barrowBrown", 0.35), "oxbloodText", 0.16), hood: mix("barrowBrown", "vellumDark", 0.2), hair: GEAR.hairGrey },
+    // a woad habit faded to grey-blue under an oatmeal hood, brown-haired
+    b: { robe: mix(mix(mix("slate", "slateLight", 0.5), "necrotic", 0.2), "vellumDark", 0.22), hood: mix(mix("vellumDark", "barrowBrown", 0.4), "oxbloodText", 0.14), hair: mix("barrowBrown", "barrowDeep", 0.25) },
+    // a russet habit under a slate hood, black-haired
+    c: { robe: mix(mix("ember", "barrowBrown", 0.7), "barrowDeep", 0.3), hood: mix("slate", "slateLight", 0.5), hair: mix("pitch", "barrowDeep", 0.45) },
+  },
+  captive: {
+    // a linen shirt gone grey-brown with the cell, dark breeches, dark hair
+    a: { shirt: mix(mix("vellumDark", "barrowBrown", 0.55), "oxbloodText", 0.1), breeches: mix("barrowDeep", "slate", 0.4), hair: mix("barrowDeep", "pitch", 0.3) },
+    // a grey rag of a shirt, brown breeches, flax hair
+    b: { shirt: mix(mix("slateLight", "vellum", 0.45), "barrowBrown", 0.15), breeches: mix("barrowBrown", "barrowDeep", 0.4), hair: mix("vellumDark", "brass", 0.4) },
+  },
+  cutthroat: {
+    // dark brown leathers under a hood of brown wool, a dark beard
+    a: { jerkin: mix(mix("barrowDeep", "pitch", 0.2), "ember", 0.05), hood: mix(mix("barrowBrown", "barrowDeep", 0.3), "slate", 0.15), hair: mix("barrowDeep", "pitch", 0.35) },
+    // slate-black leathers under an ochre hood gone brown, a scarf over the mouth
+    b: { jerkin: mix(mix("slate", "pitch", 0.3), "barrowDeep", 0.25), hood: mix(mix("brass", "barrowBrown", 0.6), "barrowDeep", 0.45), hair: mix("ember", "barrowDeep", 0.62) },
+  },
+};
+
+/**
+ * The marks' and the cast's shared gear tones (FS-4EC7Z §H R36). The hooded duelist: a long coat
+ * of slate-black wool, never pure black (the dark-room floor), lined and sashed in a dried
+ * oxblood, the hostile channel he is; two bright curved blades. The debtor knight: plate gone
+ * dark and dented with rust at its seams, rusted mail, and a ruined house's tabard per pale in a
+ * faded ochre and a soot grey, torn at the hem.
+ */
+export const ENCOUNTER_GEAR = {
+  duelistCoat: mix(mix("charcoal", "slate", 0.62), "necrotic", 0.06),
+  duelistOxblood: mix("oxblood", "barrowDeep", 0.3),
+  houseOchre: mix(mix("brass", "vellumDark", 0.3), "barrowBrown", 0.4),
+  houseSoot: mix(mix("charcoal", "slate", 0.55), "barrowDeep", 0.2),
+  rope: mix(mix("vellumDark", "barrowBrown", 0.5), "barrowDeep", 0.15),
+  // the knight's plate, darkened and gone toward rust: no longer a house's polished steel
+  ruinedPlate: mix(mix("slate", "slateLight", 0.4), "barrowDeep", 0.3),
+  satchel: mix(mix("barrowBrown", "brass", 0.2), "barrowDeep", 0.25),
+};
+
+const ENCOUNTER_SETS = {};
+
+/**
+ * One encounter variant's slot materials (`kind` and its letter, ENCOUNTER_TONES), painted once per
+ * bake and seeded by the variant's place, so a re-bake paints identical pixels.
+ */
+export function encounterVariant(kind, letter) {
+  const key = `${kind}_${letter}`;
+  if (ENCOUNTER_SETS[key]) return ENCOUNTER_SETS[key];
+  const tones = ENCOUNTER_TONES[kind]?.[letter];
+  if (!tones) throw new Error(`fabrics: no encounter variant "${key}"`);
+  const seed = 601 + Object.keys(ENCOUNTER_TONES).indexOf(kind) * 40 + Object.keys(ENCOUNTER_TONES[kind]).indexOf(letter) * 10;
+  const D = THREE.DoubleSide;
+  const set = { hair: mat(hair(tones.hair, { seed: seed + 1 }), { rough: 0.9 }), brow: browMaterial(tones.hair) };
+  if (kind === "pilgrim") {
+    set.robe = mat(wool(tones.robe, { seed: seed + 2, dirt: 0.4 }), { side: D });
+    set.hood = mat(wool(tones.hood, { seed: seed + 3, dirt: 0.35 }), { side: D });
+  } else if (kind === "captive") {
+    set.shirt = mat(rag(tones.shirt, { seed: seed + 2 }), { side: D });
+    set.breeches = mat(rag(tones.breeches, { seed: seed + 3 }), { side: D });
+  } else {
+    set.jerkin = mat(leather(tones.jerkin, { seed: seed + 2, dirt: 0.6 }), { rough: 0.72, side: D });
+    set.hood = mat(wool(tones.hood, { seed: seed + 3, dirt: 0.55 }), { side: D });
+  }
+  return (ENCOUNTER_SETS[key] = set);
+}
+
+let ENCOUNTER_SET = null;
+
+/** The encounter cast's shared materials (ENCOUNTER_GEAR), painted once per bake. */
+export function encounterFabrics() {
+  if (ENCOUNTER_SET) return ENCOUNTER_SET;
+  const D = THREE.DoubleSide;
+  const E = ENCOUNTER_GEAR;
+  ENCOUNTER_SET = {
+    rope: mat(linen(E.rope, { seed: 701, dirt: 0.6 }), { rough: 0.95, normal: 1.5 }),
+    satchel: mat(leather(E.satchel, { seed: 703, dirt: 0.6 }), { rough: 0.8, side: D }),
+    duelistCoat: mat(wool(E.duelistCoat, { seed: 705, dirt: 0.35 }), { side: D }),
+    duelistOxblood: mat(wool(E.duelistOxblood, { seed: 707, dirt: 0.4 }), { side: D }),
+    duelistBlade: mat(plate(GEAR.duelistEdge, { dents: 0.05, rust: 0, dirt: 0.05, seed: 709 }), { metal: 0.9, rough: 0.2 }),
+    dagger: mat(plate(GEAR.steel, { dents: 0.3, rust: 0.15, dirt: 0.3, seed: 711 }), { metal: 0.85, rough: 0.35 }),
+    knightPlate: mat(plate(E.ruinedPlate, { dents: 1, rust: 0.75, dirt: 0.7, seed: 713 }), { metal: 0.5, rough: 0.68 }),
+    knightPlateDouble: mat(plate(E.ruinedPlate, { dents: 1, rust: 0.75, dirt: 0.7, seed: 713 }), { metal: 0.5, rough: 0.68, side: D }),
+    knightMail: mat(mail(GEAR.mail, { rust: 0.6, dirt: 0.7, seed: 715 }), { metal: 0.6, rough: 0.62, normal: 1.25 }),
+    knightMailDouble: mat(mail(GEAR.mail, { rust: 0.6, dirt: 0.7, seed: 715 }), { metal: 0.6, rough: 0.62, normal: 1.25, side: D }),
+    knightBlade: mat(plate(GEAR.steel, { dents: 0.7, rust: 0.25, dirt: 0.35, seed: 717 }), { metal: 0.8, rough: 0.38 }),
+    houseOchre: mat(wool(E.houseOchre, { seed: 719, dirt: 0.8 }), { side: D }),
+    houseSoot: mat(wool(E.houseSoot, { seed: 721, dirt: 0.6 }), { side: D }),
+  };
+  return ENCOUNTER_SET;
+}

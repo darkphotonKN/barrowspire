@@ -70,6 +70,17 @@ type PublicPlayerState struct {
 	// Blessed is true while the delver carries the hallowed altar's Blessing,
 	// absent when not: public, as poison is. FS-5FZ4J §I R47.
 	Blessed bool `json:"blessed,omitempty"`
+	// ContractSettled is true while the delver holds Contract Settled,
+	// absent when not: public, as the Blessing is. FS-4EC7Z §F R25.
+	ContractSettled bool `json:"contract_settled,omitempty"`
+}
+
+// ContractState is the delve's contract as its taker is told it: its state
+// (active, settled or lost) and, while active, the mark's heading from them
+// as a compass word, never its position. FS-4EC7Z §F R25, §E R21.
+type ContractState struct {
+	State   string `json:"state"`
+	Heading string `json:"heading,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole
@@ -385,6 +396,10 @@ type MonsterState struct {
 	EntityID uuid.UUID `json:"entity_id"`
 	// ghoul | troll | demon | blood_demon | bone_archer
 	Archetype string `json:"archetype"`
+	// Look is a hostile human's art variant within its archetype (a turned
+	// Cutthroat's `cutthroat_a`), absent for every archetype whose look is the
+	// archetype itself (FS-4EC7Z §F R24)
+	Look string `json:"look,omitempty"`
 	// server-authored, elite prefix included, level excluded: the client
 	// composes the nameplate
 	Name     string   `json:"name"`
@@ -461,6 +476,42 @@ type HallowedAltarState struct {
 	Prayed   bool      `json:"prayed"`
 }
 
+// EncounterNPCState is one encounter NPC on the wire. Kind is pilgrim,
+// captive or cutthroat; Look its art variant; Stance peaceful, caged or ally;
+// Action idle, move, attack, cower or dead. Line is the key of the last line
+// it said and LineAt when, on its own clock; both absent until it says one.
+// HirerID is an ally's hirer's member id, absent for any other. FS-4EC7Z §F
+// R22, R26.
+type EncounterNPCState struct {
+	EntityID  uuid.UUID  `json:"entity_id"`
+	Kind      string     `json:"kind"`
+	Look      string     `json:"look"`
+	Position  Position   `json:"position"`
+	Facing    Position   `json:"facing"`
+	Health    int        `json:"health"`
+	MaxHealth int        `json:"max_health"`
+	Stance    string     `json:"stance"`
+	Action    string     `json:"action"`
+	Line      string     `json:"line,omitempty"`
+	LineAt    *float64   `json:"line_at,omitempty"`
+	HirerID   *uuid.UUID `json:"hirer_id,omitempty"`
+}
+
+// CageState is the Captives' cage on the wire, sent whole: where it stands
+// and whether it is open. FS-4EC7Z §F R23.
+type CageState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position Position  `json:"position"`
+	Open     bool      `json:"open"`
+}
+
+// EncounterKeyState is the cage key lying on the floor, sent whole while it
+// lies. FS-4EC7Z §F R23.
+type EncounterKeyState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position Position  `json:"position"`
+}
+
 // MerchantState is the wandering merchant on his floor and his wares, sent
 // whole; absent in the hub, a field and on a floor without him. FS-9JV5K §A R4.
 type MerchantState struct {
@@ -526,12 +577,14 @@ type SealPieceState struct {
 }
 
 // BarrierState is one barrier, a gate, a secret door or a pit, and the cells
-// it covers. FS-5FZ4J §I R46.
+// it covers. FS-5FZ4J §I R46. Revealed is set on a secret door the
+// Cutthroats' tip revealed, absent on every other (FS-4EC7Z §F R28).
 type BarrierState struct {
 	EntityID uuid.UUID   `json:"entity_id"`
 	Kind     string      `json:"kind"`
 	Cells    []CellState `json:"cells"`
 	Open     bool        `json:"open"`
+	Revealed bool        `json:"revealed,omitempty"`
 }
 
 // TrapState is one detected trap (FS-5FZ4J §I R46): armed false while a

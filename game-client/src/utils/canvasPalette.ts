@@ -237,6 +237,12 @@ export const palette = {
    * hovered) nor as arcane green's ally.
    */
   blessed: mix(BARROW_HEX.brassBright, BARROW_HEX.vellum, 0.35),
+  /**
+   * Contract Settled's status mark (FS-4EC7Z §G R34): the mercenary's blood-price, an ember steel
+   * paled toward vellum, so the two crossed blades read as a damage boon held, apart from the
+   * Blessing's gold, never as amber's "act on this" nor as oxblood's harm done.
+   */
+  contractSettled: mix(BARROW_HEX.ember, BARROW_HEX.vellum, 0.4),
 
   /**
    * The chat window (FS-WJGFJ R30): one stream, told apart by colour. The user's hues mapped
@@ -361,6 +367,11 @@ export const palette = {
   markerAlly: BARROW_HEX.arcane,
   markerHub: BARROW_HEX.vellum,
   /**
+   * An encounter NPC's name plate while it is no ally (FS-4EC7Z §G R29): someone met, neither friend
+   * nor foe, so the neutral vellum the town's residents wear.
+   */
+  markerEncounter: BARROW_HEX.vellum,
+  /**
    * A function NPC's name and sigil (FS-MRZH7 req 2): someone the player deals with for real, so
    * the interactable channel, amber. Apart from the player's own bright-brass name.
    */
@@ -473,6 +484,17 @@ export const palette = {
    * madder coat reads as a drab traveller's and not as a player's.
    */
   merchantStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.vellumDark, 0.5), 0.45),
+  /**
+   * FS-9JV5K §F R21: the wandering merchant's soft lantern light, in the interactable's amber (design
+   * guideline "Gameplay accent"): the player can act on him.
+   */
+  merchantLantern: BARROW_HEX.amberBright,
+  /**
+   * FS-9JV5K §F R22, R23: the wares panel's price in gold (the purse's brass, as gold reads in the
+   * gear overlay) and its refusal line (error copy's lifted oxblood: money clarity, never lore).
+   */
+  waresPrice: BARROW_HEX.brassBright,
+  waresRefused: BARROW_HEX.oxbloodText,
 
   // -- A monster ability's telegraph and impact (FS-C8VM7 §F R36): the hostile channel, drawn
   //    above the light-map. The edge in the HP bar's lifted oxblood, so the ring reads on a dark

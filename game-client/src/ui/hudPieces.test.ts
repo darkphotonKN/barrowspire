@@ -161,6 +161,7 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
       progress: () => ({ ...piece("progress")(), cueOver: () => {} }),
       window: piece("window"),
       statusMarks: piece("statusMarks"),
+      contract: piece("contract"),
     };
     mountHud(scene, bridge, build);
     report("run");

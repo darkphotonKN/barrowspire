@@ -342,7 +342,10 @@ developer force a tome.
     over the push time rather than snapping. A trap is drawn faint (its armed frame at reduced
     alpha) when listed, and plays its **spring** (spikes up, darts across, a fire jet, a gas puff)
     when R48's events fire. A detected secret door draws its cracks on the wall cell; open, it draws
-    as an open doorway.
+    as an open doorway. (Amended 2026-11-25, code review:) a lit seal brazier is a `brazier` fixed
+    light and the dormant hallowed altar's candles their own `hallowed_altar` light; when FS-8RBQY
+    §C.6's light cap bites, the drop order is slits, braziers, sconces, the altar's candles, then
+    interactable pools, and the stairs' light is never dropped.
 52. **E targets.** A lever, brazier, bridge lever, stair key, mural, shrine, a detected shut secret
     door (**Search**), the gate (refused or opened with the key), and the hallowed altar (**Pray**)
     are E targets in reach, as containers are. A plate, a block, a trap, the fountain and a pit

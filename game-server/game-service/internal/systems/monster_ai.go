@@ -71,8 +71,8 @@ func NewMonsterAISystem(roll func() float64, grid NavGrid) *MonsterAISystem {
 	return &MonsterAISystem{roll: roll, grid: grid}
 }
 
-// quarry is a body a monster may chase, an in-play delver or a standing hound:
-// what it is and where it stands.
+// quarry is a body a monster may chase, an in-play delver, an encounter NPC
+// out of a cage or a standing hound: what it is and where it stands.
 type quarry struct {
 	id uuid.UUID
 	at *components.TransformComponent
@@ -121,6 +121,18 @@ func (s *MonsterAISystem) think(
 	monster.Route.SearchIn = max(monster.Route.SearchIn-deltaTime, 0)
 	// a stun runs out on its own clock, whatever else it does (FS-04EEA §C R15)
 	monster.StunRemaining = max(monster.StunRemaining-deltaTime, 0)
+
+	// a fleeing monster turns on no one and answers no hit until it arrives;
+	// a stun still holds it (FS-4EC7Z §E R18)
+	if monster.Flight.Fleeing {
+		monster.LastAttacker = uuid.Nil
+		if monster.StunRemaining > stunEpsilon {
+			s.stunned(deltaTime, entity, monster, at, velocity)
+			return
+		}
+		s.flee(deltaTime, monster, at, velocity)
+		return
+	}
 
 	// the Long Night turns it on the warrior first (FS-X2CMM §E R31)
 	s.taunt(monster, at)
@@ -448,12 +460,19 @@ path used up it holds on its own cell's centre. A search that finds nothing
 leaves it steering straight at (x, y) until its next search (R27).
 */
 func (s *MonsterAISystem) towards(monster *components.MonsterComponent, at *components.TransformComponent, x, y float64) (float64, float64) {
-	return s.along(&monster.Route, at, x, y)
+	return router{s.grid}.towards(&monster.Route, at, x, y)
 }
 
-// along is towards for any body walking by a route of its own: a monster's,
-// or a hound's (book_hound.go).
-func (s *MonsterAISystem) along(route *components.Route, at *components.TransformComponent, x, y float64) (float64, float64) {
+// router walks a body along a route over a floor's grid: a monster's, and a
+// hired ally's and a hound's (book_hound.go) the same way (FS-4EC7Z §C R9). With no grid it steers
+// straight.
+type router struct {
+	grid NavGrid
+}
+
+// towards is the point a body at at steers for this tick to reach (x, y)
+// along route, as MonsterAISystem.towards tells.
+func (s router) towards(route *components.Route, at *components.TransformComponent, x, y float64) (float64, float64) {
 	if s.grid == nil {
 		return x, y
 	}
@@ -479,7 +498,7 @@ func (s *MonsterAISystem) along(route *components.Route, at *components.Transfor
 
 // search finds a new path from cell from to goal, and starts the repath
 // interval whether or not it finds one.
-func (s *MonsterAISystem) search(route *components.Route, from, goal int) {
+func (s router) search(route *components.Route, from, goal int) {
 	route.SearchIn = repathInterval
 	route.Goal = goal
 	route.Next = 0
@@ -505,7 +524,7 @@ it was pushed off its route; standing in the route's last cell, it has
 reached it. Either way the route is used up and follow reports false, as it
 does with no route.
 */
-func (s *MonsterAISystem) follow(route *components.Route, from int, at *components.TransformComponent) (float64, float64, bool) {
+func (s router) follow(route *components.Route, from int, at *components.TransformComponent) (float64, float64, bool) {
 	last := len(route.Cells) - 1
 	// a corner cut can land it in any cell ahead, the farthest included,
 	// without its standing in those between
@@ -568,13 +587,14 @@ func distance(a, b *components.TransformComponent) float64 {
 	return math.Hypot(b.X-a.X, b.Y-a.Y)
 }
 
-// quarries is every delver in play: alive, not escaped, not left behind, and
-// every hound standing (FS-X2CMM R28). Nobody else can be acquired, and a
-// target who drops out of this is dropped.
+// quarries is every body a monster hunts: a delver in play (alive, not
+// escaped, not left behind) and a live encounter NPC out of a cage (FS-4EC7Z
+// §A R3), and every hound standing (FS-X2CMM R28). Nobody else can be acquired, and a target who drops out of this is
+// dropped.
 func quarries(entities []*ecs.Entity) []quarry {
 	var out []quarry
 	for _, entity := range entities {
-		if !InPlay(entity) && !standingHound(entity) { // a hound is a body too (book_hound.go)
+		if !BodyKindOf(entity).Hunted() && !standingHound(entity) { // a hound is a body too (book_hound.go)
 			continue
 		}
 		tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)

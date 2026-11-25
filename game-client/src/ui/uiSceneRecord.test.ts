@@ -253,7 +253,8 @@ describe("the controls panel's close rules (FS-84N1G R16, R18)", () => {
     return { bridge, slot, played, w, open };
   }
 
-  it.each(["inventory", "party", "record", "container", "menu", "letter"] as const)("should close, silently, as the %s opens", (window) => {
+  // the run's wares panel too (FS-9JV5K §F R22)
+  it.each(["inventory", "party", "record", "container", "menu", "letter", "wares"] as const)("should close, silently, as the %s opens", (window) => {
     const { slot, played, open } = onControls();
     slot.sync();
     slot.toggle();

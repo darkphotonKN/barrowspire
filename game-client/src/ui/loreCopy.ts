@@ -10,6 +10,7 @@
 import { lootRefusalCopy } from "@/scenes/fieldRefusals";
 import { CONTAINER_GUARDED, type InteractReply } from "./floor";
 import type { LoreLine } from "./loreLine";
+import { ENCOUNTER_REPLY_REASONS } from "./encounterLines";
 import { SEAL_REPLY_REASONS } from "./sealLines";
 
 /** The reason the server gives when the stairs refuse a party that has not gathered (FS-F6F88 req 22). */
@@ -43,6 +44,8 @@ const REPLY_LINES: Record<string, ((reply: InteractReply) => LoreLine | null) | 
   altar_prayed: null,
   // FS-5FZ4J §J R53: a sealed floor's replies are the HUD notice's (`sealLines.ts`), never a lore line
   ...Object.fromEntries(SEAL_REPLY_REASONS.map((reason) => [reason, null])),
+  // FS-4EC7Z §F R27, §G R31: the encounters' refusals are the HUD notice's too (`encounterLines.ts`)
+  ...Object.fromEntries(ENCOUNTER_REPLY_REASONS.map((reason) => [reason, null])),
 };
 
 /**

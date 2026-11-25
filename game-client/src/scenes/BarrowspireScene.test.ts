@@ -102,6 +102,8 @@ const chatMayOpen = (run: object) => chatWiring(uiSceneOn(run, "run", { row: fal
 const typeInChat = (run: object, on = true) => uiSceneOn(run, "run", { row: false }).bridge.reportUi({ typing: on });
 const { barShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { GameUiBridge, NO_UI, worldContainer } = await import("@/ui/uiBridge");
+const { ANTIDOTE_LOOK } = await import("@/render/effects/shimmer");
+const { merchantLantern } = await import("@/render/world/merchant");
 
 /**
  * The lore lines the run says through the UI bridge (FS-XWHZP; FS-TQZ5J § Change: Merge with main, the
@@ -9243,8 +9245,33 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
       said,
       reply: (payload: unknown) => listeners.get("interact")?.(payload),
       equip: (payload: unknown) => listeners.get("equip")?.(payload),
+      buy: (payload: unknown) => listeners.get("buy")?.(payload),
+      useItem: (payload: unknown) => listeners.get("use_item")?.(payload),
     };
   }
+
+  // FS-4EC7Z §F R27, §G R31 (I-4EC7Z-6): the encounters' refusals are HUD notices, never lore lines
+  it("should say the cage's refusal as a HUD notice in the client's words, and no lore line", () => {
+    const { notified, said, reply } = connected();
+    reply({ success: false, message: "the cage is locked", reason: "cage_locked" });
+    reply({ success: false, message: "too many follow you already", reason: "too_many_allies" });
+    expect(notified.mock.calls).toEqual([
+      ["Locked. Find the key.", palette.damageBright],
+      ["Too many follow you already.", palette.damageBright],
+    ]);
+    expect(said).not.toHaveBeenCalled();
+  });
+
+  // FS-9JV5K §F R23, R24 (I-9JV5K-5): the purchase's and the drink's replies reach the run
+  it("should hear the buy and use_item replies, each in plain words as a notice", () => {
+    const { notified, buy, useItem } = connected();
+    buy({ success: false, reason: "wallet_unavailable", message: "your purse can't be reached" });
+    useItem({ success: false, reason: "not_poisoned", message: "you are not poisoned" });
+    expect(notified.mock.calls).toEqual([
+      ["Your purse can't be reached. Nothing was taken.", palette.damageBright],
+      ["You are not poisoned.", palette.damageBright],
+    ]);
+  });
 
   // FS-XWHZP R16: the world's reply is a lore line, in the client's words, never a HUD notice
   it("should give up the reach and say it will not open, as a lore line", () => {
@@ -12801,6 +12828,424 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       next({}, mine());
       const marks = hud.mock.calls.map(([m]) => m as { kind: string; marks?: unknown }).filter((m) => m.kind === "statusMarks");
       expect(marks.map((m) => m.marks)).toEqual([["blessed"], []]);
+    });
+  });
+
+  // FS-9JV5K §F R21–R24 (I-9JV5K-5): the wandering merchant, his wares panel, buying and drinking
+  describe("the wandering merchant and his wares (FS-9JV5K §F)", () => {
+    interface MerchantRun {
+      bindRunInput(): void;
+      checkBuildingStatus(): void;
+      showNotification(text: string, backing: number): void;
+      worldSide(): import("@/ui/uiBridge").WorldSide;
+      merchant: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      dungeon: { lights: { all: readonly { kind: string }[] } };
+      ui: WorldUi;
+      shimmers?: { playGranted: ReturnType<typeof vi.fn> };
+      waresAnswered(reply: unknown): void;
+      itemUsed(reply: unknown): void;
+      endRun(): void;
+    }
+    /** This client's player in room 1, at (2560, 3080). */
+    const ME = at(2560, 3080);
+    const mine = (over: Record<string, unknown> = {}) =>
+      ({ current_player: { ...player("me", "Aldric", 0), position: ME, ...over } }) as Partial<Party>;
+    const wares = (antidotes = 3) => [
+      { ware: "health_potion", price: 60, left: 3, item: { name: "Lesser Heal Potion", item_type: "consumable", healing_amount: 30 } },
+      { ware: "antidote", price: 40, left: antidotes, item: { name: "Antidote", item_type: "consumable" } },
+    ];
+    /** He stands beside the player; or far off past the stairs, in a region not yet seen. */
+    const merchant = (where = at(ME.x + 30, ME.y), antidotes = 3) => ({ entity_id: "merchant-1", position: where, wares: wares(antidotes) });
+    const merchantStage = (extra: Partial<GameState> = { merchant: merchant() }) => {
+      const staged = dungeonStage(mine(), extra);
+      const run = staged.run as unknown as MerchantRun;
+      const told: { kind: string; wares?: { rows: { action: string; left: string }[]; line?: string } }[] = [];
+      run.ui = { ...NO_UI, wares: (message) => void told.push(message as (typeof told)[number]) };
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      const next = (over: Partial<GameState> = { merchant: merchant() }, me = mine()) => staged.handle({ ...dungeonState(me), ...over } as GameState);
+      const answer = (request: import("@/ui/uiBridge").UiRequest) => run.worldSide().answer(request);
+      return { ...staged, run, told, notified, next, answer };
+    };
+    const pressE = (run: MerchantRun, playerPos: { x: number; y: number }) => {
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos,
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const calls = [...sent.mock.calls];
+      sent.mockRestore();
+      return calls;
+    };
+    const sending = () => vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    /** The bodies dressed in a sheet whose name starts so: the frame set on them is `{sheet}/…`. */
+    const dressed = (made: Made[], prefix: string) =>
+      made.filter((m) => m.kind === "sprite" && !m.destroyed && String(m.last.setTexture?.[1] ?? m.args[3] ?? "").startsWith(prefix));
+
+    it("should draw him from his own sheet with his nameplate, and his lantern among the floor's lights (R21)", () => {
+      const { run, stage } = merchantStage();
+      expect(dressed(stage.made, "npc_merchant/")).toHaveLength(1);
+      expect(stage.made.some((m) => m.kind === "text" && !m.destroyed && m.args[2] === "Wandering Merchant")).toBe(true);
+      expect(run.dungeon.lights.all.filter((l) => l.kind === "merchant_lantern")).toHaveLength(1);
+    });
+
+    it("should hang his lantern's light at the lit glass, lifted from his sheet's crown (R21)", () => {
+      const { run } = merchantStage();
+      const crown = shippedManifest().sheets.npc_merchant.crown!;
+      const [lantern] = run.dungeon.lights.all.filter((l) => l.kind === "merchant_lantern") as unknown as { at: { y: number } }[];
+      const feet = await_iso.worldToScreen(ME.x + 30, ME.y);
+      expect(lantern.at.y).toBe(merchantLantern(feet, 0, crown).y);
+      expect(lantern.at.y).not.toBe(merchantLantern(feet, 0).y);
+    });
+
+    it("should draw his stand-in under its wash while his sheet is not in", () => {
+      const { stage } = dungeonStage(mine(), { merchant: merchant() }, { without: "npc_merchant" });
+      const [body] = dressed(stage.made, "char_mercenary_base/");
+      expect(body).toBeDefined();
+      expect(body.tint).toBe(palette.merchantStandIn);
+    });
+
+    it("should take him, his nameplate and his lantern down when he leaves the state", () => {
+      const { run, stage, next } = merchantStage();
+      next({});
+      expect(dressed(stage.made, "npc_merchant/")).toHaveLength(0);
+      expect(stage.made.some((m) => m.kind === "text" && !m.destroyed && m.args[2] === "Wandering Merchant")).toBe(false);
+      expect(run.dungeon.lights.all.filter((l) => l.kind === "merchant_lantern")).toHaveLength(0);
+    });
+
+    it("should hide him and his nameplate in a region not yet seen", () => {
+      const { run, stage } = merchantStage({ merchant: merchant(at(1400, 1200)) });
+      run.checkBuildingStatus();
+      expect(shownNow(run.merchant.placed()[0].sprite)).toBe(false);
+      const plate = stage.made.find((m) => m.kind === "text" && m.args[2] === "Wandering Merchant")!;
+      expect(shownNow(plate)).toBe(false);
+    });
+
+    it("should open his wares panel on E in reach, sending nothing to the server (R21, R22)", () => {
+      const { run, told } = merchantStage();
+      expect(pressE(run, ME)).toEqual([]);
+      expect(told.map((m) => m.kind)).toEqual(["show"]);
+      expect(told[0].wares!.rows.map((r) => r.left)).toEqual(["3 left", "3 left"]);
+    });
+
+    it("should not open it out of reach, nor for a player out of the delve", () => {
+      const far = merchantStage({ merchant: merchant(at(ME.x + 200, ME.y)) });
+      pressE(far.run, ME);
+      expect(far.told).toEqual([]);
+      const dead = dungeonStage(mine({ current_health: 0 }), { merchant: merchant() });
+      const told: unknown[] = [];
+      (dead.run as unknown as MerchantRun).ui = { ...NO_UI, wares: (m) => void told.push(m) };
+      pressE(dead.run as unknown as MerchantRun, ME);
+      expect(told).toEqual([]);
+    });
+
+    it("should follow his stock while open, and close, sending nothing, as the player walks out of reach", () => {
+      const { run, told, next } = merchantStage();
+      pressE(run, ME);
+      next({ merchant: merchant(undefined, 0) });
+      expect(told.at(-1)!.wares!.rows[1].left).toBe("Sold out");
+      const sent = sending();
+      Object.assign(run, { playerPos: at(ME.x + 300, ME.y) });
+      next();
+      expect(told.at(-1)!.kind).toBe("close");
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    it("should close it as he leaves the state, and as the menu opens over it", () => {
+      const a = merchantStage();
+      pressE(a.run, ME);
+      a.next({});
+      expect(a.told.at(-1)!.kind).toBe("close");
+      const b = merchantStage();
+      pressE(b.run, ME);
+      b.run.worldSide().heardUi?.({ menuOpen: true }, { menuOpen: false });
+      expect(b.told.at(-1)!.kind).toBe("close");
+    });
+
+    it("should close it on the UI scene's close: wares", () => {
+      const { run, told, answer } = merchantStage();
+      pressE(run, ME);
+      answer({ kind: "close", window: "wares" });
+      expect(told.map((m) => m.kind)).toEqual(["show", "close"]);
+    });
+
+    it("should send one buy for the open panel's merchant and show Paying… until the reply (R23)", () => {
+      const { run, told, answer } = merchantStage();
+      pressE(run, ME);
+      const sent = sending();
+      answer({ kind: "buy", ware: "antidote" });
+      answer({ kind: "buy", ware: "health_potion" });
+      expect(sent.mock.calls).toEqual([[ActionType.Buy, { merchant_id: "merchant-1", ware: "antidote" }]]);
+      expect(told.at(-1)!.wares!.rows.map((r) => r.action)).toEqual(["Buy", "Paying…"]);
+    });
+
+    it("should say Bought: on a success and have the purse read again (R23)", () => {
+      const { run, told, notified, answer } = merchantStage();
+      pressE(run, ME);
+      sending();
+      answer({ kind: "buy", ware: "antidote" });
+      run.waresAnswered({ success: true, ware: "antidote" });
+      expect(notified.mock.calls).toEqual([["Bought: Antidote.", palette.safe]]);
+      expect(told.map((m) => m.kind)).toContain("answered");
+      expect(told.at(-1)!.wares!.rows.map((r) => r.action)).toEqual(["Buy", "Buy"]);
+    });
+
+    it("should show a refusal's line on the open panel, in plain words (R23)", () => {
+      const { run, told, notified, answer } = merchantStage();
+      pressE(run, ME);
+      sending();
+      answer({ kind: "buy", ware: "antidote" });
+      run.waresAnswered({ success: false, reason: "not_enough_gold", message: "not enough gold" });
+      expect(told.at(-1)!.wares!.line).toBe("Not enough gold.");
+      expect(notified).not.toHaveBeenCalled();
+    });
+
+    it("should show an unknown outcome's line on the open panel and have the purse read again (R23, amended 2026-11-25)", () => {
+      const { run, told, answer } = merchantStage();
+      pressE(run, ME);
+      sending();
+      answer({ kind: "buy", ware: "antidote" });
+      run.waresAnswered({ success: false, reason: "outcome_unknown" });
+      expect(told.map((m) => m.kind)).toContain("answered");
+      expect(told.at(-1)!.wares!.line).toBe("Your purse did not answer. Check your gold before you buy again.");
+    });
+
+    it("should send use_item for the gear's Drink (R24)", () => {
+      const { answer } = merchantStage();
+      const sent = sending();
+      answer({ kind: "drink", item: "antidote-1" });
+      expect(sent.mock.calls).toEqual([[ActionType.UseItem, { item_entity_id: "antidote-1" }]]);
+    });
+
+    it("should send one use_item for Drink pressed twice, and again once the state drops it or a refusal answers (R24)", () => {
+      const { run, answer, next } = merchantStage();
+      const antidote = { entity_id: "antidote-1", item_id: "a", name: "Antidote", quantity: 1, item_type: "consumable" };
+      next(undefined, mine({ inventory: [antidote] }));
+      const sent = sending();
+      answer({ kind: "drink", item: "antidote-1" });
+      next(undefined, mine({ inventory: [antidote] }));
+      answer({ kind: "drink", item: "antidote-1" });
+      expect(sent).toHaveBeenCalledTimes(1);
+      run.itemUsed({ success: false, reason: "not_poisoned" });
+      answer({ kind: "drink", item: "antidote-1" });
+      expect(sent).toHaveBeenCalledTimes(2);
+      next(undefined, mine({ inventory: [] }));
+      answer({ kind: "drink", item: "antidote-2" });
+      expect(sent).toHaveBeenCalledTimes(3);
+    });
+
+    it("should say You are not poisoned. on that refusal, and play the antidote's shimmer on a success (R24)", () => {
+      const { run, notified } = merchantStage();
+      const shimmers = { playGranted: vi.fn() };
+      run.shimmers = shimmers;
+      run.itemUsed({ success: false, reason: "not_poisoned", message: "you are not poisoned" });
+      expect(notified.mock.calls).toEqual([["You are not poisoned.", palette.damageBright]]);
+      expect(shimmers.playGranted).not.toHaveBeenCalled();
+      run.itemUsed({ success: true });
+      expect(shimmers.playGranted).toHaveBeenCalledWith(ANTIDOTE_LOOK, expect.anything());
+    });
+  });
+
+  // FS-4EC7Z §G R29–R35 (I-4EC7Z-6): the encounters, the cage, hostile humans, the contract and the revealed door
+  describe("the dungeon encounters (FS-4EC7Z §G)", () => {
+    interface EncounterRun {
+      bindRunInput(): void;
+      checkBuildingStatus(): void;
+      showNotification(text: string, backing: number): void;
+      stepEncounters(time: number): void;
+      encounters: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      cages: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      ui: WorldUi;
+      dungeon: { minimap?: { show(...args: unknown[]): void } };
+      time: { now: number };
+      fetchEncounterArt(): void;
+      onDemand?: { fetch(group: string, landed: () => void): void };
+    }
+    const ME = at(2560, 3080);
+    const mine = (over: Record<string, unknown> = {}) =>
+      ({ current_player: { ...player("me", "Aldric", 0), position: ME, ...over } }) as Partial<Party>;
+    const npc = (over: Record<string, unknown> = {}) => ({
+      entity_id: "npc-1",
+      kind: "pilgrim",
+      look: "pilgrim_b",
+      position: at(ME.x + 30, ME.y),
+      facing: { x: 0, y: 1 },
+      health: 40,
+      max_health: 40,
+      stance: "peaceful",
+      action: "cower",
+      ...over,
+    });
+    const encounterStage = (extra: Partial<GameState> = { encounter_npcs: [npc()] } as Partial<GameState>, opts: { without?: string } = {}) => {
+      const staged = dungeonStage(mine(), extra, opts);
+      const run = staged.run as unknown as EncounterRun;
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      const next = (over: Record<string, unknown> = {}, me = mine()) => staged.handle({ ...dungeonState(me), ...over } as GameState);
+      return { ...staged, run, notified, next };
+    };
+    const pressE = (run: EncounterRun, playerPos: { x: number; y: number }) => {
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos,
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+      sent.mockRestore();
+      return interacts;
+    };
+    const dressed = (made: Made[], prefix: string) =>
+      made.filter((m) => m.kind === "sprite" && !m.destroyed && String(m.last.setTexture?.[1] ?? m.args[3] ?? "").startsWith(prefix));
+    const texts = (made: Made[], words: string) => made.filter((m) => m.kind === "text" && !m.destroyed && (m.args[2] === words || m.last.setText?.[0] === words));
+
+    it("should draw an encounter NPC from its look, with its kind's plate in the neutral ink (R29)", () => {
+      const { run, stage } = encounterStage();
+      run.stepEncounters(0);
+      expect(dressed(stage.made, "npc_pilgrim/")).toHaveLength(1);
+      const [plate] = texts(stage.made, "Pilgrim");
+      expect(plate).toBeDefined();
+      expect(plate.color).toBe(toCss(palette.markerEncounter));
+    });
+
+    it("should draw its stand-in under the wash while the encounters' group is not in", () => {
+      const { stage } = encounterStage(undefined, { without: "npc_" });
+      const [body] = dressed(stage.made, "char_mercenary_base/");
+      expect(body).toBeDefined();
+      expect(body.tint).toBe(palette.merchantStandIn);
+    });
+
+    it("should plate an ally in the ally ink over its health bar (R29)", () => {
+      const { run, stage } = encounterStage({ encounter_npcs: [npc({ kind: "cutthroat", look: "cutthroat_a", stance: "ally", hirer_id: "me", action: "idle", health: 20 })] } as Partial<GameState>);
+      run.stepEncounters(0);
+      const [plate] = texts(stage.made, "Cutthroat");
+      expect(plate.color).toBe(toCss(palette.markerAlly));
+      const bar = stage.made.find((m) => m.kind === "graphics" && !m.destroyed && m.calls.includes("fillRect") && m.depth === MARKER_DEPTH.bar);
+      expect(bar).toBeDefined();
+    });
+
+    it("should send one interact for the NPC E reaches: a talk (R29)", () => {
+      const { run } = encounterStage();
+      expect(pressE(run, ME)).toEqual([[ActionType.Interact, { entity_id: "npc-1" }]]);
+    });
+
+    it("should show a line said over the NPC's head for 4 s, and none on a first broadcast (R30)", () => {
+      const { run, stage, next } = encounterStage({ encounter_npcs: [npc({ line: "pilgrim_plea", line_at: 3 })] } as Partial<GameState>);
+      expect(texts(stage.made, "Please, they're coming!")).toHaveLength(0);
+      run.time.now = 1000;
+      next({ encounter_npcs: [npc({ line: "pilgrim_plea", line_at: 8 })] });
+      run.stepEncounters(1016);
+      const [line] = texts(stage.made, "Please, they're coming!");
+      expect(line).toBeDefined();
+      expect(shownNow(line)).toBe(true);
+      run.stepEncounters(1000 + 4000);
+      expect(line.destroyed).toBe(true);
+    });
+
+    it("should keep the cutthroats' turn line where they stood once they become monsters (R30, amended)", () => {
+      const cut = (over: Record<string, unknown> = {}) => npc({ kind: "cutthroat", look: "cutthroat_a", action: "idle", ...over });
+      const { run, stage, next } = encounterStage({ encounter_npcs: [cut()] } as Partial<GameState>);
+      run.time.now = 500;
+      next({ encounter_npcs: [cut({ line: "cutthroat_turn", line_at: 4 })] });
+      const placed = vi.spyOn((run as unknown as { encounterBodies: { place(...a: unknown[]): void } }).encounterBodies, "place");
+      run.stepEncounters(516);
+      const [line] = texts(stage.made, "Bad luck for you.");
+      const where = placed.mock.calls.at(-1)![1];
+      next({
+        monsters: [{ entity_id: "m-1", archetype: "cutthroat", look: "cutthroat_a", name: "Cutthroat", level: 4, elite: false, boss: false, position: at(ME.x + 30, ME.y), facing: { x: 0, y: 1 }, action: "idle", current_health: 50, max_health: 50 }],
+      });
+      run.stepEncounters(1500);
+      expect(line.destroyed).toBe(false);
+      expect(placed.mock.calls.at(-1)![1]).toBe(where);
+    });
+
+    it("should draw the cage shut and its key where it lies; E takes the key, then opens the cage (R31)", () => {
+      const cage = (open = false) => ({ entity_id: "cage-1", position: at(ME.x + 200, ME.y), open });
+      const key = { entity_id: "key-1", position: at(ME.x + 20, ME.y) };
+      const { run, stage, next } = encounterStage({ cages: [cage()], encounter_keys: [key] } as Partial<GameState>);
+      expect(dressed(stage.made, "cage/shut_back/")).toHaveLength(1);
+      expect(dressed(stage.made, "cage/shut_front/")).toHaveLength(1);
+      expect(dressed(stage.made, "cage_key/")).toHaveLength(1);
+      expect(pressE(run, ME)).toEqual([[ActionType.Interact, { entity_id: "key-1" }]]);
+      next({ cages: [cage()], cage_key_carried: true });
+      expect(dressed(stage.made, "cage_key/")).toHaveLength(0);
+      expect(pressE(run, at(ME.x + 160, ME.y))).toEqual([[ActionType.Interact, { entity_id: "cage-1" }]]);
+    });
+
+    it("should say The cage key. when it is carried, Locked. Find the key. on cage_locked, and The pilgrims are lost. (R31, R33)", () => {
+      const { notified, next } = encounterStage({ encounter_npcs: [npc()] } as Partial<GameState>);
+      next({ encounter_npcs: [npc()], cage_key_carried: true });
+      next({ encounter_npcs: [npc({ action: "dead", health: 0 })], cage_key_carried: true });
+      expect(notified.mock.calls).toEqual([
+        ["The cage key.", palette.hudPanel],
+        ["The pilgrims are lost.", palette.damageBright],
+      ]);
+    });
+
+    it("should hand the UI scene the contract's heading while active, and say its end, once (R34)", () => {
+      const { run, notified, next } = encounterStage({}, {});
+      const hud = vi.spyOn(run.ui, "hud");
+      next({}, mine({ contract: { state: "active", heading: "east" } }));
+      next({}, mine({ contract: { state: "active", heading: "east" } }));
+      next({}, mine({ contract: { state: "active", heading: "north" } }));
+      next({}, mine({ contract: { state: "settled" }, contract_settled: true }));
+      const lines = hud.mock.calls.map(([m]) => m as { kind: string; line?: unknown; marks?: unknown });
+      expect(lines.filter((m) => m.kind === "contract").map((m) => m.line)).toEqual([
+        "Mark: last seen to the east",
+        "Mark: last seen to the north",
+        null,
+      ]);
+      expect(lines.filter((m) => m.kind === "statusMarks").at(-1)?.marks).toEqual(["contract_settled"]);
+      expect(notified.mock.calls).toEqual([["Contract Settled.", palette.safe]]);
+    });
+
+    it("should say Contract lost. when it is lost, and nothing of a contract a first broadcast finds settled (R34)", () => {
+      const a = encounterStage({}, {});
+      a.next({}, mine({ contract: { state: "active", heading: "east" } }));
+      a.next({}, mine({ contract: { state: "lost" } }));
+      expect(a.notified.mock.calls).toEqual([["Contract lost.", palette.damageBright]]);
+      const b = dungeonStage(mine({ contract: { state: "settled" } }));
+      const told = vi.spyOn(b.run as unknown as EncounterRun, "showNotification").mockImplementation(() => {});
+      b.handle({ ...dungeonState(mine({ contract: { state: "settled" } })) } as GameState);
+      expect(told).not.toHaveBeenCalled();
+    });
+
+    it("should hand the minimap a revealed shut secret door as its door glyph (R35)", () => {
+      const door = (open = false) => ({ entity_id: "door-1", kind: "secret_door", cells: [{ x: 0, y: 0 }], open, revealed: true });
+      const { run, next } = encounterStage({ barriers: [door()] } as Partial<GameState>);
+      const show = vi.spyOn(run.dungeon.minimap!, "show");
+      next({ barriers: [door()] });
+      const fixtures = show.mock.calls.at(-1)![1] as { kind: string }[];
+      expect(fixtures.filter((f) => f.kind === "secret-door")).toHaveLength(1);
+      next({ barriers: [door(true)] });
+      expect((show.mock.calls.at(-1)![1] as { kind: string }[]).filter((f) => f.kind === "secret-door")).toHaveLength(0);
+    });
+
+    it("should fetch the encounters' group once for its NPCs and its hostile humans, and dress both as it lands (§H R36)", () => {
+      const { run } = encounterStage();
+      const asked: string[] = [];
+      let land = () => {};
+      run.onDemand = { fetch: (group, landed) => void (asked.push(group), (land = landed)) } as EncounterRun["onDemand"];
+      const npcs = vi.spyOn(run.encounters as unknown as { landed(): void }, "landed");
+      const redress = vi.fn();
+      (run as unknown as { monsters: { redress(group: string): void } }).monsters = { redress } as never;
+      run.fetchEncounterArt();
+      land();
+      expect(asked).toEqual(["encounter"]);
+      expect(npcs).toHaveBeenCalledTimes(1);
+      expect(redress).toHaveBeenCalledWith("encounter");
+    });
+
+    it("should take the encounters down with their floor", () => {
+      const { run, stage } = encounterStage({ encounter_npcs: [npc()], cages: [{ entity_id: "cage-1", position: ME, open: true }] } as Partial<GameState>);
+      (run as unknown as { leaveFloor(): void }).leaveFloor();
+      expect(dressed(stage.made, "npc_pilgrim/")).toHaveLength(0);
+      expect(dressed(stage.made, "cage/")).toHaveLength(0);
+      expect(texts(stage.made, "Pilgrim")).toHaveLength(0);
+      expect(run.encounters.placed()).toEqual([]);
     });
   });
 });

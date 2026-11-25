@@ -79,6 +79,23 @@ export interface PublicPlayerState {
    * entry, as poison is; absent when not, and always in the hub.
    */
   blessed?: boolean;
+  /**
+   * True while the player holds Contract Settled (FS-4EC7Z §F R25): on every player's entry, as the
+   * Blessing is; absent when not, and always in the hub.
+   */
+  contract_settled?: boolean;
+}
+
+/** A contract's state (FS-4EC7Z §E R19–R20, §F R25). */
+export type ContractStateName = "active" | "settled" | "lost";
+
+/**
+ * The delve's contract as its taker is told it (FS-4EC7Z §F R25): its state and, while active, the
+ * mark's heading from them as a compass word (`east`, `north-east`, …), never its position.
+ */
+export interface ContractState {
+  state: ContractStateName | (string & {});
+  heading?: string;
 }
 
 /**
@@ -198,6 +215,11 @@ export interface PlayerState extends PublicPlayerState {
   passive_points?: number;
   /** The owner's class book, in a run only (FS-X2CMM §F R32); never on an `other_players` entry (R33). */
   book?: BookState;
+  /**
+   * The delve's contract when this player took it (FS-4EC7Z §F R25); absent for everyone else and
+   * when none was taken. Never on an `other_players` entry.
+   */
+  contract?: ContractState;
 }
 
 /**
@@ -417,6 +439,36 @@ export interface HallowedAltarState {
   prayed: boolean;
 }
 
+/** What the wandering merchant sells (FS-9JV5K §A R3–R4): a ware the client does not know keeps its own name. */
+export type WareKind = "health_potion" | "antidote" | "tome_of_filth";
+
+/**
+ * A ware's display data (FS-9JV5K §A R4): its template's name, rarity and the stats the icon resolver
+ * reads (`itemIcon`), since the catalogue sends no icon or item code. game-service's `MerchantWareItem`.
+ */
+export interface MerchantWareItem {
+  name: string;
+  item_type?: string;
+  rarity?: string;
+  healing_amount?: number;
+  mana_amount?: number;
+}
+
+/** One of his wares: its kind, price in gold, how many are neither sold nor reserved, and the item; none for the tome. */
+export interface MerchantWareState {
+  ware: WareKind | (string & {});
+  price: number;
+  left: number;
+  item?: MerchantWareItem;
+}
+
+/** The wandering merchant on his floor and his wares, sent whole; absent in the hub, a field and elsewhere (FS-9JV5K §A R4). */
+export interface MerchantState {
+  entity_id: UUID;
+  position: Position;
+  wares: MerchantWareState[];
+}
+
 /** A cell's column and row on the floor map's grid (FS-5FZ4J §I R46). */
 export interface CellState {
   x: number;
@@ -485,6 +537,8 @@ export interface BarrierState {
   kind: BarrierKind | (string & {});
   cells: CellState[];
   open: boolean;
+  /** Set on a secret door the Cutthroats' tip revealed, absent on every other (FS-4EC7Z §F R28). */
+  revealed?: boolean;
 }
 
 /** What a trap is (FS-5FZ4J §D R27, §I R46), by the server's names. */
@@ -632,7 +686,11 @@ export type MonsterArchetype =
   | "ogre_mauler"
   | "ogre_tyrant"
   | "dark_warrior"
-  | "dark_reaper";
+  | "dark_reaper"
+  // the hostile humans (FS-4EC7Z §F R24): turned and called Cutthroats, and the contract's mark,
+  // each in its `look`; sent only on run floors
+  | "cutthroat"
+  | "contract_mark";
 
 /**
  * What a monster is doing this tick. `attack` is the wind-up and the strike (a demon's slam).
@@ -675,6 +733,11 @@ export interface MonsterAbility {
 export interface MonsterState {
   entity_id: UUID;
   archetype: MonsterArchetype;
+  /**
+   * A hostile human's art variant within its archetype (FS-4EC7Z §F R24): a Cutthroat's
+   * `cutthroat_a`, the mark's `hooded_duelist`; absent for every archetype whose look is itself.
+   */
+  look?: string;
   /** Server-authored display name, including any elite prefix. */
   name: string;
   level: number;
@@ -739,7 +802,58 @@ export interface ClientGameState {
   fountain?: FountainState;
   /** The hallowed altar on its floor once reachable; absent anywhere else (R46). */
   hallowed_altar?: HallowedAltarState;
+  /** The floor's wandering merchant and his wares, sent whole; absent with none and anywhere else (FS-9JV5K §A R4). */
+  merchant?: MerchantState;
+  /** A run floor's encounter NPCs, cut by interest as monsters are; absent with none and anywhere else (FS-4EC7Z §F R22). */
+  encounter_npcs?: EncounterNPCState[];
+  /** A run floor's Captives' cage, sent whole; absent with none (FS-4EC7Z §F R23). */
+  cages?: CageState[];
+  /** The cage key while it lies on the floor, sent whole; absent otherwise (R23). */
+  encounter_keys?: EncounterKeyState[];
+  /** Set while the party carries the cage key; absent otherwise (R23). */
+  cage_key_carried?: boolean;
   escaped_count: number; // Number of players who have escaped
+}
+
+/** What an encounter NPC is (FS-4EC7Z §F R22). */
+export type EncounterKind = "pilgrim" | "captive" | "cutthroat";
+/** Whose side an encounter NPC is on, or that it is caged (R22). */
+export type EncounterStance = "peaceful" | "caged" | "ally";
+/** What an encounter NPC is doing this tick (R22). */
+export type EncounterAction = "idle" | "move" | "attack" | "cower" | "dead";
+
+/**
+ * One encounter NPC (FS-4EC7Z §F R22): its kind, its art variant (`look`), where it stands and faces,
+ * how hale it is, its stance and what it is doing. `line` is the key of the last line it said and
+ * `line_at` when, on its own clock, rising with each line: the client shows a line once per
+ * `line_at`. `hirer_id` is an ally's hirer's member id. Mirrors Go types.EncounterNPCState.
+ */
+export interface EncounterNPCState {
+  entity_id: UUID;
+  kind: EncounterKind | (string & {});
+  look: string;
+  position: Position;
+  facing: Position;
+  health: number;
+  max_health: number;
+  stance: EncounterStance | (string & {});
+  action: EncounterAction | (string & {});
+  line?: string;
+  line_at?: number;
+  hirer_id?: UUID;
+}
+
+/** The Captives' cage (FS-4EC7Z §F R23): where it stands and whether it is open. */
+export interface CageState {
+  entity_id: UUID;
+  position: Position;
+  open: boolean;
+}
+
+/** The cage key lying on the floor (FS-4EC7Z §F R23). */
+export interface EncounterKeyState {
+  entity_id: UUID;
+  position: Position;
 }
 
 /** One rect of a region, in cells of the floor's `cell_size` (FS-KE075 §F.31). */
