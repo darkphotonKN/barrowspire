@@ -337,7 +337,7 @@ func (tw *traceWorld) apply(st steer) []*ecs.Entity {
 		}
 	}
 	for i, idx := range st.charge {
-		tw.movers[idx].AddComponent(&components.DashComponent{DirX: st.chargeDir[i][0], DirY: st.chargeDir[i][1], Speed: 900, Remaining: 240})
+		tw.movers[idx].AddComponent(&components.DashComponent{Carry: components.Carry{DirX: st.chargeDir[i][0], DirY: st.chargeDir[i][1], Speed: 900, Remaining: 240}})
 	}
 	for _, idx := range st.toggle {
 		oc, _ := tw.doors[idx].GetComponent(ecs.ComponentTypeOpenable)

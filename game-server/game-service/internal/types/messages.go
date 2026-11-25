@@ -173,6 +173,9 @@ type CurrentPlayerState struct {
 	// mercenary's the cut's slot; absent while they do not hold it. Never on
 	// another player. FS-Q18Q3 §A R4, R6.
 	TreeAbilityCooldown *CooldownState `json:"tree_ability_cooldown,omitempty"`
+	// RollCooldown is the recipient's roll cooldown, present only while it
+	// runs. Never on another player. FS-7P736 §A R12.
+	RollCooldown *CooldownState `json:"roll_cooldown,omitempty"`
 	// PassiveState is the recipient's passive tree: the ranks their body holds
 	// and the points they have left, in every world. Never on another player.
 	// FS-8RZ51 §E R23.
@@ -224,6 +227,9 @@ type BackendGameState struct {
 	// TreeAbilityCooldowns is each delver's held tree ability's cooldown,
 	// attached only to the frame their own client is sent
 	TreeAbilityCooldowns map[uuid.UUID]*CooldownState
+	// RollCooldowns is each delver's running roll cooldown, attached only to
+	// the frame their own client is sent (FS-7P736 §A R12)
+	RollCooldowns map[uuid.UUID]*CooldownState
 	// Passives is each delver's passive tree, attached only to the frame their
 	// own client is sent
 	Passives map[uuid.UUID]*PassiveState
@@ -425,6 +431,13 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		slog.Debug("payload of action cast_skill", "payload", parsedPayload)
 
 		return parsedPayload, nil
+
+	case constants.ActionRoll:
+		// FS-7P736 §A R2: the heading alone. A missing one reads as zero and
+		// is refused on the tick, silently (R6), so a roll is never answered.
+		dirX, _ := m.Payload["dir_x"].(float64)
+		dirY, _ := m.Payload["dir_y"].(float64)
+		return PlayerRollPayload{DirX: dirX, DirY: dirY}, nil
 	default:
 		return nil, fmt.Errorf("no matching action %q: %w", m.Action, ErrInvalidPayload)
 	}
@@ -460,6 +473,13 @@ type PlayerBuyPayload struct {
 // PlayerUseItemPayload names the bag item to use. FS-9JV5K §D R17.
 type PlayerUseItemPayload struct {
 	ItemEntityID string `json:"item_entity_id"`
+}
+
+// PlayerRollPayload is a roll's heading, as the client chose it; the server
+// normalises it. FS-7P736 §A R2.
+type PlayerRollPayload struct {
+	DirX float64 `json:"dir_x"`
+	DirY float64 `json:"dir_y"`
 }
 
 type PlayerCastSkillPayload struct {

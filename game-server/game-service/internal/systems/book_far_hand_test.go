@@ -83,7 +83,7 @@ func detectedArmedTrap(em *ecs.EntityManager, kind components.TrapKind, x, y flo
 // What Far Hand works, 5 cells off: an up lever, an up bridge lever, a shut
 // chest or sack, a floor door, shut or open, and a detected, armed trap of
 // every kind. The cast completes after 1 s: the world's far reach works the
-// target for the mage, 15 mana is paid and the 30 s cooldown starts.
+// target for the mage, 25 mana is paid and the 30 s cooldown starts.
 func TestBookSystemCast_FarHand_WorksEachTargetItTakes(t *testing.T) {
 	at := 5 * testCell
 	tests := map[string]func(em *ecs.EntityManager) *ecs.Entity{
@@ -124,7 +124,7 @@ func TestBookSystemCast_FarHand_WorksEachTargetItTakes(t *testing.T) {
 
 			assert.Equal(t, []uuid.UUID{target.ID}, desk.worked)
 			assert.Equal(t, []uuid.UUID{memberIDOf(mage)}, desk.workers, "worked for the mage, as a member")
-			assert.Equal(t, before-15, pool.Current, "15 mana")
+			assert.Equal(t, before-25, pool.Current, "25 mana")
 			assert.Equal(t, components.BookCooldown{Remaining: 30, Total: 30}, bookOfT(t, mage).Cooldowns[components.PageFarHand])
 		})
 	}

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { BASE_MOVE_SPEED } from "@/data/pace";
 import type { Facing8 } from "@/render/iso/facing";
 import {
   CHARACTER_ANIMATIONS,
@@ -13,6 +14,7 @@ import {
   type CharacterState,
 } from "./animationSelect";
 import type { ArtManifest } from "./manifest";
+import { ROLL_DURATION_MS } from "@/render/world/rollPrediction";
 
 const still = { vx: 0, vy: 0 };
 const state = (fields: Partial<CharacterState>): CharacterState => ({
@@ -137,7 +139,13 @@ describe("selectAnimation", () => {
   it("should scale the walk to the speed drawn, so feet do not slide", () => {
     const got = selectAnimation(state({ velocity: { vx: 200, vy: 0 } }));
     expect(got.timeScale).toBeCloseTo(200 / WALK_PACE);
-    expect(got.timeScale).toBeCloseTo(2.7, 1);
+  });
+
+  it("should walk at the paced base walk with its feet planted: the stride covers the speed drawn (FS-TAGWA R11)", () => {
+    const got = selectAnimation(state({ velocity: { vx: BASE_MOVE_SPEED, vy: 0 } }));
+    expect(got.animation).toBe("walk");
+    expect(got.timeScale * WALK_PACE).toBeCloseTo(BASE_MOVE_SPEED);
+    expect(got.timeScale).toBeLessThan(MAX_WALK_SCALE);
   });
 
   it("should scale a diagonal walk by its full speed, not one axis", () => {
@@ -157,6 +165,48 @@ describe("selectAnimation", () => {
     ["parry", { guarding: true, velocity: { vx: 200, vy: 0 } }],
   ])("should play %s at its authored rate", (_name, fields) => {
     expect(selectAnimation(state(fields)).timeScale).toBe(1);
+  });
+});
+
+describe("selectAnimation: a rolling body (FS-7P736 R15)", () => {
+  const west = { x: -1, y: 0 };
+  it.each<[string, Partial<CharacterState>, Omit<AnimationChoice, "timeScale">]>([
+    [
+      "a sheet with the roll clip plays it, turned to the roll",
+      { rolling: west, roll: true, facing: "se" },
+      { animation: "roll", facing: "w", direction: 4 },
+    ],
+    [
+      "a sheet without it strides its walk turned to the roll, under the in-code tumble",
+      { rolling: west, facing: "se", run: true, velocity: { vx: -500, vy: 0 } },
+      { animation: "walk", facing: "w", direction: 4 },
+    ],
+    [
+      "the roll plays over an attack and its aim",
+      { rolling: west, roll: true, attacking: true, aim: { x: 0, y: 50 } },
+      { animation: "roll", facing: "w", direction: 4 },
+    ],
+    [
+      "the roll plays over a guard and a held aim",
+      { rolling: { x: 0, y: 1 }, roll: true, guarding: true, holding: { x: 50, y: 0 } },
+      { animation: "roll", facing: "s", direction: 2 },
+    ],
+    [
+      "the roll faces its own way, not the eased motion's",
+      { rolling: { x: 0, y: -1 }, roll: true, velocity: { vx: 300, vy: 0 } },
+      { animation: "roll", facing: "n", direction: 6 },
+    ],
+    ["death plays over a roll", { dead: true, rolling: west, roll: true, facing: "e" }, { animation: "death", facing: "e", direction: 0 }],
+    ["the roll clip alone never rolls a body that is not rolling", { roll: true, facing: "sw" }, { animation: "idle", facing: "sw", direction: 3 }],
+  ])("%s", (_name, fields, want) => {
+    const got = selectAnimation(state(fields));
+    expect({ animation: got.animation, facing: got.facing, direction: got.direction }).toEqual(want);
+  });
+
+  it("should play the roll, and the stride under the tumble, at their authored rate whatever speed is drawn", () => {
+    const fast = { vx: -500, vy: 0 };
+    expect(selectAnimation(state({ rolling: { x: -1, y: 0 }, roll: true, velocity: fast })).timeScale).toBe(1);
+    expect(selectAnimation(state({ rolling: { x: -1, y: 0 }, velocity: fast })).timeScale).toBe(1);
   });
 });
 
@@ -290,12 +340,10 @@ describe("selectAnimation: the run, and the standing attack on the move (FS-JS7C
     expect(selectAnimation(state(fields))).toMatchObject({ animation: "attack", timeScale: 1 });
   });
 
-  it("should play the run at the speed drawn over RUN_PACE: about 1x at the server's 200 px/s (R4)", () => {
-    const got = selectAnimation(state({ velocity: { vx: 0, vy: -200 }, ...full }));
+  it("should play the run at the speed drawn over RUN_PACE, its feet planted at the paced base walk (R4, FS-TAGWA R11)", () => {
+    const got = selectAnimation(state({ velocity: { vx: 0, vy: -BASE_MOVE_SPEED }, ...full }));
     expect(got.animation).toBe("run");
-    expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
-    expect(got.timeScale).toBeGreaterThanOrEqual(0.9);
-    expect(got.timeScale).toBeLessThanOrEqual(1.1);
+    expect(got.timeScale * RUN_PACE).toBeCloseTo(BASE_MOVE_SPEED);
   });
 
   it("should play the run at speed / RUN_PACE on a sheet with run and no attack on the move (the archer's, R80)", () => {
@@ -478,7 +526,7 @@ describe("the shipped character sheets", () => {
     expect(hers.sort()).toEqual(["char_archer_base", "char_archer_hunter", "char_archer_shadow_ranger"]);
     for (const name of hers) {
       const { animations, scale, trimmed } = manifest.sheets[name];
-      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "run"]);
+      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "run", "roll"]);
       expect([scale, trimmed], name).toEqual([1.5, true]);
       // her sprint: 8 frames looping at 16 fps, in the 8 facings (R68)
       expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
@@ -491,7 +539,7 @@ describe("the shipped character sheets", () => {
     expect(his.sort()).toEqual(["char_mercenary_base", "char_mercenary_duelist", "char_mercenary_sellsword"]);
     for (const name of his) {
       const { animations, scale, trimmed } = manifest.sheets[name];
-      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
+      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "parry", "run", "roll"]);
       expect([scale, trimmed], name).toEqual([1.5, true]);
       // the shared sprint: 8 frames looping at 16 fps, in the 8 facings (R94)
       expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
@@ -504,7 +552,7 @@ describe("the shipped character sheets", () => {
     expect(his.sort()).toEqual(["char_knight_base", "char_knight_berserker", "char_knight_guardian"]);
     for (const name of his) {
       const { animations, scale, trimmed } = manifest.sheets[name];
-      const five = ["idle", "walk", "attack", "death", "run"];
+      const five = ["idle", "walk", "attack", "death", "run", "roll"];
       expect(Object.keys(animations), name).toEqual(name === "char_knight_berserker" ? [...five, "attack_offhand"] : five);
       expect([scale, trimmed], name).toEqual([1.5, true]);
       // the sprint's clip: 8 frames looping at 16 fps, in the 8 facings (R138)
@@ -513,12 +561,23 @@ describe("the shipped character sheets", () => {
     }
   });
 
+  // FS-7P736 R15: each class's own roll, baked from its rig, one whole turn in the roll's 0.4 s
+  it("should give every class sheet and look its roll: 8 frames once at 20 fps, the roll's time, in the 8 facings (FS-7P736 R15)", () => {
+    expect(CLASS_OR_LOOK).toHaveLength(12);
+    for (const name of CLASS_OR_LOOK) {
+      const roll = manifest.sheets[name].animations.roll;
+      expect([roll.fps, roll.loop], name).toEqual([20, false]);
+      expect(roll.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
+      expect((roll.frames[0].length / roll.fps) * 1000, name).toBe(ROLL_DURATION_MS);
+    }
+  });
+
   it("should give the wizard and her looks her five clips alone: no walk_attack and no backpedal_attack (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131)", () => {
     const hers = Object.keys(manifest.sheets).filter((name) => name.startsWith("char_wizard_"));
     expect(hers.sort()).toEqual(["char_wizard_base", "char_wizard_pyromancer", "char_wizard_spellwarden"]);
     for (const name of hers) {
       const { animations, scale, trimmed } = manifest.sheets[name];
-      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "run"]);
+      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "run", "roll"]);
       expect([scale, trimmed], name).toEqual([1.5, true]);
       // the sprint's clip: 8 frames looping at 16 fps, in the 8 facings (R116)
       expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);

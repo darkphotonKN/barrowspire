@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/google/uuid"
@@ -91,10 +92,10 @@ func TestSplitShot_AnArrowCritSplitsTowardTheNearestOtherMonster(t *testing.T) {
 	vc, _ := shots[0].GetComponent(ecs.ComponentTypeVelocity)
 	velocity := vc.(*components.VelocityComponent)
 	assert.InDelta(t, 0, velocity.VX, 1e-9, "straight at B")
-	assert.InDelta(t, 480, velocity.VY, 1e-9, "at an arrow's speed")
+	assert.InDelta(t, 480*constants.PaceScale, velocity.VY, 1e-9, "at an arrow's speed")
 
 	assert.Equal(t, "arrow", split.ProjectileType)
-	assert.Equal(t, 480.0, split.Speed)
+	assert.Equal(t, 480*constants.PaceScale, split.Speed)
 	assert.Equal(t, 550.0, split.MaxDistance)
 	assert.Equal(t, w.body.ID, split.OwnerEntityID)
 	assert.InDelta(t, arrow.Coefficient*0.6, split.Attack.Coefficient, 1e-9)

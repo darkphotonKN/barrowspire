@@ -40,6 +40,8 @@ vi.mock("@/render/iso", async (importOriginal) => {
 vi.mock("@/render/viewport", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/render/viewport")>()),
   boundCamera: () => {},
+  // the world's closer camera and its HUD's are worldView.test.ts's; the stub has one camera
+  zoomWorldView: () => {},
   followWith: (cam: { startFollow(target: unknown): void }, target: unknown) => cam.startFollow(target),
 }));
 const { HubScene, delveChoices, hubMenuChoices, ELDER_TALE } = await import("./HubScene");
@@ -3166,8 +3168,15 @@ describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
 
   /** The player at `me`, the Quartermaster at his spot (or `qm`), and E pressed. */
   function pressAtTheChest(me: { x: number; y: number }, qm: { x: number; y: number } | null = QM_AT) {
+    const stage = atTheChest(me, qm);
+    stage.answer(stage.keys.e);
+    return stage;
+  }
+
+  /** The player at `me`, the Quartermaster at his spot (or `qm`), nothing pressed yet. */
+  function atTheChest(me: { x: number; y: number }, qm: { x: number; y: number } | null = QM_AT) {
     const stage = hubOnStage();
-    const { hub, keys, answer } = stage;
+    const { hub } = stage;
     walled(hub);
     hub.selfEntityID = "me";
     hub.views = new Map([["me", { pos: me }]]);
@@ -3184,7 +3193,6 @@ describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
           ]
         : [],
     );
-    answer(keys.e);
     return stage;
   }
 
@@ -3304,6 +3312,156 @@ describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
     expect(gear.stashOpen()).toBe(false);
   });
 
+  // FS-VPD8Y § Change: Opening the stash holds the player still, R45–R51 (owner, Nick: 「開村莊的倉庫期間
+  // 改成不能移動」): stash mode owns the movement keys as an NPC's card does; the plain overlay does not.
+  // I-VPD8Y-7.
+  describe("the open stash holds the player still (§ Change: Opening the stash holds the player still, R45–R51)", () => {
+    /** The player beside the chest, each frame the town's whole `update`, and every `move` it sends. */
+    function besideTheChest() {
+      const stage = atTheChest({ x: CHEST_AT.x + 30, y: CHEST_AT.y }, null);
+      const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const frame = bareFrames(stage.hub);
+      const moves = () => send.mock.calls.filter(([action]) => action === ActionType.Move).map(([, payload]) => payload);
+      /** E at the chest: the overlay opens in stash mode. */
+      const openStash = () => {
+        stage.answer(stage.keys.e);
+        expect(stage.gear.stashOpen()).toBe(true);
+      };
+      /** Walking north: W held, its move sent. */
+      const striding = () => {
+        stage.keys.w.isDown = true;
+        frame();
+        expect(moves().at(-1)).toEqual({ vx: 0, vy: -1 });
+      };
+      return { ...stage, frame, moves, openStash, striding };
+    }
+
+    it("should send one stop as the stash opens over a stride, and no move while it is open (R45, R47)", () => {
+      const t = besideTheChest();
+      t.striding();
+
+      t.openStash();
+      t.frame();
+      expect(t.moves()).toEqual([
+        { vx: 0, vy: -1 },
+        { vx: 0, vy: 0 },
+      ]);
+
+      // pressed, released and pressed again, each of WASD and the arrows, a frame each
+      const movementKeys = [
+        t.keys.w,
+        t.keys.a,
+        t.hub.wasd.down,
+        t.keys.d,
+        t.hub.cursors.up,
+        t.hub.cursors.down,
+        t.keys.left,
+        t.keys.right,
+      ];
+      for (const k of movementKeys) {
+        k.isDown = true;
+        t.frame();
+        k.isDown = false;
+        t.frame();
+        k.isDown = true;
+        t.frame();
+      }
+      expect(t.moves()).toHaveLength(2);
+      expect(t.gear.stashOpen()).toBe(true);
+    });
+
+    it("should send no stop for a still player opening the stash, nor any move while it is open (R47)", () => {
+      const t = besideTheChest();
+      // the visit's first frame says the body stands still
+      t.frame();
+      expect(t.moves()).toEqual([{ vx: 0, vy: 0 }]);
+
+      t.openStash();
+      t.frame();
+      t.keys.w.isDown = true;
+      t.frame();
+      expect(t.moves()).toEqual([{ vx: 0, vy: 0 }]);
+    });
+
+    // Q closes the overlay only in a field and the run (FS-HRH2J R4; the UI scene's EVENT_GEAR_KEYS skip
+    // the hub), so the town's ways out are Esc, I, B and either panel's × (R48)
+    it.each([
+      ["Esc", (t: ReturnType<typeof besideTheChest>) => t.press(t.keys.esc)],
+      ["I", (t: ReturnType<typeof besideTheChest>) => t.press(t.keys.i)],
+      ["B", (t: ReturnType<typeof besideTheChest>) => t.press(t.keys.b)],
+      // the overlay's own ×, its change reported to the town as the UI scene's act reports it
+      ["a panel's ×", (t: ReturnType<typeof besideTheChest>) => void (t.gear.open = false)],
+    ])("should walk on with W still held as the stash closes by %s (R48, R49)", (_way, close) => {
+      const t = besideTheChest();
+      t.striding();
+      t.openStash();
+      t.frame();
+      expect(t.moves().at(-1)).toEqual({ vx: 0, vy: 0 });
+
+      close(t);
+      expect(t.gear.stashOpen()).toBe(false);
+      expect(t.gear.open).toBe(false);
+      t.frame();
+      t.frame();
+      // the stride, its one stop, and the walk on: once, with no fresh press
+      expect(t.moves()).toEqual([
+        { vx: 0, vy: -1 },
+        { vx: 0, vy: 0 },
+        { vx: 0, vy: -1 },
+      ]);
+    });
+
+    // the Menu icon opens the menu with the overlay shut as it opens (FS-3EBCA R17): the menu's hold
+    // takes over in the same frame (Edge States: the Menu icon with the stash open)
+    it("should send no move as the Menu icon swaps the stash for the menu, and walk on with W held as the menu closes", () => {
+      const t = besideTheChest();
+      cornerRowOn(t.hub, "hub");
+      const f = cornerIconFrame("menu", viewport);
+      const pressMenuIcon = () =>
+        t.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!.handlers.pointerdown();
+      t.striding();
+      t.openStash();
+      t.frame();
+      expect(t.moves()).toEqual([
+        { vx: 0, vy: -1 },
+        { vx: 0, vy: 0 },
+      ]);
+
+      pressMenuIcon();
+      expect(menuOver(t.hub)).toBeDefined();
+      expect(t.gear.stashOpen()).toBe(false);
+      t.frame();
+      t.frame();
+      expect(t.moves()).toEqual([
+        { vx: 0, vy: -1 },
+        { vx: 0, vy: 0 },
+      ]);
+
+      pressMenuIcon();
+      expect(menuOver(t.hub)).toBeUndefined();
+      t.frame();
+      expect(t.moves()).toEqual([
+        { vx: 0, vy: -1 },
+        { vx: 0, vy: 0 },
+        { vx: 0, vy: -1 },
+      ]);
+    });
+
+    it("should keep walking under the plain overlay, sending no stop (R46; FS-HRH2J R7)", () => {
+      const t = besideTheChest();
+      t.striding();
+
+      t.press(t.keys.i);
+      expect(t.gear.open).toBe(true);
+      expect(t.gear.stashOpen()).toBe(false);
+      t.frame();
+      expect(t.moves()).toEqual([{ vx: 0, vy: -1 }]);
+
+      t.keys.d.isDown = true;
+      t.frame();
+      expect(t.moves().at(-1)).toEqual({ vx: 1, vy: -1 });
+    });
+  });
 });
 
 const { readFileSync } = await import("node:fs");
@@ -4836,6 +4994,8 @@ describe("HubScene spec looks (FS-1J1CB R20, R23)", () => {
 const { VILLAGE_TRACK, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/worldMusic");
 /** The town's track's key (FS-28DDG § Change: The tower's music on every floor of a run, W1). */
 const MUSIC_KEY = VILLAGE_TRACK.key;
+const { CHAPEL_TRACK, INN_TRACK } = await import("@/audio/townMusic");
+const { HUB_CHAPEL, HUB_INN } = await import("@/render/world/hubInteriors");
 const { MUSIC_DEFAULT_LEVEL, MUSIC_SETTING_KEY, musicGain } = await import("@/audio/musicSetting");
 const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
 const { UI_EFFECTS, uiSoundKey } = await import("@/audio/uiSounds");
@@ -4850,22 +5010,26 @@ describe("HubScene music loading (FS-28DDG R12–R14)", () => {
       textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
     });
 
-  it("should queue the village m4a then ogg, under its one key, beside the folk", () => {
+  it("should queue the village m4a then ogg, then the chapel's and the Inn's m4a, beside the folk", () => {
     const art = residentArt();
     const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
 
     hub.preload();
 
-    expect(art.queuedAudio).toEqual([{ key: MUSIC_KEY, url: ["/audio/music/village.m4a", "/audio/music/village.ogg"] }]);
+    expect(art.queuedAudio).toEqual([
+      { key: MUSIC_KEY, url: ["/audio/music/village.m4a", "/audio/music/village.ogg"] },
+      { key: CHAPEL_TRACK.key, url: ["/audio/music/chapel.m4a"] },
+      { key: INN_TRACK.key, url: ["/audio/music/inn.m4a"] },
+    ]);
     expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
   });
 
-  it("should skip the download while the track is still cached", () => {
+  it("should skip the download while the tracks are still cached", () => {
     const art = artLoaderStandin({
       manifest: shippedManifest(),
       cachedManifest: true,
       textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
-      audio: [MUSIC_KEY],
+      audio: [MUSIC_KEY, CHAPEL_TRACK.key, INN_TRACK.key],
     });
     const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
 
@@ -5193,6 +5357,20 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
 
       expect(sound.volumes.at(-1)).toBeCloseTo(musicGain(4), 12);
     });
+  });
+
+  // the chapel's and the Inn's tracks indoors, the village's everywhere else (§ Change: The chapel's
+  // and the Inn's music, M1); the switch itself is the town music's (townMusic.test.ts)
+  it.each([
+    ["the chapel", { id: "h-chapel", ...HUB_CHAPEL }, "chapel"],
+    ["the Inn", { id: "h-inn", ...HUB_INN }, "inn"],
+    ["another house", { id: "h-smithy", x: 0, y: 0, width: 100, height: 100 }, "street"],
+    ["no house", undefined, "street"],
+  ])("should hear %s as the music's place", (_, building, place) => {
+    const { hub } = hubWithSound();
+    Object.assign(hub, { view: { building } });
+
+    expect((hub as unknown as { musicPlace: string }).musicPlace).toBe(place);
   });
 
   it("should start the music on entering and fade it in on the game's step", () => {
@@ -6482,7 +6660,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const hub = env.hub as unknown as typeof env.hub & Windowed;
     const heard = hearOn(hub as unknown as Record<string, unknown>);
     // OPTIONS opens only beside the town's music; its level is not under test here
-    hub.music = { level: () => 3, setLevel: () => {}, leave: vi.fn() };
+    hub.music = { level: () => 3, setLevel: () => {}, leave: vi.fn(), moveTo: () => {} };
     const letter = { open: false };
     hub.mailbox = {
       isOpen: () => letter.open,

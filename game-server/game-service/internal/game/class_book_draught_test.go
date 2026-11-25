@@ -42,7 +42,7 @@ func wound(delver *ecs.Entity, current, maximum int) {
 	health.CurrentHealth, health.MaxHealth = current, maximum
 }
 
-// A level-9 archer brews: after 3 s 30 stamina is paid, the 120 s cooldown
+// A level-9 archer brews: after 3 s 45 stamina is paid, the 120 s cooldown
 // starts and a draught stands at their feet in every recipient's state, as
 // book effect kind "draught" with the id an interact names. AC 1; R27, R34.
 func TestCastSkill_BrewSetsADraughtAtTheArchersFeetForEveryone(t *testing.T) {
@@ -53,7 +53,7 @@ func TestCastSkill_BrewSetsADraughtAtTheArchersFeetForEveryone(t *testing.T) {
 
 	draught := brew(t, s, archer)
 
-	assert.Equal(t, staminaBefore-30, currentResource(body), "30 stamina")
+	assert.Equal(t, staminaBefore-45, currentResource(body), "45 stamina")
 	assert.Equal(t, components.BookCooldown{Remaining: 120, Total: 120}, bookOf(t, body).Cooldowns[components.PageBrew])
 	for _, recipient := range []uuid.UUID{archer, mate} {
 		effects, _ := frameOf(t, s, types.WorldTypeRun, recipient)["book_effects"].([]any)

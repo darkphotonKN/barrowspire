@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -127,7 +128,7 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 		{"targeted attack", components.AttackIntent{Kind: components.AttackTargeted}, 0.5, 0},
 		{"slash", components.AttackIntent{Kind: components.AttackSlash, TargetX: 200, TargetY: 100}, 0.25, 0},
 		{"cut", components.AttackIntent{Kind: components.AttackCut, TargetX: 200, TargetY: 100}, 0.25, 0},
-		{"shadow shot", components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100}, 1.2, 90},
+		{"shadow shot", components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100}, 1.2, 100},
 	}
 
 	for _, tt := range tests {
@@ -146,7 +147,7 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 			hpAfterFirst, shotsAfterFirst := health(target), len(projectiles(em))
 			assert.Equal(t, 100-tt.cost, pool(attacker))
 			// refilled and unpinned so only the cooldown can refuse what
-			// follows; one Shadow Shot alone nearly drains the pool
+			// follows; one Shadow Shot alone drains the pool
 			resourceOf(attacker).Current = 100
 			attacker.RemoveComponent(ecs.ComponentTypeAttackPin)
 
@@ -176,13 +177,13 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 func TestCombatSystem_NotEnoughResourceDoesNothing(t *testing.T) {
 	em := ecs.NewEntityManager()
 	attacker := delver(em, 100, 100)
-	resourceOf(attacker).Current = 89 // one short of Shadow Shot's 90
+	resourceOf(attacker).Current = 99 // one short of Shadow Shot's 100
 	cooldowns, _ := attacker.GetComponent(ecs.ComponentTypeCooldown)
 
 	intend(attacker, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100})
 	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
 
-	assert.Equal(t, 89, pool(attacker))
+	assert.Equal(t, 99, pool(attacker))
 	assert.Empty(t, projectiles(em))
 	assert.Zero(t, cooldowns.(*components.CooldownComponent).Remaining[components.AttackShadowShot], "a refused cast starts no cooldown")
 }
@@ -485,7 +486,7 @@ func TestCombatSystem_ShadowShot_LoosesOneSlowHeavyBolt(t *testing.T) {
 	pc, _ := bolts[0].GetComponent(ecs.ComponentTypeProjectile)
 	bolt := pc.(*components.ProjectileComponent)
 	assert.Equal(t, "shadow_shot", bolt.ProjectileType)
-	assert.Equal(t, 260.0, bolt.Speed)
+	assert.Equal(t, 260*constants.PaceScale, bolt.Speed)
 	assert.Equal(t, 650.0, bolt.MaxDistance)
 	assert.Equal(t, 10.0, bolt.Radius)
 	assert.Equal(t, components.DamagePhysical, bolt.Attack.DamageType)
@@ -495,7 +496,7 @@ func TestCombatSystem_ShadowShot_LoosesOneSlowHeavyBolt(t *testing.T) {
 	vc, _ := bolts[0].GetComponent(ecs.ComponentTypeVelocity)
 	v := vc.(*components.VelocityComponent)
 	assert.InDelta(t, 0, v.VX, 1e-9, "flies straight at the aim")
-	assert.InDelta(t, 260, v.VY, 1e-9)
+	assert.InDelta(t, 260*constants.PaceScale, v.VY, 1e-9)
 }
 
 func TestCombatSystem_ImpactsResolveEvenAfterTheOwnerIsGone(t *testing.T) {
@@ -551,7 +552,7 @@ func TestCombatSystem_DashSetsAChargeGoingAndCostsStamina(t *testing.T) {
 	tc, _ := attacker.GetComponent(ecs.ComponentTypeTransform)
 	assert.Equal(t, 100.0, tc.(*components.TransformComponent).X)
 	assert.True(t, attacker.HasComponent(ecs.ComponentTypeDash))
-	assert.Equal(t, 75, pool(attacker))
+	assert.Equal(t, 60, pool(attacker))
 }
 
 func TestCombatSystem_IntentsAreConsumed(t *testing.T) {
@@ -852,9 +853,9 @@ func TestAttackCost_OnlyAbilitiesCost(t *testing.T) {
 		kind components.AttackKind
 		want int
 	}{
-		{components.AttackDash, 25},
-		{components.AttackTripleFireball, 15},
-		{components.AttackShadowShot, 90},
+		{components.AttackDash, 40},
+		{components.AttackTripleFireball, 25},
+		{components.AttackShadowShot, 100},
 		{components.AttackSlash, 0},
 		{components.AttackArrow, 0},
 		{components.AttackFireball, 0},
@@ -882,8 +883,8 @@ func TestCombatSystem_DashIsAffordableFromItsExactCost(t *testing.T) {
 		wantDash    bool
 		wantStamina int
 	}{
-		{"one short", 24, false, 24},
-		{"exactly enough", 25, true, 0},
+		{"one short", 39, false, 39},
+		{"exactly enough", 40, true, 0},
 	}
 
 	for _, tt := range tests {
@@ -902,9 +903,9 @@ func TestCombatSystem_DashIsAffordableFromItsExactCost(t *testing.T) {
 	}
 }
 
-// A full stamina pool holds four dashes back to back; the fifth is refused
+// A full stamina pool holds two dashes back to back; the third is refused
 // until regen covers its cost. FS-8AY7S §Requirements 3, 5, 9–10.
-func TestCombatSystem_FullStaminaHoldsFourDashes(t *testing.T) {
+func TestCombatSystem_FullStaminaHoldsTwoDashes(t *testing.T) {
 	em := ecs.NewEntityManager()
 	warrior := delver(em, 100, 100)
 	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
@@ -918,36 +919,37 @@ func TestCombatSystem_FullStaminaHoldsFourDashes(t *testing.T) {
 		}
 	}
 
-	// pinned between casts so the four come out of the full pool alone
-	for i := range 4 {
+	// pinned between casts so the two come out of the full pool alone
+	for i := range 2 {
 		before := pool(warrior)
 		dashToward(warrior, 400, 100)
 		combat.Update(worldTick, em.GetAllEntities(), nil)
-		require.Equal(t, before-25, pool(warrior), "dash %d paid", i+1)
+		require.Equal(t, before-40, pool(warrior), "dash %d paid", i+1)
 		waitOut()
 	}
-	require.Equal(t, 0, pool(warrior))
+	require.Equal(t, 20, pool(warrior))
 
 	dashToward(warrior, 400, 100)
 	combat.Update(worldTick, em.GetAllEntities(), nil)
-	assert.Equal(t, 0, pool(warrior), "the fifth is refused")
+	assert.Equal(t, 20, pool(warrior), "the third is refused")
 	assert.Zero(t, cooldownOf(warrior, components.AttackDash))
 
-	// 38 ticks, just over 1.25 s of regen at 20/s, covers it
-	for range 38 {
+	// 30 ticks, 1 s of regen at the delver's 20/s, covers it
+	for range 30 {
 		regen.Update(worldTick, em.GetAllEntities())
 	}
-	require.Equal(t, 25, pool(warrior))
+	require.Equal(t, 40, pool(warrior))
 	dashToward(warrior, 400, 100)
 	combat.Update(worldTick, em.GetAllEntities(), nil)
-	assert.Equal(t, 0, pool(warrior), "regen covered the fifth")
+	assert.Equal(t, 0, pool(warrior), "regen covered the third")
 	assert.InDelta(t, dashCooldown, cooldownOf(warrior, components.AttackDash), 1e-9)
 }
 
-// One Shadow Shot nearly empties a full pool, and the next waits on regen
-// (about 4 s at 20/s), not on the 1.2 s cooldown. FS-JTNPR §Requirements 1,
-// 5 (amended 2026-10-30).
-func TestCombatSystem_ShadowShotNearlyEmptiesTheStaminaPool(t *testing.T) {
+// One Shadow Shot empties a full pool, and the next waits on regen (5 s at
+// the delver's 20/s), not on the 1.2 s cooldown. FS-JTNPR §Requirements 1, 5
+// (amended 2026-10-30); FS-8AY7S §Change: A cost never exceeds the class's
+// base pool P2.
+func TestCombatSystem_ShadowShotEmptiesTheStaminaPool(t *testing.T) {
 	em := ecs.NewEntityManager()
 	archer := delver(em, 100, 100)
 	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
@@ -959,7 +961,7 @@ func TestCombatSystem_ShadowShotNearlyEmptiesTheStaminaPool(t *testing.T) {
 
 	shoot()
 	require.Len(t, projectiles(em), 1)
-	require.Equal(t, 10, pool(archer), "one shot leaves 10 of 100")
+	require.Equal(t, 0, pool(archer), "one shot takes all 100")
 
 	// the archer asks for a shot every tick while the pool refills
 	elapsed := 0.0
@@ -970,7 +972,7 @@ func TestCombatSystem_ShadowShotNearlyEmptiesTheStaminaPool(t *testing.T) {
 	}
 
 	assert.Len(t, projectiles(em), 2)
-	assert.InDelta(t, 4.0, elapsed, 0.1, "the second shot waits for the pool to be almost full")
+	assert.InDelta(t, 5.0, elapsed, 0.1, "the second shot waits for the pool to be full")
 }
 
 // A targeted cast that resolves to nothing costs nothing, whatever its row's
@@ -1182,7 +1184,7 @@ func TestCombatSystem_Cooldown_GearSwapMidCooldownLeavesItsTotal(t *testing.T) {
 func TestCombatSystem_Cooldown_RefusedCastStartsNone(t *testing.T) {
 	em := ecs.NewEntityManager()
 	attacker := delver(em, 100, 100)
-	resourceOf(attacker).Current = 89 // one short of Shadow Shot's 90
+	resourceOf(attacker).Current = 99 // one short of Shadow Shot's 100
 
 	intend(attacker, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100})
 	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
@@ -1230,7 +1232,7 @@ func TestCombatSystem_Earthbreaker_HitsEveryValidTargetWithin90AllRound(t *testi
 	assert.Equal(t, 1000-hit, health(south))
 	assert.Equal(t, 1000, health(tooFar), "95 px is beyond the slam")
 	assert.Equal(t, 150, health(warrior), "never its own caster")
-	assert.Equal(t, 60, pool(warrior))
+	assert.Equal(t, 40, pool(warrior))
 	remaining, total := cooldownState(warrior, components.AttackEarthbreaker)
 	assert.InDelta(t, 10, remaining, 1e-9)
 	assert.InDelta(t, 10, total, 1e-9)
@@ -1293,9 +1295,9 @@ func TestCombatSystem_TreeAbility_RefusedWithoutTheClassOrTheNode(t *testing.T) 
 	}
 }
 
-// Inside its cooldown or short of its 40 stamina the slam does nothing and
+// Inside its cooldown or short of its 60 stamina the slam does nothing and
 // spends nothing. FS-04EEA §A R4.
-func TestCombatSystem_Earthbreaker_RefusedInsideItsCooldownOrUnder40(t *testing.T) {
+func TestCombatSystem_Earthbreaker_RefusedInsideItsCooldownOrUnder60(t *testing.T) {
 	t.Run("inside its cooldown", func(t *testing.T) {
 		em := ecs.NewEntityManager()
 		warrior := earthbreakerWarrior(em, 100, 100, true)
@@ -1303,24 +1305,27 @@ func TestCombatSystem_Earthbreaker_RefusedInsideItsCooldownOrUnder40(t *testing.
 		slam(warrior)
 		combat.Update(tickSeconds, em.GetAllEntities(), nil)
 		target := dummy(em, 150, 100)
+		// refilled so only the cooldown can refuse the second: one slam
+		// leaves too little for another
+		resourceOf(warrior).Current = 100
 
 		slam(warrior)
 		combat.Update(tickSeconds, em.GetAllEntities(), nil)
 
 		assert.Equal(t, 1000, health(target))
-		assert.Equal(t, 60, pool(warrior))
+		assert.Equal(t, 100, pool(warrior))
 	})
-	t.Run("under 40 stamina", func(t *testing.T) {
+	t.Run("under 60 stamina", func(t *testing.T) {
 		em := ecs.NewEntityManager()
 		warrior := earthbreakerWarrior(em, 100, 100, true)
-		resourceOf(warrior).Current = 39
+		resourceOf(warrior).Current = 59
 		target := dummy(em, 150, 100)
 
 		slam(warrior)
 		NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
 
 		assert.Equal(t, 1000, health(target))
-		assert.Equal(t, 39, pool(warrior))
+		assert.Equal(t, 59, pool(warrior))
 		remaining, _ := cooldownState(warrior, components.AttackEarthbreaker)
 		assert.Zero(t, remaining)
 	})
@@ -1334,7 +1339,7 @@ func TestCombatSystem_Earthbreaker_HittingNothingStillSpendsAndCools(t *testing.
 	slam(warrior)
 	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
 
-	assert.Equal(t, 60, pool(warrior))
+	assert.Equal(t, 40, pool(warrior))
 	remaining, _ := cooldownState(warrior, components.AttackEarthbreaker)
 	assert.InDelta(t, 10, remaining, 1e-9)
 }
@@ -1408,10 +1413,10 @@ func TestHeldTreeAbility(t *testing.T) {
 	assert.False(t, held, "a class naming none")
 }
 
-// A tree ability's cost, as the wire shows it: Earthbreaker's 40, and Settle
+// A tree ability's cost, as the wire shows it: Earthbreaker's 60, and Settle
 // the Debt's least, 1. FS-04EEA §A R5; FS-Q18Q3 §A R5.
 func TestTreeAbilityCost(t *testing.T) {
-	assert.Equal(t, 40, TreeAbilityCost(components.AttackEarthbreaker))
+	assert.Equal(t, 60, TreeAbilityCost(components.AttackEarthbreaker))
 	assert.Equal(t, 1, TreeAbilityCost(components.AttackSettleTheDebt))
 }
 

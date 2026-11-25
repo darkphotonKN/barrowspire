@@ -71,7 +71,7 @@ func throughFarHand(t *testing.T, s *Session, mage uuid.UUID, target uuid.UUID) 
 
 // A level-5 mage's Far Hand on the first lever in turn, 3 to 5 cells off,
 // pulls it down when the 1 s cast completes, as an interact beside it would:
-// 15 mana paid and the 30 s cooldown started. R50, R9.
+// 25 mana paid and the 30 s cooldown started. R50, R9.
 func TestCastSkill_FarHand_PullsALeverFromAfar(t *testing.T) {
 	s, _, _ := sealedRun(t, 7, forcedSeal(components.SealLeverOrder))
 	clearMonsters(s)
@@ -83,7 +83,7 @@ func TestCastSkill_FarHand_PullsALeverFromAfar(t *testing.T) {
 	throughFarHand(t, s, mage, levers[0].ID)
 
 	assert.True(t, pieceOf(levers[0]).Active, "pulled down")
-	assert.Equal(t, mana-15, currentResource(body))
+	assert.Equal(t, mana-25, currentResource(body))
 	assert.Equal(t, components.BookCooldown{Remaining: 30, Total: 30}, bookOf(t, body).Cooldowns[components.PageFarHand])
 }
 

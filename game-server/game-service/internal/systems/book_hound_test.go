@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/stretchr/testify/assert"
@@ -19,7 +20,8 @@ const houndHome = 500.0
 
 // callHound has a level-15 archer at (houndHome, houndHome) call the hound at
 // (houndHome + x, houndHome) and lets the 2 s cast run out, its own tick counted. The books are the
-// world's.
+// world's. Each call starts off cooldown on a full pool: one call's 60 stamina
+// leaves too little for the next.
 func callHound(t *testing.T, em *ecs.EntityManager, archer *ecs.Entity, x float64) *ecs.Entity {
 	t.Helper()
 	page, _ := BookPageOf(string(components.PageCallTheHound))
@@ -27,6 +29,7 @@ func callHound(t *testing.T, em *ecs.EntityManager, archer *ecs.Entity, x float6
 	if book, ok := bookOf(archer); ok {
 		delete(book.Cooldowns, components.PageCallTheHound)
 	}
+	resourceOf(archer).Current = resourceOf(archer).Max
 	require.NoError(t, books.Cast(BookCast{
 		Caster: archer, Page: page, TargetX: houndHome + x, TargetY: houndHome,
 		CellSize: testCell, BookGround: BookGround{Walkable: anyGround},
@@ -135,7 +138,7 @@ func TestHound_WalksToAndBitesAMonsterEverySecond(t *testing.T) {
 	assert.Equal(t, 168, healthT(t, g).CurrentHealth, "the next, 1 s on")
 }
 
-// A level-15 archer's Call the Hound takes 2 s; on completion 40 stamina is
+// A level-15 archer's Call the Hound takes 2 s; on completion 60 stamina is
 // paid, its 180 s cooldown starts and a hound stands at the point for 40 s,
 // with 40 % of the archer's max health, the archer's member id as its owner
 // and a bite of 8 + 0.5 × 15. AC 1; R28; §B.
@@ -145,7 +148,7 @@ func TestBookSystemAdvanceCasts_CallTheHoundSetsAHoundAtThePoint(t *testing.T) {
 
 	hound := callHound(t, em, archer, 3*testCell)
 
-	assert.Equal(t, 60, pool(archer), "100 - 40 stamina")
+	assert.Equal(t, 40, pool(archer), "100 - 60 stamina")
 	assert.Equal(t, components.BookCooldown{Remaining: 180, Total: 180}, bookOfT(t, archer).Cooldowns[components.PageCallTheHound])
 	at, _ := bodyCentre(hound)
 	assert.Equal(t, houndHome+3*testCell, at.X)
@@ -172,7 +175,7 @@ func TestHound_FollowsTheArcherToWithinTwoCells(t *testing.T) {
 	floor.run(1)
 	assert.Equal(t, components.HoundActionRun, houndT(t, hound).Action)
 
-	floor.run(ticksOf(4))
+	floor.run(ticksOf(4 / constants.PaceScale))
 	assert.LessOrEqual(t, distanceOf(t, hound, archer), 2*testCell+1, "heels within 2 cells")
 	assert.Zero(t, velocityOf(t, hound).VX, "and stands there")
 	assert.Equal(t, components.HoundActionIdle, houndT(t, hound).Action)

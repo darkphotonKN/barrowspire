@@ -1,9 +1,9 @@
 ---
 id: I-7P736-2
-status: open
+status: done
 implements: FS-7P736
 blocked_by: [I-7P736-1]
-labels: [blocked]
+labels: [ready]
 title: FS-7P736 slice 2: Space rolls, predicted, with a cooldown pip on the HUD
 ---
 Implements FS-7P736 §B (R13, R14, R16, R17)
@@ -16,8 +16,8 @@ wall sweep as walking prediction, reconciled as walking is; the roll pip in the 
 the run HUD message, swept from `roll_cooldown`; the controls panel row.
 
 ## Acceptance Criteria
-- [ ] FS-7P736's game-client criteria for input, prediction, the pip and the controls panel.
-- [ ] `npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` green.
+- [x] FS-7P736's game-client criteria for input, prediction, the pip and the controls panel.
+- [x] `npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` green.
 
 ## Blocked By
 I-7P736-1 (and, through it, the pace branch).

@@ -601,10 +601,11 @@ describe("partyFramesFrame", () => {
   });
 
   // FS-77DVN §E.17 supersedes FS-56CKV §D.20's run top 132 (and FS-R82NV R34's "run y 160") in
-  // part: the run's bars rise to (10, 16), so its frames stand where a field's do (§E.21)
+  // part: the run's bars rise to (10, 16), so its frames stand where a field's do (§E.21). The
+  // reliquary bars' taller plate (71 px for two rows, was 52) moves the frames to top 111, by the same rule.
   it.each([
-    { world: "run" as const, bars: RESOURCE_HUD_AT.run, top: 92 },
-    { world: "field" as const, bars: RESOURCE_HUD_AT.field, top: 92 },
+    { world: "run" as const, bars: RESOURCE_HUD_AT.run, top: 111 },
+    { world: "field" as const, bars: RESOURCE_HUD_AT.field, top: 111 },
   ])(
     "in the $world, the frames stand 24 px below the bars at their tallest",
     ({ world, bars, top }) => {
@@ -615,9 +616,9 @@ describe("partyFramesFrame", () => {
     },
   );
 
-  it("stands a run's frames where a field's stand, at {10, 92} (FS-77DVN §E.17, §E.21)", () => {
-    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 92 });
-    expect(PARTY_FRAMES_PLACEMENT.field).toEqual({ x: 10, top: 92 });
+  it("stands a run's frames where a field's stand, at {10, 111} (FS-77DVN §E.17, §E.21)", () => {
+    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 111 });
+    expect(PARTY_FRAMES_PLACEMENT.field).toEqual({ x: 10, top: 111 });
   });
 
   // FS-77DVN §E.18 supersedes FS-56CKV §D.22's hub frames at y 56, under the XP bar

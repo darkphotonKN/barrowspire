@@ -69,7 +69,7 @@ func TestBookSystemCast_WitchlightSetsDownItsLightOnlyAfterItsCastTime(t *testin
 
 	castTicks(books, em, 1)
 	assert.Nil(t, book.Casting, "the cast is done")
-	assert.Equal(t, 80, pool.Current, "20 mana paid on completion")
+	assert.Equal(t, 70, pool.Current, "30 mana paid on completion")
 	assert.Equal(t, components.BookCooldown{Remaining: 45, Total: 45}, book.Cooldowns[components.PageWitchlight])
 	effects := bookEffectsOf(em)
 	require.Len(t, effects, 1)
@@ -201,13 +201,13 @@ func TestBookSystemAdvanceCasts_CompletionRechecksTheCost(t *testing.T) {
 	books := NewBookSystem(em)
 	require.NoError(t, books.Cast(cast))
 	pool, _ := bookPool(mage)
-	pool.Current = 19
+	pool.Current = 29
 
 	castTicks(books, em, 31)
 
 	book := bookOfT(t, mage)
 	assert.Nil(t, book.Casting, "the cast ends")
-	assert.Equal(t, 19, pool.Current, "no cost")
+	assert.Equal(t, 29, pool.Current, "no cost")
 	assert.Empty(t, book.Cooldowns, "no cooldown")
 	assert.Empty(t, bookEffectsOf(em), "no light")
 }

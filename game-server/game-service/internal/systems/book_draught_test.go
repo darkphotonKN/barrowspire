@@ -53,7 +53,7 @@ func brewedDraught(t *testing.T, em *ecs.EntityManager) (archer, draught *ecs.En
 	return nil, nil
 }
 
-// A level-9 archer's Brew takes 3 s; on completion 30 stamina is paid, its
+// A level-9 archer's Brew takes 3 s; on completion 45 stamina is paid, its
 // 120 s cooldown starts and a draught stands at the archer's feet. R27; §B.
 func TestBookSystemAdvanceCasts_BrewSetsADraughtAtTheArchersFeet(t *testing.T) {
 	em := ecs.NewEntityManager()
@@ -63,7 +63,7 @@ func TestBookSystemAdvanceCasts_BrewSetsADraughtAtTheArchersFeet(t *testing.T) {
 	at, _ := bodyCentre(draught)
 	assert.Equal(t, 500.0, at.X)
 	assert.Equal(t, 500.0, at.Y)
-	assert.Equal(t, 70, pool(archer), "100 - 30 stamina")
+	assert.Equal(t, 55, pool(archer), "100 - 45 stamina")
 	assert.Equal(t, components.BookCooldown{Remaining: 120, Total: 120}, bookOfT(t, archer).Cooldowns[components.PageBrew])
 }
 

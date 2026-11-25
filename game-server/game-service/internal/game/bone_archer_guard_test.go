@@ -3,6 +3,7 @@ package game
 import (
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/google/uuid"
@@ -11,27 +12,46 @@ import (
 )
 
 // hallChestWithArcher is a floor-1 chest standing in a hall whose pack holds a
-// Bone Archer, with that archer, from the first seed that builds one.
+// Bone Archer, with that archer, from the first seed that builds such a pack.
+// A hall that holds a pack draws no chest of its own (FS-KE075 §Change: Room
+// variety R81), so the chest is stood in it and guarded by its pack as the
+// build guards any chest in a room of guards (§J R57-R58).
 func hallChestWithArcher(t *testing.T) (s *Session, player uuid.UUID, chest, archer *ecs.Entity, seed uint64) {
 	t.Helper()
 	for seed = 1; seed <= 200; seed++ {
 		run, ids := dungeonRun(t, seed, 1, 0)
 		d := run.dungeon
-		for _, c := range containers(run) {
-			at := transformOf(t, c)
-			room := roomOf(d, at.X, at.Y)
-			if !eligibleHall(d, room) || kindOf(t, c) != components.ContainerKindChest {
+		for room := range d.layout.Rooms {
+			if !eligibleHall(d, room) {
 				continue
 			}
+			var pack []uuid.UUID
+			var bowman *ecs.Entity
 			for _, m := range monstersIn(run) {
 				mat := transformOf(t, m)
-				if monsterOf(m).Archetype == components.MonsterArchetypeBoneArcher && roomOf(d, mat.X, mat.Y) == room {
-					return run, ids[0], c, m, seed
+				if roomOf(d, mat.X, mat.Y) != room {
+					continue
+				}
+				pack = append(pack, m.ID)
+				if monsterOf(m).Archetype == components.MonsterArchetypeBoneArcher {
+					bowman = m
+				}
+			}
+			if bowman == nil {
+				continue
+			}
+			at, ok := run.placeFixture(d, room, constants.ContainerWidthRadius, constants.ContainerHeightRadius)
+			require.True(t, ok, "seed %d: the hall has room for a chest", seed)
+			run.AddContainer(at.x, at.y, components.ContainerKindChest)
+			run.guardChests(d, map[int][]uuid.UUID{room: pack})
+			for _, c := range containers(run) {
+				if cat := transformOf(t, c); cat.X == at.x && cat.Y == at.y {
+					return run, ids[0], c, bowman, seed
 				}
 			}
 		}
 	}
-	require.FailNow(t, "no seed builds a hall chest beside a Bone Archer")
+	require.FailNow(t, "no seed builds a hall pack with a Bone Archer")
 	return nil, uuid.Nil, nil, nil, 0
 }
 

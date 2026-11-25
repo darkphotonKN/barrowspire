@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -253,7 +254,8 @@ const (
 )
 
 // attackTable is FS-77AB6 §Requirements 6. Starting values. Projectile speed,
-// range, radius and spread are what they were before the CombatSystem existed.
+// range, radius and spread are what they were before the CombatSystem existed,
+// the speed paced since (its full-pace figure × PaceScale, FS-TAGWA R2).
 //
 // Slash's coefficient is 1.5, not the table's 1.0: the FS tunes coefficients so a
 // level-1 unequipped delver deals roughly today's numbers, and a warrior slash at
@@ -312,53 +314,54 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackArrow: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
 		coefficient: 1.4, cooldown: 0.25,
-		projectile: projectileSpec{kind: "arrow", speed: 480, maxDistance: 550, radius: 8, spread: []float64{0}},
+		projectile: projectileSpec{kind: "arrow", speed: 480 * constants.PaceScale, maxDistance: 550, radius: 8, spread: []float64{0}},
 		pins:       true,
 	},
 	components.AttackFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
 		coefficient: 1.1, cooldown: 0.25,
-		projectile: projectileSpec{kind: "fireball", speed: 350, maxDistance: 500, radius: 12, spread: []float64{0}},
+		projectile: projectileSpec{kind: "fireball", speed: 350 * constants.PaceScale, maxDistance: 500, radius: 12, spread: []float64{0}},
 		pins:       true,
 	},
-	// the archer's ability: one slow, heavy bolt, paid in stamina. 90 of the
-	// archer's 100 nearly drains it, so the next waits on regen. FS-JTNPR
-	// §Requirements 1, 5 (amended 2026-10-30).
+	// the archer's ability: one slow, heavy bolt, paid in stamina. It takes the
+	// archer's whole 100, so the next waits on regen. FS-JTNPR §Requirements 1,
+	// 5 (amended 2026-10-30; ×1.5 capped at the pool by the 2026-11-25 pace
+	// charter, I-8AY7S-7).
 	components.AttackShadowShot: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
-		coefficient: 3.2, cost: 90, cooldown: 1.2,
-		projectile: projectileSpec{kind: "shadow_shot", speed: 260, maxDistance: 650, radius: 10, spread: []float64{0}},
+		coefficient: 3.2, cost: 100, cooldown: 1.2,
+		projectile: projectileSpec{kind: "shadow_shot", speed: 260 * constants.PaceScale, maxDistance: 650, radius: 10, spread: []float64{0}},
 		pins:       true,
 	},
 	components.AttackTripleFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
-		coefficient: 0.9, cost: 15, cooldown: 0.4,
-		projectile: projectileSpec{kind: "fireball", speed: 360, maxDistance: 500, radius: 12, spread: []float64{-0.26, 0, 0.26}},
+		coefficient: 0.9, cost: 25, cooldown: 0.4,
+		projectile: projectileSpec{kind: "fireball", speed: 360 * constants.PaceScale, maxDistance: 500, radius: 12, spread: []float64{-0.26, 0, 0.26}},
 		pins:       true,
 	},
 	// the charge is movement, not an attack: it never pins (FS-JS7C8 §Change:
 	// Attacking pins the attacker R55), though a pin refuses it like any row
 	components.AttackDash: {
-		delivery: deliverMovement, cost: 25, cooldown: 0.4,
+		delivery: deliverMovement, cost: 40, cooldown: 0.4,
 	},
 	// the warrior's tree ability: a slam all round on Strength, as the slash.
 	// FS-04EEA §B R8–R9 (integrator correction 2026-11-21), §A R5.
 	components.AttackEarthbreaker: {
 		delivery: deliverAround, damageType: components.DamagePhysical, scaling: scaleStrength,
-		coefficient: 1.5, cost: 40, cooldown: 10, reach: earthbreakerRange,
+		coefficient: 1.5, cost: 60, cooldown: 10, reach: earthbreakerRange,
 		pins: true, stuns: true,
 	},
 	// the mage's tree ability: an instant move toward the cursor, paid in
 	// mana. FS-04EEA §D R18, §A R5.
 	components.AttackBlink: {
-		delivery: deliverBlink, cost: 30, cooldown: 8, reach: blinkDistance,
+		delivery: deliverBlink, cost: 45, cooldown: 8, reach: blinkDistance,
 		pins: true,
 	},
 	// the archer's tree ability: a circle the arrows fall on, 5 volleys each
 	// on Agility. FS-04EEA §E R23–R25, §A R5.
 	components.AttackArrowRain: {
 		delivery: deliverRain, damageType: components.DamagePhysical, scaling: scaleAgility,
-		coefficient: 0.5, cost: 35, cooldown: 12, reach: arrowRainReach,
+		coefficient: 0.5, cost: 55, cooldown: 12, reach: arrowRainReach,
 		pins: true,
 	},
 	// the mercenary's tree ability: one hit all round per target at 1.0 per
@@ -498,8 +501,10 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		pending := intents.Pending
 		intents.Pending = nil
 
-		// a dead or resolved attacker is out of play: what it queued is dropped
-		if !canAct(entity) {
+		// a dead or resolved attacker is out of play: what it queued is
+		// dropped; so is a rolling delver's, never kept for after (FS-7P736
+		// §A R8)
+		if !canAct(entity) || Rolling(entity) {
 			continue
 		}
 
@@ -1049,10 +1054,12 @@ func startCharge(attacker *ecs.Entity, at *components.TransformComponent, aimX, 
 		dirX, dirY = dx/dist, dy/dist
 	}
 	attacker.AddComponent(&components.DashComponent{
-		DirX: dirX, DirY: dirY,
-		Speed:     dashSpeed,
-		Remaining: dashDistance,
-		FromX:     at.X, FromY: at.Y,
+		Carry: components.Carry{
+			DirX: dirX, DirY: dirY,
+			Speed:     dashSpeed,
+			Remaining: dashDistance,
+		},
+		FromX: at.X, FromY: at.Y,
 	})
 }
 
@@ -1494,9 +1501,16 @@ func alive(entity *ecs.Entity) bool {
 // through whatever this refuses. Only a monster's hit lands on an encounter
 // NPC: a delver's, its reflect, and a trap's pass it by (FS-4EC7Z §A R3), and
 // nothing lands on a caged captive, behind bars (§D R13). A hired ally's
-// lands on a monster and nothing else (§C R9).
+// lands on a monster and nothing else (§C R9). Nothing whose source is a
+// delver or a hired ally lands on a hound, whatever the player-damage setting
+// (FS-X2CMM R28, §Change: The archer's wolf W3): this one rule, here. Nothing
+// lands on a rolling delver: no strike, shot, area, trap or trail, so a
+// projectile flies through them (FS-7P736 §A R5).
 func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage PlayerDamage) bool {
 	if !alive(target) || BodyKindOf(target) == BodyCaptive {
+		return false
+	}
+	if sparesHound(attack, target) {
 		return false
 	}
 	if attack.AllyOf != uuid.Nil && !target.HasComponent(ecs.ComponentTypeEnemy) {
@@ -1510,14 +1524,16 @@ func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage P
 	if targetIsDelver && !InPlay(target) {
 		return false
 	}
+	// no hit of any source lands on a rolling delver, and one refused here
+	// does nothing at all (FS-7P736 §A R5)
+	if targetIsDelver && Rolling(target) {
+		return false
+	}
 	if attack.FromMonster && target.HasComponent(ecs.ComponentTypeEnemy) {
 		return false
 	}
 	fromDelver := attack.AttackerMemberID != uuid.Nil
 	if fromDelver && targetIsDelver && playerDamage == PlayerDamageOff {
-		return false
-	}
-	if sparesHound(attack, target) { // no delver's hit lands on a hound (FS-X2CMM R28)
 		return false
 	}
 

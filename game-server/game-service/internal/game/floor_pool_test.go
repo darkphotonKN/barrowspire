@@ -149,9 +149,9 @@ func TestCapDarkWarriors_RecastsTheExcessInPlace(t *testing.T) {
 		n, keep int
 		recast  []components.MonsterArchetype
 	}{
-		{"another brute", poolOf(t, "dark_reaper", "ogre_tyrant", "ghast", "shade", "banshee"), 30, 2, []components.MonsterArchetype{"ogre_tyrant"}},
+		{"another brute", poolOf(t, "dark_reaper", "ogre_tyrant", "ghast", "shade", "banshee"), 30, 30 / DarkWarriorPer, []components.MonsterArchetype{"ogre_tyrant"}},
 		{"fodder when the only brute", poolOf(t, "dark_reaper", "dark_warrior", "ghast", "shade", "banshee"), 60, 4, []components.MonsterArchetype{"ghast", "shade", "banshee"}},
-		{"none under twelve", poolOf(t, "dark_reaper", "ogre", "ghast", "shade", "banshee"), 11, 0, []components.MonsterArchetype{"ogre"}},
+		{"one under the per", poolOf(t, "dark_reaper", "ogre", "ghast", "shade", "banshee"), DarkWarriorPer - 1, 1, []components.MonsterArchetype{"ogre"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -211,7 +211,7 @@ func TestBuildFloor_DeepFloorsSpawnTheirPoolCappedAndNamed(t *testing.T) {
 			}
 		}
 		warriors += dark
-		assert.LessOrEqual(t, dark, min(DarkWarriorCapMax, len(standard)/DarkWarriorPer), "seed %d: Dark Warriors capped", seed)
+		assert.LessOrEqual(t, dark, darkWarriorCap(len(standard)), "seed %d: Dark Warriors capped", seed)
 
 		message, ok := s.FloorMapMessage()
 		require.True(t, ok)

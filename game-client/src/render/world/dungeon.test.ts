@@ -352,33 +352,33 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
     };
     const count = (wallSide: EdgeSide) => plan.edges.filter((e) => e.wallSide === wallSide).length;
 
-    it("holds exactly the 768 wall edges: one for every wall cell and walkable cell that share a side", () => {
-      expect(new Set(cells).size).toBe(763);
+    it("holds exactly the 532 wall edges: one for every wall cell and walkable cell that share a side", () => {
+      expect(new Set(cells).size).toBe(521);
       const want = cells.flatMap((key) => sidesOf(key).map((side) => `${key},${side}`));
-      expect(plan.edges).toHaveLength(768);
+      expect(plan.edges).toHaveLength(532);
       expect(new Set(plan.edges.map(edgeKey))).toEqual(new Set(want));
       // by the side of its wall cell the edge is on: a cell lying south of its edge shows it on its north side
       expect({ north: count("south"), south: count("north"), west: count("east"), east: count("west") }).toEqual({
-        north: 191,
-        south: 191,
-        west: 193,
-        east: 193,
+        north: 138,
+        south: 138,
+        west: 128,
+        east: 128,
       });
     });
 
-    it("gives 664 wall cells an edge, 103 of them more than one, and the other 99 none", () => {
+    it("gives 442 wall cells an edge, 86 of them more than one, and the other 79 none", () => {
       const perCell = new Map<string, number>();
       for (const e of plan.edges) perCell.set(`${e.cx},${e.cy}`, (perCell.get(`${e.cx},${e.cy}`) ?? 0) + 1);
-      expect(perCell.size).toBe(664);
-      expect([...perCell.values()].filter((n) => n > 1)).toHaveLength(103);
+      expect(perCell.size).toBe(442);
+      expect([...perCell.values()].filter((n) => n > 1)).toHaveLength(86);
       const bare = cells.filter((key) => sidesOf(key).length === 0);
-      expect(bare).toHaveLength(99);
+      expect(bare).toHaveLength(79);
       expect(bare.filter((key) => perCell.has(key))).toEqual([]);
     });
 
     it("puts every edge in exactly one run, each a whole number of cells on one cell line", () => {
       const inRuns = plan.runs.flatMap(edgesOf);
-      expect(inRuns).toHaveLength(768);
+      expect(inRuns).toHaveLength(532);
       expect(new Set(inRuns)).toEqual(new Set(plan.edges.map(edgeKey)));
       for (const run of plan.runs) {
         const across = run.axis === "x" ? "y" : "x";
@@ -416,22 +416,30 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
       expect(new Set(plan.runs.map((r) => r.height))).toEqual(new Set(["front", "back"]));
     });
 
-    it("has 5 wall cells with walkable cells on opposite sides, all north and south: front on both edges", () => {
-      const twoSided = cells.filter((key) => {
-        const sides = sidesOf(key);
-        return (sides.includes("north") && sides.includes("south")) || (sides.includes("west") && sides.includes("east"));
-      });
-      expect(twoSided).toHaveLength(5);
-      for (const key of twoSided) {
+    it("has 4 wall cells with walkable cells on opposite sides, 2 north and south and 3 west and east, the pillar both: front on both edges", () => {
+      const northSouth = (key: string) => sidesOf(key).includes("north") && sidesOf(key).includes("south");
+      const westEast = (key: string) => sidesOf(key).includes("west") && sidesOf(key).includes("east");
+      const twoSided = cells.filter((key) => northSouth(key) || westEast(key));
+      expect(twoSided).toHaveLength(4);
+      expect(twoSided.filter(northSouth).sort()).toEqual(["46,25", "49,22"]);
+      expect(twoSided.filter(westEast).sort()).toEqual(["45,24", "49,12", "49,22"]);
+      // room 1's pillar: walkable on all four sides
+      expect(sidesOf("49,22").sort()).toEqual(["east", "north", "south", "west"]);
+      for (const key of twoSided.filter(northSouth)) {
         const [cx, cy] = key.split(",").map(Number);
-        expect(sidesOf(key)).toEqual(expect.arrayContaining(["north", "south"]));
         // its north edge is on the line over it, its south edge on the line under it
         expect(runOn(plan, "south", cy * CELL, cx * CELL)?.height).toBe("front");
         expect(runOn(plan, "north", (cy + 1) * CELL, cx * CELL)?.height).toBe("front");
       }
+      for (const key of twoSided.filter(westEast)) {
+        const [cx, cy] = key.split(",").map(Number);
+        // its west edge is on the line left of it, its east edge on the line right of it
+        expect(runOn(plan, "east", cx * CELL, cy * CELL)?.height).toBe("front");
+        expect(runOn(plan, "west", (cx + 1) * CELL, cy * CELL)?.height).toBe("front");
+      }
     });
 
-    it("has 53 wall cells in front of one region and behind another, every wall on them front; no cell carries a front wall and a back wall", () => {
+    it("has 45 wall cells in front of one region and behind another, every wall on them front; no cell carries a front wall and a back wall", () => {
       const heights = new Map<string, Set<string>>();
       const sides = new Map<string, Set<boolean>>();
       for (const run of plan.runs)
@@ -441,7 +449,7 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
           sides.set(cell, (sides.get(cell) ?? new Set()).add(run.wallSide === "south" || run.wallSide === "east"));
         }
       const both = [...sides].filter(([, s]) => s.size === 2).map(([cell]) => cell);
-      expect(both).toHaveLength(53);
+      expect(both).toHaveLength(45);
       for (const cell of both) expect([...heights.get(cell)!]).toEqual(["front"]);
       expect([...heights.values()].filter((h) => h.size === 2)).toEqual([]);
     });
@@ -656,7 +664,7 @@ describe("a dungeon floor's walls drawn on their edges (FS-XK2B6 §A–§D)", ()
   const across = (axis: WallAxis) => (axis === "x" ? "y" : "x");
 
   it("cuts every run into two whole pieces per cell, none past a run's end, no two of the floor at one place", () => {
-    expect(pieces).toHaveLength(2 * 768);
+    expect(pieces).toHaveLength(2 * 532);
     expect(byRun.flatMap(({ own }) => own)).toEqual(pieces);
     for (const { run, own } of byRun) {
       expect(own).toHaveLength((2 * (run.to[run.axis] - run.from[run.axis])) / CELL);
@@ -793,5 +801,61 @@ describe("isDungeon (FS-KE075 §F.31, §H)", () => {
     ["a cell size but no region", false, { cell_size: 80, regions: [] }],
   ] as const)("%s: %s", (_name, dungeon, map) => {
     expect(isDungeon(map)).toBe(dungeon);
+  });
+});
+
+describe("a shaped room's walls (FS-KE075 §Change: Room variety R86)", () => {
+  /** A room's region from a mask of its rows ('.' floor, '#' cut), its top-left at (x, y): one rect a floor cell. */
+  const shaped = (id: number, x: number, y: number, rows: string[]): FloorRegion => ({
+    id,
+    kind: "room",
+    cells: rows.flatMap((row, dy) =>
+      [...row].flatMap((ch, dx) => (ch === "." ? [{ x: x + dx, y: y + dy, w: 1, h: 1 }] : [])),
+    ),
+  });
+  // a pillared 7 × 6 hall at (2, 2) and an L 5 × 5 at (12, 2) notched north-west
+  const grid = floor(20, 10, [
+    shaped(1, 2, 2, [".......", "..#.#..", ".......", ".......", "..#.#..", "......."]),
+    shaped(2, 12, 2, ["##...", "##...", ".....", ".....", "....."]),
+  ]);
+  const plan = planOf(grid);
+  const edgesAt = (cx: number, cy: number) => plan.edges.filter((e) => e.cx === cx && e.cy === cy);
+
+  it.each([
+    [4, 3],
+    [6, 3],
+    [4, 6],
+    [6, 6],
+  ])("stands the pillar at (%i, %i) as a wall cell on its own: an edge on each of its four sides", (cx, cy) => {
+    expect(edgesAt(cx, cy).map((e) => e.wallSide).sort()).toEqual(["east", "north", "south", "west"]);
+  });
+
+  it("walls every cut cell that touches the floor, on every face it shows to the floor", () => {
+    for (let cx = 0; cx < grid.cols; cx++)
+      for (let cy = 0; cy < grid.rows; cy++) {
+        if (grid.walkable(cx, cy)) continue;
+        const faces = [
+          [0, -1],
+          [0, 1],
+          [-1, 0],
+          [1, 0],
+        ].filter(([dx, dy]) => grid.walkable(cx + dx, cy + dy)).length;
+        expect(edgesAt(cx, cy), `cell (${cx}, ${cy})`).toHaveLength(faces);
+      }
+  });
+
+  it("draws the L's notch as wall runs along its two inner faces", () => {
+    // the notch's cells (12-13, 2-3) face the floor east (x = 14) and south (y = 4)
+    expect(edgesAt(13, 2).map((e) => e.wallSide)).toHaveLength(1);
+    expect(edgesAt(13, 3)).toHaveLength(2);
+    expect(edgesAt(12, 3)).toHaveLength(1);
+  });
+
+  it("dresses a quiet room as its floor map names it, the rest not", () => {
+    const rooms = dressingRooms(grid, new Set([2]));
+    expect(rooms.map((r) => [r.id, r.quiet])).toEqual([
+      [1, false],
+      [2, true],
+    ]);
   });
 });

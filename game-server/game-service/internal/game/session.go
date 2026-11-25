@@ -680,6 +680,17 @@ func (s *Session) manageClientMessages() {
 					}
 				})
 
+			case constants.ActionRoll:
+				// A roll, judged on the tick and never answered. FS-7P736 §A R1–R2, R6.
+				parsedPayload, err := msg.Message.ParsePayload()
+				if err != nil {
+					slog.Debug("Failed to parse roll payload", "player_id", playerID, "error", err)
+					continue
+				}
+				rollPayload := parsedPayload.(types.PlayerRollPayload)
+
+				s.queueIntent(func() { s.roll(playerID, rollPayload.DirX, rollPayload.DirY) })
+
 			case constants.ActionUseItem:
 				// A bag item used on the tick (an antidote). FS-9JV5K §D R17.
 				parsedPayload, err := msg.Message.ParsePayload()
@@ -881,18 +892,34 @@ func (s *Session) advanceTick(deltaTime float64) ([]*ecs.Entity, error) {
 	return entities, s.broadcastFullState(entities)
 }
 
+// worldMoveBonus is this world's own move bonus for its delvers, percent: the
+// town bonus in the hub, none in a run or a field (FS-TAGWA R16).
+func (s *Session) worldMoveBonus() int {
+	if s.worldType == types.WorldTypeHub {
+		return constants.HubMoveSpeedBonusPercent
+	}
+	return 0
+}
+
 // step advances the simulation one tick. Damage happens in exactly one place on
 // it: the CombatSystem, fed by the projectile impacts detected just before it.
 //
 // It must not be called holding s.mu: the client actions it applies first, and
 // the end rule, take the lock themselves.
 func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
+	// a roll the last tick spent or stopped is over, and the roll cooldowns
+	// count the tick down, before this tick's requests are judged: a delver
+	// is untouchable on a roll's last tick, and may act, be hit and walk on
+	// the next (FS-7P736 §A R5, R7–R8)
+	systems.NewRollSystem().Update(deltaTime, entities)
+
 	// what clients asked for since the last tick lands before anything reads
 	// the world, on this goroutine alone
 	s.applyIntents()
 
-	// gear: what each delver wears counts from this tick, in every world
-	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).Update(deltaTime, entities)
+	// gear: what each delver wears counts from this tick, in every world, and
+	// the hub walks its delvers the town bonus faster (FS-TAGWA R16)
+	systems.NewGearSystem(s.EntityManager, GearCaps, UniqueEffects, Attributes).WithWorldMoveBonus(s.worldMoveBonus()).Update(deltaTime, entities)
 
 	// drink cooldowns count down, the tick's drinks just applied included
 	// (FS-P9G8R §Requirements 9)
@@ -1139,7 +1166,7 @@ var Classes = map[string]ClassConfig{
 		Stats:       components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
 		Combat:      components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
 		Health:      components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
-		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 7},
 		Ability:     components.AttackDash,
 		TreeAbility: components.AttackEarthbreaker,
 		Book:        warriorBook,
@@ -1150,7 +1177,7 @@ var Classes = map[string]ClassConfig{
 		Stats:       components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
 		Combat:      components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
 		Health:      components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Resource:    components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 4},
+		Resource:    components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 2},
 		Ability:     components.AttackTripleFireball,
 		TreeAbility: components.AttackBlink,
 		Book:        mageBook,
@@ -1161,7 +1188,7 @@ var Classes = map[string]ClassConfig{
 		Stats:       components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
 		Combat:      components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
 		Health:      components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 7},
 		Ability:     components.AttackShadowShot,
 		TreeAbility: components.AttackArrowRain,
 		Book:        archerBook,
@@ -2058,6 +2085,10 @@ func interactRefusedQuietly(err error) bool {
 * handles player interacting with x object with target entity id.
 **/
 func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) error {
+	// a rolling delver's interact is dropped, unanswered (FS-7P736 §A R8)
+	if s.rolling(playerID) {
+		return nil
+	}
 	return s.interactFrom(playerID, targetEntityID, nil)
 }
 
@@ -2962,6 +2993,10 @@ func (s *Session) handleAttack(playerID uuid.UUID, enemyEntityID uuid.UUID) erro
 	if err := s.combatAllowed(); err != nil {
 		return err
 	}
+	// a rolling delver's attack is dropped, unanswered (FS-7P736 §A R8)
+	if s.rolling(playerID) {
+		return nil
+	}
 	if err := s.delverInPlay(playerID); err != nil {
 		return fmt.Errorf("attack: %w", err)
 	}
@@ -3849,8 +3884,10 @@ func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 		if ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent); ok {
 			ic.(*components.AttackIntentComponent).Pending = nil
 		}
-		// nor a charge running on from the old floor
+		// nor a charge or a roll running on from the old floor; the roll's
+		// cooldown runs on (FS-7P736 §A R11)
 		entity.RemoveComponent(ecs.ComponentTypeDash)
+		entity.RemoveComponent(ecs.ComponentTypeRoll)
 
 		if player.Escape {
 			continue

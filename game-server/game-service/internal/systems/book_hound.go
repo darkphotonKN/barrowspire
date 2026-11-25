@@ -20,15 +20,17 @@ import (
 *
 * It is never a delver (no PlayerComponent, never InPlay), so the end rule, the
 * party, escape, loot and experience never count it, and a floor change wipes
-* it with the floor. Monsters may take it as a quarry and strike it; no
-* delver's hit lands on it. Its kills are its archer's: a bite is a hit from the
-* archer's member id, as the burning trail's are (FS-4R9M9 R36).
+* it with the floor. Monsters may take it as a quarry and strike it; nothing a
+* delver or a hired ally is the source of lands on it (players see a wolf:
+* FS-X2CMM §Change: The archer's wolf, W3). Its kills are its archer's: a bite
+* is a hit from the archer's member id, as the burning trail's are (FS-4R9M9 R36).
 *
 * Four hooks, a line each: the ground counts it a body of its own kind
 * (BodyHound, body.go), which monsters hunt and a plate is held by (R58), and
 * the monster AI steers it after the monsters (runHounds); combat lands its
-* bites (houndsBite); CanHit spares it every delver's hit (sparesHound). The
-* BookSystem ages it with the other book effects and takes it at no health.
+* bites (houndsBite); CanHit spares it every delver- or ally-sourced hit
+* (sparesHound, by delverSide). The BookSystem ages it with the other book
+* effects and takes it at no health.
 * Its bay at a shut secret door or a waiting ambush is the BookRevealSystem's
 * (book_reveal.go, R49).
 **/
@@ -112,10 +114,23 @@ func houndDown(entity *ecs.Entity) bool {
 	return entity.HasComponent(ecs.ComponentTypeHound) && !alive(entity)
 }
 
-// sparesHound is whether the hit is one a hound never takes: any delver's.
-// The hound's own bite is the archer's hit, and it bites monsters only.
+// sparesHound is whether the hit is one a hound never takes: any whose source
+// is on the delvers' side, whatever made it and whatever the player-damage
+// setting (FS-X2CMM §Change: The archer's wolf, W3). A monster's strike and
+// shot are not, nor is a trap's (W4). The hound's own bite is the archer's
+// hit, and it bites monsters only.
 func sparesHound(attack components.AttackSnapshot, target *ecs.Entity) bool {
-	return attack.AttackerMemberID != uuid.Nil && target.HasComponent(ecs.ComponentTypeHound)
+	return target.HasComponent(ecs.ComponentTypeHound) && delverSide(attack)
+}
+
+// delverSide is whether a delver or a hired ally is the hit's source, or
+// anything either of them made. Every snapshot such a source builds carries
+// one of the two marks: a delver's member id (bareSnapshot for every strike,
+// cone, area, projectile and rain volley, carried on into a split arrow and a
+// combustion; the burning trail; the reflect; the hound's bite) or a hired
+// ally's hirer (bareSnapshot's AllyOf). A monster's and a trap's carry neither.
+func delverSide(attack components.AttackSnapshot) bool {
+	return attack.AttackerMemberID != uuid.Nil || attack.AllyOf != uuid.Nil
 }
 
 // --- the steering, on the monster AI's tick ---

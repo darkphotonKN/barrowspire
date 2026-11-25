@@ -73,6 +73,16 @@ type PublicPlayerState struct {
 	// ContractSettled is true while the delver holds Contract Settled,
 	// absent when not: public, as the Blessing is. FS-4EC7Z §F R25.
 	ContractSettled bool `json:"contract_settled,omitempty"`
+	// Roll is the delver's roll in flight, absent when not rolling: public, so
+	// every viewer can draw it. FS-7P736 §A R12.
+	Roll *RollState `json:"roll,omitempty"`
+}
+
+// RollState is a roll in flight as every viewer is told it: its unit heading.
+// FS-7P736 §A R12.
+type RollState struct {
+	DirX float64 `json:"dir_x"`
+	DirY float64 `json:"dir_y"`
 }
 
 // ContractState is the delve's contract as its taker is told it: its state
@@ -715,6 +725,17 @@ const AntidoteName = "Antidote"
 // IsAntidote is whether an item of itemType named name is an antidote.
 func IsAntidote(itemType ItemType, name string) bool {
 	return itemType == ItemTypeConsumable && name == AntidoteName
+}
+
+// RestoringDraughtName is the Restoring Draught's catalogue name, by which the
+// game knows one as it knows an antidote. FS-9JV5K §Change: The Restoring
+// Draught D1.
+const RestoringDraughtName = "Restoring Draught"
+
+// IsRestoringDraught is whether an item of itemType named name is a Restoring
+// Draught.
+func IsRestoringDraught(itemType ItemType, name string) bool {
+	return itemType == ItemTypeConsumable && name == RestoringDraughtName
 }
 
 type ArmorSlot string

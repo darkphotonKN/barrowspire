@@ -52,7 +52,7 @@ func TestMovement_AfloatCrossesAShutPit_AGroundedDelverIsStopped(t *testing.T) {
 	floating := lift(walkingDelver(em, 300, 200, 1, 0), 60)
 	grounded := walkingDelver(em, 300, 600, 1, 0)
 
-	walkFor(sys, em, 2)
+	walkFor(sys, em, 2/constants.PaceScale)
 
 	assert.Greater(t, transformOfEntity(floating).X, pitX+pitW+constants.PlayerRadius, "across the pit")
 	assert.InDelta(t, pitX-constants.PlayerRadius, transformOfEntity(grounded).X, 1e-9, "stopped at its edge")

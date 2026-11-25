@@ -25,6 +25,7 @@ import {
   DoorState,
   ProjectileState,
   type BookTimedState,
+  type RollState,
 } from "@/types/gameState";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { lootMessage } from "@/ui/ContainerView";
@@ -44,6 +45,7 @@ import { EncounterWatch, encounterLineText, encounterReplyNotice } from "@/ui/en
 import { ContractWatch, contractLine } from "@/ui/contractLines";
 import { StatusWatch } from "@/ui/statusLines";
 import { statusMarks } from "@/ui/statusMarks";
+import { rollPipView } from "@/ui/rollPipView";
 import { SealWindowClock } from "@/ui/sealWindow";
 import {
   nextWatched,
@@ -64,6 +66,10 @@ import { GameplaySounds } from "@/audio/gameplaySounds";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { bindTreeAbilityKey } from "./treeAbilityKey";
+import { bindRollKey, rollAllowed, rollDirection } from "./rollKey";
+import { RollPrediction, rollReach, type RollBlocker } from "@/render/world/rollPrediction";
+import { RollBodies, RollTumble, tumbleMiddle } from "@/render/world/rollDraw";
+import { playRollDust } from "@/render/effects/rollDust";
 import { placeOnJump } from "@/render/jump";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
@@ -184,7 +190,7 @@ import {
   type MonsterEffects,
   type MonsterTargeting,
 } from "@/render/creatures";
-import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
+import { MARKER_MODES, markerMode, type MarkerMode, type MarkerModes } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { Minimap, type MinimapFixture } from "@/ui/minimap";
@@ -281,6 +287,7 @@ import {
   relayoutOn,
   viewRect,
   viewport,
+  zoomWorldView,
 } from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
@@ -473,6 +480,8 @@ interface DungeonFloor {
   mapName?: MinimapName;
   /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
   dressed: DressedPiece[];
+  /** Its quiet rooms by region id, from its floor map, dressed for ambience (FS-KE075 §Change: Room variety R85). */
+  quiet: ReadonlySet<number>;
   /** Its wall pieces as planned, once its walls stand: what a secret door's cracks are laid over (FS-5FZ4J §J R51). */
   faces?: readonly WallFace[];
   /** The flames its wall pieces carry, once its walls stand: what a rebuild of its walls takes away (FS-5FZ4J §J R56). */
@@ -756,6 +765,17 @@ export class BarrowspireScene extends Phaser.Scene {
   private gameStateUnsubscribe?: () => void;
   private connectionStatusUnsubscribe?: () => void;
   private targetPosition: { x: number; y: number } | null = null;
+  /**
+   * The roll this client predicts on its own body (FS-7P736 R14): while it stands, the body is drawn where it
+   * says instead of easing toward `targetPosition`; once it lets go the ease takes the body back to the server.
+   */
+  private readonly rolled = new RollPrediction();
+  /**
+   * Who is drawn rolling (FS-7P736 R15): the own body under {@link OWN_BODY} from its press, every other
+   * delver by player id from `other_players[].roll`; and the in-code tumble over a sheet with no baked roll.
+   */
+  private readonly rollDraws = new RollBodies();
+  private readonly tumble = new RollTumble();
 
   // 地圖大小: the floor's own, from its floor map (FS-KE075 §H.42); none until a map sizes it
   private mapWidth = 0;
@@ -1193,6 +1213,12 @@ export class BarrowspireScene extends Phaser.Scene {
     },
     hit: () => this.gameplaySounds?.play("hit_monster"),
   };
+  /**
+   * The table the floor's marker mode is read from: the shipped one, which names no floor today, or
+   * the entry a test opts a floor in by (FS-48CTQ § Change: Floor 1 carries overhead markers; no
+   * floor uses the target frame, 26).
+   */
+  private markerModes: MarkerModes = MARKER_MODES;
   /** The floor's marker mode (FS-48CTQ §A.1): overhead plates, or the target frame. */
   private markers: MarkerMode = "overhead";
   /** The top-centre frame naming one monster on a `frame` floor (FS-48CTQ §C). */
@@ -1315,6 +1341,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.walkPhase = 0;
     this.ownHealth = undefined;
     this.targetPosition = null;
+    this.rolled.clear();
+    this.rollDraws.clear();
 
     this.otherPlayers.clear();
     this.otherPlayersPos.clear();
@@ -3552,6 +3580,10 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   create(): void {
+    // the world stands closer than the logical view, its HUD on a camera of its own at the logical
+    // view; first, so whatever is laid out for the world camera sees its zoom (FS-ZAJMH § Change:
+    // Closer world camera)
+    zoomWorldView(this);
     // an arrival is dark before anything of the floor is made: the world's fade-in opens on the
     // dark, and the card comes with the first broadcast's floor (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.dark();
@@ -3864,6 +3896,9 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.menuOpen || event?.repeat) return;
       this.drinkPotion();
     });
+
+    // Space rolls (FS-7P736 R13): an event, never an added key, so nothing captures Space and chat types it
+    bindRollKey(this.input.keyboard, () => this.roll());
 
     // 3 casts the tree ability (FS-04EEA R35, R36), an event as 1 is; held back while the UI scene's menu
     // reads it as its third row, chat types or a gear panel is open. Letting go casts an archer's Arrow Rain
@@ -4288,6 +4323,8 @@ export class BarrowspireScene extends Phaser.Scene {
       // Blink just sent lands there (R44)
       if (this.playerPos && placeOnJump(this.playerPos, this.targetPosition, pos)) this.kit.landed(pos, this.time.now);
       this.targetPosition = { x: pos.x, y: pos.y };
+      // the server's answer to a predicted roll, and whether its own roll still runs (FS-7P736 R14)
+      this.rolled.hear(state.current_player);
 
       this.showProgress(state.current_player);
 
@@ -4328,7 +4365,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36), plated or not
     // as the floor's marker mode says (FS-48CTQ §A.1); a drop in the last-hit monster's health may
     // be the player's own hit (§C.6)
-    this.markers = markerMode("run", state.floor);
+    this.markers = markerMode("run", state.floor, this.markerModes);
     this.monsters?.setMarkerMode(this.markers);
     this.monsters?.sync(state.monsters ?? []);
     this.lastHit.observe(state.monsters ?? [], this.time.now);
@@ -4380,6 +4417,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // and the archers' hounds, which run, bite and fall (FS-X2CMM §I R47)
     this.hounds?.sync(state.book_effects);
     this.syncBookStates(state);
+    // every delver the state shows rolling is drawn rolling, the own body too when no press predicted it (FS-7P736 R15)
+    this.syncRolls(state);
     this.seeAimAllies(state);
     // what the party has explored of a dungeon floor, from this broadcast (FS-SRA9J §B)
     this.explore(state);
@@ -4564,6 +4603,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ),
       seen: new Exploration(grid),
       dressed: [],
+      quiet: new Set(map.quiet_rooms ?? []),
     };
   }
 
@@ -5065,6 +5105,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * across the map from where they stood on the old one.
    */
   private settlePlayers(): void {
+    // a roll ends with the floor (FS-7P736 R11): the body stands where the server put it, drawn upright
+    this.rolled.clear();
+    this.rollDraws.clear();
     if (this.playerPos && this.targetPosition) {
       this.playerPos.x = this.targetPosition.x;
       this.playerPos.y = this.targetPosition.y;
@@ -5179,8 +5222,9 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private ownMarkerBase(): number | null {
     if (!this.player) return null;
+    // over the body as it stands, never as a roll tumbles it (FS-7P736 R15)
     return markerBase(
-      this.player,
+      this.tumble.standing(this.player),
       this.playerAnim?.crown,
       isDead(this.lastGameState?.current_player),
       this.playerAnim?.artScale,
@@ -5708,7 +5752,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const plan = !look.dressing
       ? []
       : dungeon
-        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid))
+        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid, dungeon.quiet))
         : planDressing(look.dressing, look.seed, statics);
     // piece by piece, so each sprite and flame keeps where it stands (FS-9PN7X §C.2, §D.6)
     this.dressing = [];
@@ -6288,6 +6332,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.ui.hud({ world: "run", kind: "bar", bar: own.bar });
     // the Blessing's mark beside the own health bar, while it holds (FS-5FZ4J §J R55)
     this.ui.hud({ world: "run", kind: "statusMarks", marks: statusMarks(state) });
+    // the roll cooldown pip beside the ability bar, swept from roll_cooldown (FS-7P736 R16)
+    this.ui.hud({ world: "run", kind: "roll", roll: rollPipView(state) });
     // the controls badge stands while the bar is live, so it goes at a death though the bar is held
     // (FS-84N1G R4; FS-Q18Q3 R42): told on each change
     const live = own.bar !== null && this.heldHud === undefined;
@@ -6575,6 +6621,50 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The stride the movement keys ask for, -1, 0 or 1 on each axis: what `move` sends, and the way a roll
+   * goes (FS-7P736 R13). The keys are the menu's while it is open (FS-9K8EZ req 5), and read as released
+   * while an archer draws a Shadow Shot (FS-JTNPR req 9).
+   */
+  private heldStride(): { vx: number; vy: number } {
+    if (this.menuOpen || this.combat.aiming) return { vx: 0, vy: 0 };
+    const down = (a: Phaser.Input.Keyboard.Key, b: Phaser.Input.Keyboard.Key) => a.isDown || b.isDown;
+    const vx = down(this.cursors.left, this.wasd.left) ? -1 : down(this.cursors.right, this.wasd.right) ? 1 : 0;
+    const vy = down(this.cursors.up, this.wasd.up) ? -1 : down(this.cursors.down, this.wasd.down) ? 1 : 0;
+    return { vx, vy };
+  }
+
+  /**
+   * Space (FS-7P736 R13, R14): a roll the client judges allowed goes up as `roll`, the held keys' way else
+   * the facing, and is started on the own body at once, swept as the server sweeps it against the floor's
+   * rock, its edge and the shut doors. The cooldown is the wire's alone. Nothing while an archer draws a
+   * Shadow Shot (the keys are the hold's) or after the run's end.
+   */
+  private roll(): void {
+    const me = this.lastGameState?.current_player;
+    const now = this.time.now;
+    const gate = { spectating: this.watchedPlayerId !== undefined, predicting: this.rolled.inFlight(now), ui: this.ui.ui };
+    if (this.runEnded || this.combat.aiming || !this.playerPos || !this.targetPosition || !rollAllowed(me, gate)) return;
+    const facing = this.playerAnim?.baked ? this.playerAnim.facing : this.playerFacing;
+    const dir = rollDirection(this.heldStride(), facing);
+    socketManager.sendMessage(ActionType.Roll, dir);
+    const length = Math.hypot(dir.dir_x, dir.dir_y);
+    const unit = { x: dir.dir_x / length, y: dir.dir_y / length };
+    // swept from where the server last put the body, the roll's real start; drawn from where it is drawn
+    const end = rollReach(this.targetPosition, unit, this.dungeon?.grid, this.shutDoors());
+    const reach = Math.hypot(end.x - this.targetPosition.x, end.y - this.targetPosition.y);
+    this.rolled.start(this.playerPos, unit, reach, now);
+    // drawn rolling at once, with the scuff where the drawn body pushes off (R15)
+    if (this.rollDraws.start(OWN_BODY, unit, now) && this.fx) playRollDust(this.fx, OWN_BODY, this.playerPos, unit);
+  }
+
+  /** The floor's shut doors as the roll's sweep stops at them (FS-7P736 R4), from the latest state. */
+  private shutDoors(): RollBlocker[] {
+    return (this.lastGameState?.doors ?? [])
+      .filter((d) => !d.is_open)
+      .map((d) => ({ x: d.position.x, y: d.position.y, width: d.width, height: d.height }));
+  }
+
+  /**
    * The stride the keys ask for, sent each frame it is non-zero; none from a player out of the
    * delve (FS-77AB6 req 17). While the menu is open the keys are its (FS-9K8EZ req 5): a stride
    * it interrupts is stopped once, and nothing more goes until it closes. The run's end stops a
@@ -6814,28 +6904,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     // handle movement
-    let vx = 0;
-    let vy = 0;
-
-    // calculate horizontal direction
-    if (this.cursors.left.isDown || this.wasd.left.isDown) {
-      vx = -1;
-    } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
-      vx = 1;
-    }
-
-    // calculate vertical direction
-    if (this.cursors.up.isDown || this.wasd.up.isDown) {
-      vy = -1;
-    } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
-      vy = 1;
-    }
-    // the keys are the menu's while it is open (FS-9K8EZ req 5), and read as released while an
-    // archer draws a Shadow Shot (FS-JTNPR req 9)
-    if (this.menuOpen || this.combat.aiming) {
-      vx = 0;
-      vy = 0;
-    }
+    const { vx, vy } = this.heldStride();
 
     // update player facing and legs: the placeholder rig (a baked sheet plays below)
     if (this.player && this.playerLegs && !this.playerAnim?.baked) {
@@ -6869,7 +6938,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // update player name position; none over a baked corpse
     const ownBase = this.ownMarkerBase();
     if (this.player && this.playerNameText) {
-      if (ownBase !== null) this.playerNameText.setPosition(this.player.x, ownBase - NAME_GAP);
+      if (ownBase !== null) this.playerNameText.setPosition(this.tumble.standing(this.player).x, ownBase - NAME_GAP);
       this.playerNameText.setVisible(this.player.visible && ownBase !== null);
       // the title stands where the name was just put, the name over it; none over a corpse
       if (ownBase !== null) this.playerTitle?.stand(this.playerNameText);
@@ -6881,18 +6950,12 @@ export class BarrowspireScene extends Phaser.Scene {
     // 平滑移動到目標位置 (lerp)
     const lerpFactor = 0.3; // 0-1，越大越快到達目標
 
-    // eased in world space, then drawn at the projection
+    // eased in world space, then drawn at the projection; a predicted roll draws the body where it says
+    // (FS-7P736 R14), and the ease takes it back to the server once the roll lets go
     if (this.player && this.playerPos && this.targetPosition) {
-      this.playerPos.x = Phaser.Math.Linear(
-        this.playerPos.x,
-        this.targetPosition.x,
-        lerpFactor,
-      );
-      this.playerPos.y = Phaser.Math.Linear(
-        this.playerPos.y,
-        this.targetPosition.y,
-        lerpFactor,
-      );
+      const rolling = this.rolled.at(this.time.now);
+      this.playerPos.x = rolling ? rolling.x : Phaser.Math.Linear(this.playerPos.x, this.targetPosition.x, lerpFactor);
+      this.playerPos.y = rolling ? rolling.y : Phaser.Math.Linear(this.playerPos.y, this.targetPosition.y, lerpFactor);
       standAt(this.player, this.playerPos, 1);
       // afloat draws the body raised a little over its feet (FS-X2CMM R47)
       this.player.y -= this.bookStates.lift(OWN_BODY, time, this.playerAnim?.crown);
@@ -6909,12 +6972,21 @@ export class BarrowspireScene extends Phaser.Scene {
     this.aimFrame();
 
     // the baked sheet plays what the player is doing, read off the position just drawn
+    const ownRoll = this.rollDraws.at(OWN_BODY, this.time.now);
     if (this.player && this.playerPos && this.playerAnim?.baked) {
       const dead = isDead(this.lastGameState?.current_player);
       if (!dead) this.deathDust.alive(this.player);
       // the merc's guard clip holds while his stance does (FS-MAMHR §G.35)
       this.playerAnim.guard(this.kit.guarding, this.time.now);
+      // rolling plays the class's baked roll, else its stride under the tumble below (FS-7P736 R15)
+      this.playerAnim.roll(ownRoll?.dir, this.time.now);
       this.playerAnim.show(this.player, this.playerAnim.step(this.playerPos, time, delta, dead));
+    }
+    // the in-code tumble over a sheet with no baked roll, the placeholder's too, so the roll never waits
+    // on art (R15), over the body just stood; once the roll is over it stands upright on its own scale again
+    if (this.player && this.playerPos && this.targetPosition) {
+      const tumbling = ownRoll && !this.playerAnim?.rolls && !isDead(this.lastGameState?.current_player);
+      this.tumble.apply(this.player, tumbling ? ownRoll : null, tumbleMiddle(!!this.playerAnim?.baked, this.playerAnim?.crown));
     }
 
     this.updateOtherPlayersSmooth(time, delta);
@@ -6974,6 +7046,22 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * Every body's roll from this state (FS-7P736 R15): a delver first shown rolling is drawn rolling from
+   * now, with a dust scuff where its drawn body starts; the own body's press has already started its own.
+   */
+  private syncRolls(state: ClientGameState): void {
+    const me = state.current_player;
+    const bodies: (readonly [string, RollState | undefined])[] = (state.other_players ?? []).map(
+      (p) => [p.id, p.roll] as const,
+    );
+    if (me) bodies.push([OWN_BODY, me.roll]);
+    for (const { id, dir } of this.rollDraws.sync(bodies, this.time.now)) {
+      const at = id === OWN_BODY ? this.playerPos : this.otherPlayersPos.get(id);
+      if (at && this.fx) playRollDust(this.fx, id, at, dir);
+    }
+  }
+
+  /**
    * Every body's book states on its drawn feet (FS-X2CMM R47), hidden with its body (the blackout, an
    * escape) and from the death clip, as its aura is.
    */
@@ -7010,7 +7098,12 @@ export class BarrowspireScene extends Phaser.Scene {
         const anim = this.otherPlayersAnim.get(playerId);
         const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
         if (!dead) this.deathDust.alive(sprite);
+        // a rolling delver is drawn rolling from `other_players[].roll` (FS-7P736 R15): the class's baked
+        // roll, else its stride under the in-code tumble, the placeholder's too
+        const rolling = this.rollDraws.at(playerId, this.time.now);
+        anim?.roll(rolling?.dir, this.time.now);
         if (anim?.baked) anim.show(sprite, anim.step(pos, time, delta, dead));
+        this.tumble.apply(sprite, rolling && !anim?.rolls && !dead ? rolling : null, tumbleMiddle(!!anim?.baked, anim?.crown));
 
         // update facing and legs for other players: the placeholder rig
         const legs = this.otherPlayersLegs.get(playerId);
@@ -7061,15 +7154,17 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!sprite) return;
     const dead = (this.otherPlayersPrevHp.get(playerId) ?? 1) <= 0;
     const anim = this.otherPlayersAnim.get(playerId);
-    const base = markerBase(sprite, anim?.crown, dead, anim?.artScale);
+    // over the body as it stands, never as a roll tumbles it (FS-7P736 R15)
+    const stood = this.tumble.standing(sprite);
+    const base = markerBase(stood, anim?.crown, dead, anim?.artScale);
     // the switch alone decides, not whether a bar happens to be in the map
     const bar = this.showTeammateBars ? this.teammateHealthBars.get(playerId) : undefined;
-    const barTop = bar ? this.drawTeammateBar(bar, sprite.x, base) : null;
+    const barTop = bar ? this.drawTeammateBar(bar, stood.x, base) : null;
 
     const nameText = this.otherPlayersNameTexts.get(playerId);
     if (nameText) {
-      if (barTop !== null) nameText.setPosition(sprite.x, barTop - 1 - NAME_OVER_BAR_GAP);
-      else if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
+      if (barTop !== null) nameText.setPosition(stood.x, barTop - 1 - NAME_OVER_BAR_GAP);
+      else if (base !== null) nameText.setPosition(stood.x, base - NAME_GAP);
       nameText.setVisible(base !== null);
       // the title stands where the name was just put, the name over it (FS-E1ZDG §K.41)
       const title = this.otherPlayersTitles.get(playerId);

@@ -97,7 +97,7 @@ func chargeOf(e *ecs.Entity) *components.DashComponent {
 // Plain movement, in every world: whatever the client sends, as often as it
 // sends it, a body covers no more world distance in a tick than its own
 // server-side speed allows, and that speed is the server's (DefaultSpeed, no
-// gear worn here).
+// gear worn here, and the hub's town bonus on it there, FS-TAGWA R17).
 func TestHostileMove_NeverOutrunsTheBodysSpeed(t *testing.T) {
 	inputs := []struct {
 		name string
@@ -123,9 +123,10 @@ func TestHostileMove_NeverOutrunsTheBodysSpeed(t *testing.T) {
 		for _, in := range inputs {
 			t.Run(worldName+"/"+in.name, func(t *testing.T) {
 				s, playerID, delver := loneDelver(t, bounds)
+				walk := constants.DefaultSpeed * (1 + float64(s.worldMoveBonus())/100)
 				for n := range constants.GameFrameRate {
 					from := *transformOf(t, delver)
-					allowed := velocityOf(delver).Speed * tickSeconds
+					allowed := walk * tickSeconds
 					in.send(s, playerID)
 					tick(s) // the queued sends land first, as the loop runs them
 
@@ -133,7 +134,7 @@ func TestHostileMove_NeverOutrunsTheBodysSpeed(t *testing.T) {
 					require.False(t, math.IsNaN(to.X) || math.IsNaN(to.Y) || math.IsInf(to.X, 0) || math.IsInf(to.Y, 0), "tick %d: the body stays somewhere", n)
 					covered := math.Hypot(to.X-from.X, to.Y-from.Y)
 					require.LessOrEqual(t, covered, allowed+perTickSlack, "tick %d: world px covered", n)
-					require.Equal(t, constants.DefaultSpeed, velocityOf(delver).Speed, "tick %d: the speed is the server's", n)
+					require.InDelta(t, walk, velocityOf(delver).Speed, 1e-9, "tick %d: the speed is the server's", n)
 				}
 			})
 		}

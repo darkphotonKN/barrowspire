@@ -17,12 +17,12 @@ import (
 	The session's map size is the current floor's, and every reader reads it
 	(FS-KE075 §B Requirement 11). No floor changes size yet: until floor 1 is a
 	dungeon (I-KE075-6) every floor is today's 1440×960. The tests that catch a
-	constant read build a run at floor 1's coming size, 5760×3840, where a reader
+	constant read build a run at floor 1's coming size, 4800×3200, where a reader
 	still on the constants would stop at 1440×960.
 */
 
 // dungeonSize is floor 1's size once it is a dungeon (FS-KE075 §B R11).
-var dungeonSize = WorldBounds{Type: types.WorldTypeRun, Width: 5760, Height: 3840}
+var dungeonSize = WorldBounds{Type: types.WorldTypeRun, Width: 4800, Height: 3200}
 
 func runOfSize(t *testing.T, bounds WorldBounds) *Session {
 	t.Helper()
@@ -119,7 +119,7 @@ func TestBuildFloor_SetsTheFloorsSize(t *testing.T) {
 // Every floor, and floor 1 at its dungeon size, stays within the rows the
 // spatial hash's key keeps apart. FS-KE075 §E R30, FS-QG1HR D4.
 func TestFloorSize_FitsTheSpatialHash(t *testing.T) {
-	assert.Equal(t, 96, systems.SpatialHashRows(dungeonSize.Height))
+	assert.Equal(t, 80, systems.SpatialHashRows(dungeonSize.Height))
 	assert.Less(t, systems.SpatialHashRows(dungeonSize.Height), systems.SpatialHashMaxRows)
 	for depth := firstFloor; depth <= tallestSpire; depth++ {
 		_, h := floorSize(depth)
@@ -162,7 +162,7 @@ func TestRegenerateFloor_RebuildsTheWallIndex(t *testing.T) {
 	*transformOf(t, carrier) = components.TransformComponent{X: x, Y: y}
 	vc, _ := carrier.GetComponent(ecs.ComponentTypeVelocity)
 	vc.(*components.VelocityComponent).VX = 1
-	tick(s)
+	ticks(s, ticksToWalk(10))
 
 	assert.Greater(t, transformOf(t, carrier).X-x, 5.0, "the index still held an old-floor wall")
 }

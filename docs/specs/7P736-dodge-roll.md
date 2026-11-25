@@ -189,3 +189,16 @@ predicts it so the press feels instant.
 - Monsters dodging, or monsters reacting to a roll.
 - A roll sound beyond any the sound system already plays for movement.
 - Mobile or gamepad input.
+
+## Reconciled at build (I-7P736-2)
+
+Date: 2026-11-26. R14 assumed the run client predicts walking with a wall sweep. It does not: the
+run scene eases the drawn body toward the server's position each frame, and bodies move as the
+snapshot says (`data/pace.ts`). So the roll brings the client's **first** sweep
+(`src/render/world/rollPrediction.ts`). It runs from the server position at 500 px/s against the
+floor grid's rock, the world's edge and shut doors, with the server's 20 px half-body. It holds its
+end while the server reports `roll`, then hands back to the ease, which is what "reconciled as
+walking is" means here. A roll the server never confirms (no `roll`, no `roll_cooldown`) lets go
+300 ms after its end and the body eases back. Gates, secret doors, pits and stone blocks are not in
+the client sweep: a roll into one draws past it until the ease pulls the body back. Also, Space is
+held back while an archer draws Shadow Shot, and after the run's end.

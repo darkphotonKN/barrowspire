@@ -315,3 +315,135 @@ west of the store it is within reach, and `E` there offers nothing.
 ## Change: Per-character gear → FS-50MTX
 
 ## Change: Character and inventory apart → FS-HRH2J
+
+## Change: Opening the stash holds the player still
+Status: shipped
+Date: 2026-11-24
+
+Scoped and promoted in one run under the owner's approved charter (2026-11-24), by `write-a-spec
+--from-thread` with no interview and no `challenge-me` pass. The owner, Nick: 「開村莊的倉庫期間改成不能移動」
+(while the town's stash is open, the player can't move). The charter's decisions are marked
+**(charter default Sn)** with their reason; what the code forces (read on feat/hub-stash-hold at
+5b751514) **(code)**; a default applied to a case the charter did not name, *Derived*, with its reason.
+The mechanism is FS-TQZ5J § Change: A conversation holds the player still (R141–R150), applied to stash
+mode. Numbered from R45.
+
+**Lane.** game-client only. No server, proto, gateway or manifest change, no wire change and no new
+message. **(charter default)** Reason: the hold is the client reading its keys as released; the server
+only ever hears `move`.
+
+### Facts (verified 2026-11-24 at 5b751514)
+
+- **Opening.** `HubScene.offerConversation` answers E outside the menu, the letter panel, a dialogue and
+  an open inventory: inside the Quartermaster's store the stash chest joins the nearest-in-range choice
+  (R34, Review notes), and when it wins the town asks the UI scene `gear({ kind: "openStash" })`. The
+  UI scene's gear (`uiSceneGear.hear`) opens `HubGear.openStash`, which refuses over an open inventory,
+  and reports `stash: gear.stashOpen()` through `bridge.reportUi` in the same call, so the town reads
+  `this.ui.ui.stash` true from then on. `showStashChest` already reads it each frame for the chest's
+  open frame (R32). **(code)**
+- **Stash mode is the overlay with the stash on the left.** `GearOverlay.isStashOpen` is the overlay
+  visible with a stash list. The plain overlay opened by I, B or the Inventory icon reports
+  `inventory: true, stash: false`. C is refused in stash mode (`toggleCharacter`, FS-HRH2J § Change C9),
+  and I/B cannot turn stash mode into the plain overlay without closing it (R37). **(code)**
+- **Closing.** Esc, I, B and either panel's × close the whole overlay in stash mode
+  (`GearOverlay.close`, `hide`), ending stash mode, and the gear reports `stash: false`. Q does not:
+  the UI scene's Q is a field's and the run's alone (`UIScene` `EVENT_GEAR_KEYS` return in the hub;
+  FS-HRH2J R4). The Menu icon
+  opens the menu with the overlay shut as it opens (HubScene `heardUi`'s note; FS-3EBCA R17). The UI
+  scene's take-down at a world switch hides the gear and reports `stash: false`. **(code)**
+- **Movement.** `sendMovementIntent` runs first in each `update` and sends `move {vx, vy}` only when it
+  differs from `lastSent` (reset each visit). The keys read as released while `owned`: `menuOpen ||
+  mailbox.isOpen() || talking` (an NPC's card, not the Spire door's panel; FS-TQZ5J R141–R143). The open
+  stash is not in `owned`, so WASD and the arrows walk with it open (FS-HRH2J R7). **(code)**
+- **The server holds the last velocity** until the next `move` (FS-TQZ5J § Change: A conversation holds
+  the player still, Facts). **(code)**
+- **E while the overlay is open is the overlay's** (FS-HRH2J R10; `offerConversation` returns under
+  `this.ui.ui.inventory`), so no NPC's card can open over the stash, and the stash cannot open over a
+  card (R34). **(code)**
+- **Chat.** `chatWiring.mayOpen` refuses Enter into chat while `ui.inventory` is true, stash mode
+  included; lines still arrive. **(code)**
+
+### Requirements
+
+45. **Stash mode owns the movement keys.** While the gear overlay is open in stash mode (opened by E at
+    the stash chest, R34–R35), WASD and the arrow keys read as released, as under the menu, the letter
+    panel and an NPC's card. The town reads stash mode from the UI's state (`ui.stash`), the part the UI
+    scene's gear already reports. **(charter default S3)** Reason: the HubScene `sendMovementIntent`
+    owned-keys rule already covers the menu, the mailbox and an open conversation card; the stash joins
+    it.
+46. **Only stash mode holds.** The plain overlay opened by I, B or the Inventory icon still lets the
+    player walk, as FS-HRH2J R7 says. FS-HRH2J is not edited. **(charter default S1)** Reason: the
+    request names only the stash.
+47. **One stop, then nothing.** On the first frame the town reads its keys with the stash open, a stride
+    in progress is stopped by one `move {vx: 0, vy: 0}`, so the player stops where they stand. A player
+    already still sends nothing, since a move is sent only when it changes. No `move` is sent while the
+    stash stays open, whatever is pressed or released. **(charter default S2)** Reason: the server keeps
+    the last velocity (Facts), the same as FS-TQZ5J's conversation hold (R142).
+48. **The ways out are unchanged.** Esc, I, B and either panel's ×, as today. No new key. Q does not
+    close the overlay in the town (FS-HRH2J R4: Q closes it only in a field and the run), so R37's "`Q`
+    where it closes the overlay" names no way out here. **(charter default S4)** *Derived* for the ×:
+    it already closes the overlay in stash mode and the charter names no change to it. **(code)** for
+    Q.
+49. **Walking on.** On the first frame after stash mode ends, the keys read as they are held. A player
+    still holding W walks on, its move sent at once, with no fresh press. **(charter default S5)**
+    Reason: as the conversation hold (FS-TQZ5J R147) and the menu's rule.
+50. **Walking away is no longer possible while it is open.** R37's "Walking away from the chest does
+    not close it" becomes moot: the player cannot walk away while the stash is open. Its v1 pick, no
+    proximity check, stands. R37's text is not edited, and its other sentences (closing the overlay
+    closes the stash; the next I/B opens the plain overlay) stand. R41's "Walk keys are not blocked"
+    is superseded: a move in flight still blocks only the overlay's own input, but stash mode blocks
+    the walk keys whether a move is in flight or not. **(charter default S6)** *Derived* for R41: it speaks of the same walk keys in the
+    same mode.
+51. **Only movement is held.** Everything else in stash mode answers as today: the stash's own moves and
+    gestures (R38–R42), its busy state, its toasts and reloads; the corner icons; chat (Enter into chat
+    is refused under the overlay today, and lines still arrive); the queue panel, the party's prompts
+    and other players. **(charter default S7)**
+
+### Acceptance Criteria
+
+- [ ] With W held, E at the stash chest opens stash mode. The next frame sends one `move {vx: 0, vy: 0}`.
+      Pressing, releasing and pressing again any of WASD and the arrows sends no further `move` while it
+      is open (a test written like the menu's and the conversation's).
+- [ ] A still player opening the stash sends no stop (no duplicate `{0, 0}`).
+- [ ] With the stash open and W still held, closing it by Esc, by I, by B and by a panel's ×: the next frame sends
+      `{vx: 0, vy: -1}`.
+- [ ] The plain overlay (I or B, not at the chest) with W held: moves are sent as today, no stop.
+- [ ] A move in flight in stash mode does not release the hold; it ends only when the overlay closes.
+- [ ] The existing stash tests still pass: "should end stash mode with the overlay's keys, the next I
+      opening the plain overlay (R37)", the chest's open frame (R32), and the E tests (R34).
+- [ ] No game-server, proto or `ActionType` change in the diff.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+
+### Edge States
+
+- **The stash opens while walking.** The body walks on until the stop reaches the server, about one
+  round trip, plus the frame in which E was read after the keys (`sendMovementIntent` runs before
+  `offerConversation`). The chest stands inside the Quartermaster's store, far from any gate, so the
+  drift crosses none.
+- **The stash open, then a conversation.** Cannot happen: E is the overlay's while it is open (R34,
+  FS-HRH2J R10). A card cannot be open as the stash opens either (R34), so the two holds never stack.
+- **The stash closed by Esc, I, B or × with keys held.** The next frame walks with the keys held then (R49).
+  Keys released while the stash was open are not seen; on close only what is held then counts. A browser
+  blur that drops the keys leaves a still player.
+- **The Menu icon with the stash open.** The menu opens and the overlay shuts as it opens (Facts): the
+  menu's own hold takes over in the same frame, so no move slips between them. When the menu closes the
+  keys held then walk on.
+- **A refused move or a reload in stash mode.** The overlay stays in stash mode; the hold stays.
+- **Leaving the hub with the stash open** (a match found, a gate answered, Change character, the
+  disconnect notice's Return to menu). The UI scene's take-down hides the gear and reports `stash:
+  false`; the next world's first frame sends its own move, as every visit does. Returning to the town
+  finds the stash closed and the keys free.
+- **The disconnect notice over the stash.** The worlds are held and nothing is sent, as today.
+- **The server moving the body** (a re-seat, a spawn reset). Positions follow the server. The hold only
+  stops what the client sends.
+- **Before the UI scene's gear has reported** (a visit's first frames, `ui.stash` absent). Absent reads
+  as false: the stash is not open, so nothing is held.
+
+### Out of Scope
+
+- Holding movement under the plain overlay (I/B), the character panel or the passive tree (R46).
+- Closing the stash on distance, or a server-checked proximity (R37's v1 pick stands: the player simply
+  cannot leave).
+- Any new close key, or a change to the overlay's look, words, sounds or gestures.
+- Fields and runs: they have no stash (R43).
+- Mouse movement, attack, cast, potion and sprint: the town has none of them to hold.

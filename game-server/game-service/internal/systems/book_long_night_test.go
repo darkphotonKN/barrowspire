@@ -18,7 +18,7 @@ func selfCast(caster *ecs.Entity, id components.PageID) BookCast {
 	return BookCast{Caster: caster, Page: page, CellSize: testCell}
 }
 
-// A level-3 archer's Tracker's Eye is instant: 20 stamina, its 60 s cooldown
+// A level-3 archer's Tracker's Eye is instant: 30 stamina, its 60 s cooldown
 // and tracker's eye for 15 s on the archer's states. R26; §B.
 func TestBookSystemCast_TrackersEyeGivesTheArcherItsStateFor15s(t *testing.T) {
 	em := ecs.NewEntityManager()
@@ -28,12 +28,12 @@ func TestBookSystemCast_TrackersEyeGivesTheArcherItsStateFor15s(t *testing.T) {
 
 	book := bookOfT(t, archer)
 	assert.Equal(t, 15.0, book.States[components.BookStateTrackersEye])
-	assert.Equal(t, 80, pool(archer), "100 - 20 stamina")
+	assert.Equal(t, 70, pool(archer), "100 - 30 stamina")
 	assert.Equal(t, components.BookCooldown{Remaining: 60, Total: 60}, book.Cooldowns[components.PageTrackersEye])
 	assert.Nil(t, book.Casting, "instant")
 }
 
-// A level-15 warrior's Long Night is instant: 40 stamina, its 120 s cooldown
+// A level-15 warrior's Long Night is instant: 60 stamina, its 120 s cooldown
 // and long night for 6 s on the warrior's states. R31; §B.
 func TestBookSystemCast_TheLongNightGivesTheWarriorItsStateFor6s(t *testing.T) {
 	em := ecs.NewEntityManager()
@@ -46,7 +46,7 @@ func TestBookSystemCast_TheLongNightGivesTheWarriorItsStateFor6s(t *testing.T) {
 	nc, ok := warrior.GetComponent(ecs.ComponentTypeLongNight)
 	require.True(t, ok, "the night's reach rides the warrior")
 	assert.Equal(t, 5*testCell, nc.(*components.LongNightComponent).Reach, "5 cells")
-	assert.Equal(t, 60, pool(warrior), "100 - 40 stamina")
+	assert.Equal(t, 40, pool(warrior), "100 - 60 stamina")
 	assert.Equal(t, components.BookCooldown{Remaining: 120, Total: 120}, book.Cooldowns[components.PageLongNight])
 }
 

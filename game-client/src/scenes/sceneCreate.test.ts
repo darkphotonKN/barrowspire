@@ -5,6 +5,11 @@ import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
 vi.mock("phaser", async () => (await import("./phaser.standin")).phaserStandIn({ absorbing: true }));
 // the vignette draws on a DOM canvas, which node has none of
 vi.mock("@/utils/atmosphere", () => ({ createAtmosphere: () => undefined }));
+// the world's closer camera and its HUD's are worldView.test.ts's; the stub has one camera
+vi.mock("@/render/viewport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/render/viewport")>()),
+  zoomWorldView: () => {},
+}));
 vi.mock("@/ui/uiBridge", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/ui/uiBridge")>();
   return { ...real, reportWorld: vi.fn(real.reportWorld) };

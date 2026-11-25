@@ -34,3 +34,16 @@ func TestPlatesCoverable(t *testing.T) {
 		})
 	}
 }
+
+// FS-KE075 §Change: Room variety R75: a shaped room's cut cell is a wall to
+// the search: a pillar in the only lane stops a push that the plain room
+// allows.
+func TestPlatesCoverableAmid_CutCellsAreWalls(t *testing.T) {
+	plate, block, start := []components.Cell{{X: 3, Y: 1}}, []components.Cell{{X: 1, Y: 1}}, components.Cell{X: 0, Y: 1}
+	// a 5 x 3 room: the block pushed east along the middle row onto the plate
+	assert.True(t, platesCoverable(5, 3, plate, block, start))
+	wall := make([]bool, 5*3)
+	wall[1*5+2] = true // a pillar between block and plate
+	wall[0*5+2], wall[2*5+2] = true, true
+	assert.False(t, platesCoverableAmid(5, 3, wall, plate, block, start))
+}

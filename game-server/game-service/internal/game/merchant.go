@@ -12,7 +12,7 @@ import (
 /**
 * The wandering merchant (FS-9JV5K §A). On about a third of floors 2+ below
 * the top he stands in a respite room of his own with his wares: health
-* potions, antidotes and, rarely, the Tome of Filth. He is a fixture, not a
+* potions, antidotes, Restoring Draughts and, rarely, the Tome of Filth. He is a fixture, not a
 * body: no health, no player or enemy, so nothing targets or hits him, and the
 * ground never counts him (systems.BodyKindOf is BodyNone).
 **/
@@ -54,8 +54,9 @@ func (s *Session) layMerchant(depth int, d *dungeonFloor) {
 	CreateMerchantEntity(s.EntityManager, r.at.x, r.at.y, wares)
 }
 
-// merchantWares are a merchant's bag wares at his spawn: a health potion and
-// an antidote line, each whose template the catalogue holds.
+// merchantWares are a merchant's bag wares at his spawn: a health potion, an
+// antidote and a Restoring Draught line, each whose template the catalogue
+// holds. FS-9JV5K §A R3; §Change: The Restoring Draught D2.
 func (s *Session) merchantWares() []components.Ware {
 	var wares []components.Ware
 	if potion, ok := merchantPotion(s.itemPool.Consumables); ok {
@@ -67,6 +68,11 @@ func (s *Session) merchantWares() []components.Ware {
 		wares = append(wares, components.Ware{Kind: components.WareAntidote, Price: MerchantAntidotePrice, Left: MerchantAntidoteStock, Item: s.wareItem(*s.itemPool.Antidote)})
 	} else {
 		slog.Warn("Merchant sells no antidote: the catalogue has none", "sessionID", s.ID)
+	}
+	if s.itemPool.RestoringDraught != nil {
+		wares = append(wares, components.Ware{Kind: components.WareRestoringDraught, Price: MerchantDraughtPrice, Left: MerchantDraughtStock, Item: s.wareItem(*s.itemPool.RestoringDraught)})
+	} else {
+		slog.Warn("Merchant sells no Restoring Draught: the catalogue has none", "sessionID", s.ID)
 	}
 	return wares
 }

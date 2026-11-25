@@ -132,11 +132,74 @@ func TestInitializeItems_Antidote_KeptOutOfTheLootPoolButHeld(t *testing.T) {
 	assert.Equal(t, 4, s.itemPool.count(), "the antidote is no base template of the pool")
 }
 
+// draughtCatalogue is the antidote catalogue with the Restoring Draught beside
+// them, as items-service lists it after migration 033. FS-9JV5K §Change: The
+// Restoring Draught D1.
+func draughtCatalogue() *pb.ListItemTemplatesResponse {
+	resp := antidoteCatalogue()
+	resp.Items = append(resp.Items, &pb.ItemTemplate{Id: uuid.NewString(), ItemName: types.RestoringDraughtName, Rarity: templateRarity, ItemType: "consumable", MaxStackSize: 20})
+	return resp
+}
+
+// The Restoring Draught is kept out of the random loot pool, yet the session
+// holds its template for the merchant to sell. FS-9JV5K §Change: The
+// Restoring Draught D1.
+func TestInitializeItems_RestoringDraught_KeptOutOfTheLootPoolButHeld(t *testing.T) {
+	s := lootSession(t, draughtCatalogue(), pbRarities(), nil)
+
+	require.Len(t, s.itemPool.Consumables, 1)
+	assert.Equal(t, "Lesser Heal Potion", s.itemPool.Consumables[0].Config.Name)
+	require.NotNil(t, s.itemPool.RestoringDraught, "the session can find the draught's template")
+	assert.Equal(t, types.RestoringDraughtName, s.itemPool.RestoringDraught.Config.Name)
+	assert.Equal(t, types.ItemTypeConsumable, s.itemPool.RestoringDraught.Config.ItemType)
+	require.NotNil(t, s.itemPool.Antidote, "the antidote is held apart as before")
+	assert.Equal(t, 4, s.itemPool.count(), "the draught is no base template of the pool")
+}
+
+// Over a sweep of chests, sacks and kills on every floor band, no container
+// or kill drop ever yields a Restoring Draught. FS-9JV5K §Change: The
+// Restoring Draught, Acceptance Criteria "no loot roll ever yields it".
+func TestLoot_RestoringDraught_NeverRolledIntoAContainerOrAKillDrop(t *testing.T) {
+	s := lootSession(t, draughtCatalogue(), pbRarities(), nil)
+
+	consumables := 0
+	count := func(items []*components.ItemComponent) {
+		for _, item := range items {
+			require.NotEqual(t, types.RestoringDraughtName, item.Name, "a draught was rolled")
+			if item.ItemType == types.ItemTypeConsumable {
+				consumables++
+			}
+		}
+	}
+	for range 500 {
+		for _, kind := range []components.ContainerKind{components.ContainerKindChest, components.ContainerKindSack} {
+			ids, err := s.generateItems(kind)
+			require.NoError(t, err)
+			count(itemsByID(s, ids))
+		}
+	}
+
+	for seed := range uint64(20) {
+		drops := newMonsterDrops(s, rand.New(rand.NewPCG(seed, seed+1)))
+		for floor := 1; floor <= 10; floor++ {
+			for range 50 {
+				drops.ConsumeKill(systems.KillRecord{Archetype: components.MonsterArchetypeGhoul, Level: floor, Elite: true, Floor: floor})
+			}
+		}
+	}
+	for _, pile := range dropPiles(s) {
+		count(itemsByID(s, pileItemIDs(t, pile)))
+	}
+
+	assert.Positive(t, consumables, "the sweep rolled consumables, so the draught had its chance")
+}
+
 // A catalogue without the antidote loads as before, holding none.
 func TestInitializeItems_NoAntidote_HoldsNone(t *testing.T) {
 	s := lootSession(t, lootTemplates(true), pbRarities(), nil)
 
 	assert.Nil(t, s.itemPool.Antidote)
+	assert.Nil(t, s.itemPool.RestoringDraught)
 	assert.Len(t, s.itemPool.Consumables, 1)
 }
 

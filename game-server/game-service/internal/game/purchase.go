@@ -299,7 +299,7 @@ func (s *Session) judgeBuy(playerID uuid.UUID, buyer *ecs.Entity, merchantID uui
 // knownWare is whether kind is a ware any merchant sells. FS-9JV5K §A R3.
 func knownWare(kind components.WareKind) bool {
 	switch kind {
-	case components.WareHealthPotion, components.WareAntidote, components.WareTomeOfFilth:
+	case components.WareHealthPotion, components.WareAntidote, components.WareRestoringDraught, components.WareTomeOfFilth:
 		return true
 	}
 	return false

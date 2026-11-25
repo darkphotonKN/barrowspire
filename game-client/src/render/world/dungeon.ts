@@ -343,10 +343,14 @@ export interface DressingRoom {
    * so never in a corridor or over the shell, and none lies within one cell of a doorway.
    */
   clear(square: Rect): boolean;
+  /** One the floor map names in `quiet_rooms` (FS-KE075 §Change: Room variety R84). */
+  quiet: boolean;
+  /** Its walkable area, world px²: a shaped room's cells, never its cut ones (R86). */
+  area: number;
 }
 
-/** Every room of the floor, by region id: where run dressing may stand (§H.47). */
-export function dressingRooms(grid: RegionGrid): DressingRoom[] {
+/** Every room of the floor, by region id: where run dressing may stand (§H.47); `quiet` the floor map's quiet rooms. */
+export function dressingRooms(grid: RegionGrid, quiet: ReadonlySet<number> = new Set()): DressingRoom[] {
   const c = grid.cell;
   const nearDoorway = (cx: number, cy: number) => {
     for (let dx = -1; dx <= 1; dx++)
@@ -373,6 +377,8 @@ export function dressingRooms(grid: RegionGrid): DressingRoom[] {
         id: region.id,
         rect: { x: x0 * c, y: y0 * c, width: (x1 - x0) * c, height: (y1 - y0) * c },
         clear,
+        quiet: quiet.has(region.id),
+        area: region.cells.reduce((sum, r) => sum + r.w * r.h, 0) * c * c,
       };
     });
 }

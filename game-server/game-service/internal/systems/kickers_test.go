@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -213,7 +214,7 @@ func TestKicker_BullRush(t *testing.T) {
 	t.Run("the stat, each rank: affordable at the lowered cost", func(t *testing.T) {
 		for rank := 0; rank <= 3; rank++ {
 			w := newKickerWorld("warrior", passivetree.Ranks{"warrior.t5b": rank}, neverCrit)
-			cost := 25 - 3*rank
+			cost := 40 - 3*rank
 			assert.Equal(t, cost, CastCost(w.body, components.AttackDash), "rank %d", rank)
 
 			resourceOf(w.body).Current = cost
@@ -224,10 +225,10 @@ func TestKicker_BullRush(t *testing.T) {
 	})
 	t.Run("short of the lowered cost, refused", func(t *testing.T) {
 		w := newKickerWorld("warrior", passivetree.Ranks{"warrior.t5b": 3}, neverCrit)
-		resourceOf(w.body).Current = 15
+		resourceOf(w.body).Current = 30
 		w.cast(components.AttackDash, 400, 100)
 		assert.False(t, dashing(w.body))
-		assert.Equal(t, 15, pool(w.body))
+		assert.Equal(t, 30, pool(w.body))
 	})
 
 	crit := int(math.Round(RawDamage(12, 1.5, 8) * CritMultiplier))
@@ -374,7 +375,7 @@ func TestKicker_WideVolley(t *testing.T) {
 	t.Run("the stat, each rank: affordable at the lowered cost", func(t *testing.T) {
 		for rank := 0; rank <= 3; rank++ {
 			w := newKickerWorld("mage", passivetree.Ranks{"mage.t5a": rank}, neverCrit)
-			cost := 15 - 2*rank
+			cost := 25 - 2*rank
 			assert.Equal(t, cost, CastCost(w.body, components.AttackTripleFireball), "rank %d", rank)
 
 			resourceOf(w.body).Current = cost
@@ -384,9 +385,9 @@ func TestKicker_WideVolley(t *testing.T) {
 	})
 	t.Run("short of the lowered cost, refused", func(t *testing.T) {
 		w := newKickerWorld("mage", passivetree.Ranks{"mage.t5a": 3}, neverCrit)
-		resourceOf(w.body).Current = 8
+		resourceOf(w.body).Current = 18
 		assert.Empty(t, w.fired(components.AttackTripleFireball))
-		assert.Equal(t, 8, pool(w.body))
+		assert.Equal(t, 18, pool(w.body))
 	})
 
 	t.Run("R3: five fireballs, one more step either side", func(t *testing.T) {
@@ -414,7 +415,7 @@ func TestKicker_WideVolley(t *testing.T) {
 func TestKicker_Searing(t *testing.T) {
 	t.Run("the stat, each rank", func(t *testing.T) {
 		for rank := 0; rank <= 3; rank++ {
-			for kind, base := range map[components.AttackKind]float64{components.AttackFireball: 350, components.AttackTripleFireball: 360} {
+			for kind, base := range map[components.AttackKind]float64{components.AttackFireball: 350 * constants.PaceScale, components.AttackTripleFireball: 360 * constants.PaceScale} {
 				w := newKickerWorld("mage", passivetree.Ranks{"mage.t5b": rank}, neverCrit)
 				w.fired(kind)
 				_, speeds := shotAngles(w.em)

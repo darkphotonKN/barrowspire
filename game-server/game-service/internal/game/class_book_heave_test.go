@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -51,7 +52,8 @@ func heaveReady(t *testing.T, s *Session, warrior, block *ecs.Entity, target com
 }
 
 // A level-3 warrior beside a stone block heaves it, by its entity id, onto
-// the plate beyond: after the 2 s cast the block slides there, comes to rest
+// the plate beyond: after the 2 s cast the block slides there (a cell at half
+// the paced walk), comes to rest
 // and holds the plate on the warrior's account; its 20 s cooldown runs.
 func TestCastSkill_HeaveShovesABlockOntoAPlate(t *testing.T) {
 	s, player, _ := platesRun(t, 7)
@@ -63,7 +65,7 @@ func TestCastSkill_HeaveShovesABlockOntoAPlate(t *testing.T) {
 
 	require.NoError(t, s.castSkill(player, types.PlayerCastSkillPayload{SkillID: "heave", TargetID: blocks[0].ID.String()}))
 	require.NotNil(t, bookOf(t, warrior).Casting, "a 2 s cast")
-	ticks(s, castTicks(2)+castTicks(1))
+	ticks(s, castTicks(2)+castTicks(1/constants.PaceScale))
 
 	assert.Equal(t, target, pieceOf(blocks[0]).Cell, "shoved onto the plate")
 	assert.False(t, stoneOf(blocks[0]).Sliding, "come to rest")

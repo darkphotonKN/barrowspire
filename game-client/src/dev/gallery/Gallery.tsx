@@ -30,6 +30,12 @@ const OpenTomePanel = dynamic(() => import("./OpenTomePanel"), {
   loading: () => <p className="text-sm text-text-muted">Loading the open tome...</p>,
 });
 
+// The player's own Health and resource bars, live, on a canvas of their own.
+const ResourceBarsPanel = dynamic(() => import("./ResourceBarsPanel"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-text-muted">Loading resource bars...</p>,
+});
+
 // One section per tracked family. Keyed by Family, so a family listed in families.ts with no
 // section here fails the typecheck.
 const SECTIONS: Record<Family, { title: string; Body: ComponentType }> = {
@@ -38,6 +44,7 @@ const SECTIONS: Record<Family, { title: string; Body: ComponentType }> = {
   "tree-colours": { title: "Tree colours", Body: TreeColoursPanel },
   "page-roundels": { title: "Page roundels", Body: PageRoundelsPanel },
   "open-tome": { title: "Open tome", Body: OpenTomePanel },
+  "resource-bars": { title: "Resource bars", Body: ResourceBarsPanel },
 };
 
 export default function Gallery() {

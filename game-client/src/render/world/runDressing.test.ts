@@ -9,6 +9,7 @@ import {
   DRESSING_AREA,
   planDressing,
   planRoomDressing,
+  QUIET_BRAZIERS_MOST,
   type DressingLean,
   type DressingPiece,
   type DressingStatics,
@@ -309,5 +310,56 @@ describe("a dungeon floor's dressing and a container seen later (FS-KE075 §H.47
     ["far off", { x: 900, y: 900 }, false],
   ] as const)("a container %s: stands by it %s", (_name, at, by) => {
     expect(dressingStandsBy(piece, at)).toBe(by);
+  });
+});
+
+describe("planRoomDressing: a quiet room dressed for ambience (FS-KE075 §Change: Room variety R85)", () => {
+  const map = fixture as DungeonMap & { walls: NonNullable<ClientGameState["walls"]> };
+  const grid = new RegionGrid(map);
+  const statics = dressingStatics({ walls: map.walls, doors: [], containers: [], escape_doors: [], switches: [], stairs: [] }, map.width, map.height);
+  const lean = TOWER_BANDS.lower.dressing;
+  const plain = dressingRooms(grid);
+  /** The rooms large enough that a share of dressing rounds to a piece or more. */
+  const big = plain.filter((r) => Math.round((lean.count * r.rect.width * r.rect.height) / DRESSING_AREA) >= 1).map((r) => r.id);
+  const quiet = new Set(big.slice(0, 3));
+  const roomOfPiece = (p: DressingPiece) => grid.region(Math.floor(p.at.x / map.cell_size), Math.floor(p.at.y / map.cell_size));
+  const count = (plan: DressingPiece[], id: number) => plan.filter((p) => roomOfPiece(p) === id).length;
+
+  it("should strew a quiet room more heavily than the same room not quiet", () => {
+    const before = planRoomDressing(lean, 41, statics, plain);
+    const after = planRoomDressing(lean, 41, statics, dressingRooms(grid, quiet));
+    const sum = (plan: DressingPiece[]) => [...quiet].reduce((n, id) => n + count(plan, id), 0);
+    expect(quiet.size).toBe(3);
+    expect(sum(after)).toBeGreaterThan(sum(before));
+  });
+
+  it("should light a quiet room with a brazier where one fits, even on a band that strews none", () => {
+    expect(lean.weights.some(([, sheet]) => sheet === "brazier")).toBe(false);
+    const plan = planRoomDressing(lean, 41, statics, dressingRooms(grid, quiet));
+    const lit = [...quiet].filter((id) => plan.some((p) => p.sheet === "brazier" && roomOfPiece(p) === id));
+    expect(lit.length).toBeGreaterThan(0);
+    expect(plan.filter((p) => p.sheet === "brazier").every((p) => quiet.has(roomOfPiece(p)))).toBe(true);
+  });
+
+  it("should hold the quiet rooms' braziers to the band's most, else to QUIET_BRAZIERS_MOST", () => {
+    const every = new Set(plain.map((r) => r.id));
+    const lower = planRoomDressing(lean, 41, statics, dressingRooms(grid, every)).filter((p) => p.sheet === "brazier");
+    expect(lower.length).toBeLessThanOrEqual(QUIET_BRAZIERS_MOST);
+    const upper = planRoomDressing(TOWER_BANDS.upper.dressing, 41, statics, dressingRooms(grid, every)).filter((p) => p.sheet === "brazier");
+    expect(upper.length).toBeLessThanOrEqual(TOWER_BANDS.upper.dressing.most!.brazier!);
+  });
+
+  it("should count a shaped room's share by its walkable cells, never its cut ones (R86)", () => {
+    for (const room of plain) {
+      const cells = grid.regions.find((r) => r.id === room.id)!.cells.reduce((n, r) => n + r.w * r.h, 0);
+      expect(room.area).toBe(cells * map.cell_size * map.cell_size);
+      expect(room.area).toBeLessThanOrEqual(room.rect.width * room.rect.height);
+    }
+    expect(plain.some((r) => r.area < r.rect.width * r.rect.height)).toBe(true);
+  });
+
+  it("should light nothing on a band that strews no brazier when no room is quiet", () => {
+    // a floor of plain rooms with none quiet is pinned piece for piece above (FS-XK2B6 §D.14)
+    expect(planRoomDressing(lean, 41, statics, plain).filter((p) => p.sheet === "brazier")).toEqual([]);
   });
 });

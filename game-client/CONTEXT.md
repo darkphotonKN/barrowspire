@@ -449,6 +449,9 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   On a **dungeon floor** (one whose floor map carries regions, FS-KE075) a room is instead a
   **region** of kind `room` from the floor map: no `house_id`, no building exterior, no roof or
   stone cap, no indoor blackout. Say *dungeon room* where either could be meant.
+- **Quiet room**: a dungeon room the floor map names in `quiet_rooms`: it holds nothing but
+  dressing, so the client dresses it more heavily and gives it a brazier where one fits (FS-KE075
+  §Change: Room variety). Its walls and floor are drawn like any room's.
 - **Floor map**: the static layout of the current run floor, sent once by the server
   (`floor_map`, FS-KE075, ADR-0060): size, cell size, regions and walls. The scene builds the floor
   from it; per-tick snapshots no longer carry walls in a run.
@@ -549,7 +552,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Target frame** (FS-48CTQ): the HUD frame at the top centre that names one monster (name,
   level, HP bar) instead of plates over every head: the hovered monster, else an engaged boss, else
   the monster the local player last hit. A **marker mode** per world and floor says whether
-  monsters carry overhead plates (`overhead`, everywhere today but floor 1) or use the frame; on a
+  monsters carry overhead plates (`overhead`, everywhere today) or use the frame (no floor today); on a
   `frame` floor a damaged monster still carries its HP bar over its head, alone, with no plate
   (§F). Not a **marker**: it is HUD, not drawn in the world.
 - **Damage chip** (FS-48CTQ §F.22): the run of an HP bar, overhead or in the target frame, that

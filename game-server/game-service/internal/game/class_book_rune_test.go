@@ -41,7 +41,7 @@ func monsterAction(t *testing.T, s *Session, recipient uuid.UUID, of *ecs.Entity
 	return ""
 }
 
-// A level-13 mage lays Binding Glyph 6 cells off: after 2.5 s 40 mana is
+// A level-13 mage lays Binding Glyph 6 cells off: after 2.5 s 60 mana is
 // paid, the 60 s cooldown starts and the rune is in every recipient's state as
 // kind "rune". A ghoul stood on it is stunned on the next tick, every
 // recipient sees it stunned and the rune's caught count. AC 1; R24, R34.
@@ -57,7 +57,7 @@ func TestCastSkill_BindingGlyphLaysARuneThatStunsAGhoulOnIt(t *testing.T) {
 	ticks(s, castTicks(2.5))
 
 	require.Len(t, runes(s), 1, "the rune is laid")
-	assert.Equal(t, manaBefore-40, currentResource(body), "40 mana")
+	assert.Equal(t, manaBefore-60, currentResource(body), "60 mana")
 	assert.Equal(t, components.BookCooldown{Remaining: 60, Total: 60}, bookOf(t, body).Cooldowns[components.PageBindingGlyph])
 
 	ghoul := CreateMonsterEntity(s.EntityManager, MonsterConfig{Archetype: components.MonsterArchetypeGhoul, Level: 1, X: x, Y: 500})

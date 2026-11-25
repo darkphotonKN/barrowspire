@@ -20,3 +20,11 @@ describe("ClientAction (FS-9JV5K §B R5, §D R17)", () => {
     expect([buy.action, use.action]).toEqual(["buy", "use_item"]);
   });
 });
+
+// FS-7P736 R2, R13: the roll is a client action carrying the chosen direction (checked by tsc, as above)
+describe("ClientAction (FS-7P736 R2, R13)", () => {
+  it("should carry a roll with its direction", () => {
+    const roll: Extract<ClientAction, { action: "roll" }> = { action: "roll", payload: { dir_x: 1, dir_y: 0 }, seq: 1 };
+    expect(roll.payload).toEqual({ dir_x: 1, dir_y: 0 });
+  });
+});

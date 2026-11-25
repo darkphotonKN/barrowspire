@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BarrierState, SealPieceState } from "@/types/gameState";
 import { MIST_DEPTH } from "@/render/effects/mist";
 import { WORLD_DEPTH } from "@/render/iso/shapes";
+import pace from "@/data/pace.golden.json";
 import { BLOCK_SLIDE_SPEED, SEAL_GROUND_DEPTH, SealSet, type SealBand, type SealGrid, type WallFace } from "./seal";
 import type { SealLook } from "./sealLooks";
 import { INTERACT_RANGE } from "./stairs";
@@ -175,8 +176,8 @@ describe("SealSet: a stone block slides (FS-5FZ4J §C R19, §J R51)", () => {
     expect(made[0].at).toEqual(centre(3, 2));
   });
 
-  it("should be half a cell a second at a player's walk: the server's push speed", () => {
-    expect(BLOCK_SLIDE_SPEED).toBe(100);
+  it("should slide at the server's push speed: the paced walk at its push share, read from the pace golden (FS-TAGWA R10)", () => {
+    expect(BLOCK_SLIDE_SPEED).toBe(pace.defaultSpeed * pace.blockPushSpeedShare);
   });
 
   it("should snap a block that jumps farther than a slide, as a reconnect's would", () => {

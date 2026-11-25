@@ -69,6 +69,10 @@ const (
 	// merchant; payload { "merchant_id", "ware" }, answered on this action with
 	// { success, ware } or { success: false, reason }. FS-9JV5K §B R5.
 	ActionBuy Action = "buy"
+	// ActionRoll is a delver in a run rolling; payload { "dir_x", "dir_y" },
+	// the heading, normalised on the server. Never answered: a refused roll
+	// is silent. FS-7P736 §A R1–R2, R6.
+	ActionRoll Action = "roll"
 	// ActionChat is a chat line, inbound as { "channel", "text" } and outbound
 	// as the pod-stamped line. Handled on the message hub, never by a world.
 	// FS-WJGFJ §Requirements A2–A4, B11.
@@ -318,9 +322,30 @@ const (
 // Server Memory Constants
 const MaxMsgChanBuffer int = 30
 
+// PaceScale is THE pace knob (the charter's PACE_SCALE): every travel speed in
+// game-service is its full-pace figure times this, written where the speed is
+// defined. Walks, monster and ally pace, the roster's step gain and every
+// projectile follow it; wind-ups, intervals, cooldowns and reach never do.
+// Turning it re-paces the client too: rewrite the pace golden it reads with
+// `go test ./internal/systems -run TestPaceGolden -update`. FS-TAGWA R1-R9,
+// ADR-0099.
+const PaceScale float64 = 0.525
+
 // Game Defaults
-const DefaultSpeed float64 = 200
+//
+// DefaultSpeed is a delver's walk in every world, px/s: 200 at full pace.
+const DefaultSpeed float64 = 200 * PaceScale
 const DefaultInteractableRange float64 = 60
+
+// The roll: RollDistance px (2.5 cells at 80 px) over RollDuration seconds, a
+// straight line at one constant speed, then RollCooldown seconds before the
+// next. None is paced, and nothing worn or cast stretches or shortens them.
+// FS-7P736 §A R3, R7.
+const (
+	RollDistance float64 = 200
+	RollDuration float64 = 0.4
+	RollCooldown float64 = 3
+)
 const DefautMaxSessionPlayers = 2
 
 // RunPlayerDamage is whether delvers can damage each other in a run. Off: runs
@@ -342,6 +367,12 @@ const HubMapHeight float64 = 1700
 const HubSpawnX float64 = 1000
 const HubSpawnY float64 = 800
 
+// HubMoveSpeedBonusPercent is the town bonus: a delver walks this much faster
+// in the hub, and only there. Its own number, outside PaceScale and the base
+// speeds, applied on top of everything else and past worn move speed's cap:
+// base × (1 + gear) × (1 + this). Hub residents keep their amble. FS-TAGWA R16.
+const HubMoveSpeedBonusPercent = 10
+
 // How many delvers the hub holds at once.
 //
 // This is the door check, and distinct from the 50-player concurrency ceiling
@@ -354,8 +385,9 @@ const HubOccupancyCap int = 40
 // FS-NCC9J §Requirements 18, 20 (amended).
 const HubTravelMargin int = 4
 
-// How fast a resident ambles, and how long they stand once they arrive.
-const NPCWanderSpeed float64 = 60
+// How fast a resident ambles (60 px/s at full pace), and how long they stand
+// once they arrive.
+const NPCWanderSpeed float64 = 60 * PaceScale
 const NPCPauseSeconds float64 = 1.6
 
 // How long a resident may fail to close on its destination before giving up on

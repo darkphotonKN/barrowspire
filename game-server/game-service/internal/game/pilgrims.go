@@ -402,7 +402,7 @@ func (d *dungeonFloor) waveSpots(rng populationRand, room, n int, delvers []poin
 		if len(sides) == 2 {
 			count = (n + 1 - i) / 2
 		}
-		for _, c := range d.walkOut(mouth, count, barred, used, clearance) {
+		for _, c := range d.walkOut(room, mouth, count, barred, used, clearance) {
 			spots = append(spots, d.cellCentre(c))
 		}
 	}
@@ -420,16 +420,23 @@ func nearestOfPoints(p point, points []point) float64 {
 }
 
 /*
-walkOut is up to k corridor cells walked out from mouth, breadth first over
-corridor cells off barriers and off used, nearest first but the mouth's own
-cells last, so the wave stands a cell out from the doorway when the corridor
-allows. Only a cell whose clearance (how far it stands from the nearest
-delver) is at least MonsterDelverExclusion is taken while the walk finds
-them; short of k, the rest are the cells it walked farthest from the
+walkOut is up to k corridor cells walked out from mouth, a doorway's opening
+of room, breadth first over the walkable cells off barriers, outside room and
+every hidden room, taking only corridor cells off used: nearest first but the
+mouth's own cells last, so the wave stands a cell out from the doorway when the
+corridor allows. A corridor too short for the wave leads the walk on through the
+ground beyond it to the next corridor (FS-KE075 §Change: Room variety: shorter
+corridors on the smaller floor). Only a cell whose clearance (how far it stands
+from the nearest delver) is at least MonsterDelverExclusion is taken while the
+walk finds them; short of k, the rest are the cells it walked farthest from the
 delvers, as an ambush with no clear room spawns. Each taken is marked used.
 */
-func (d *dungeonFloor) walkOut(mouth []components.Cell, k int, barred, used map[int]bool, clearance func(i int) float64) []components.Cell {
+func (d *dungeonFloor) walkOut(room int, mouth []components.Cell, k int, barred, used map[int]bool, clearance func(i int) float64) []components.Cell {
 	cols := d.layout.Cols
+	shut := map[int]bool{d.roomRegion(room): true}
+	for _, h := range d.layout.Hidden {
+		shut[d.roomRegion(h.Room)] = true
+	}
 	seen := map[int]bool{}
 	var queue, atMouth, crowded []int
 	for _, c := range mouth {
@@ -451,13 +458,16 @@ func (d *dungeonFloor) walkOut(mouth []components.Cell, k int, barred, used map[
 	for q := 0; q < len(queue) && len(out) < k; q++ {
 		x, y := queue[q]%cols, queue[q]/cols
 		for _, n := range [4][2]int{{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}} {
-			i, ok := d.corridorCell(n[0], n[1], barred)
-			if !ok || seen[i] {
+			if n[0] < 0 || n[1] < 0 || n[0] >= cols || n[1] >= d.layout.Rows {
+				continue
+			}
+			i := n[1]*cols + n[0]
+			if seen[i] || d.region[i] == 0 || barred[i] || shut[d.region[i]] {
 				continue
 			}
 			seen[i] = true
 			queue = append(queue, i)
-			if len(out) < k {
+			if _, corridor := d.corridorCell(n[0], n[1], barred); corridor && len(out) < k {
 				take(i)
 			}
 		}

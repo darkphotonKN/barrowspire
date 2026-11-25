@@ -183,9 +183,19 @@ func capped(archetype components.MonsterArchetype) bool {
 	return ok && entry.Family.Capped
 }
 
+// darkWarriorCap is how many capped-family monsters a floor of n monsters may
+// hold: min(DarkWarriorCapMax, ⌊n / DarkWarriorPer⌋), and one on any floor
+// with a monster (FS-C8VM7 §C R24, FS-KE075 §Change: Room variety R83).
+func darkWarriorCap(n int) int {
+	if n == 0 {
+		return 0
+	}
+	return min(DarkWarriorCapMax, max(1, n/DarkWarriorPer))
+}
+
 /**
 * capDarkWarriors redraws the excess of a floor's capped-family monsters over
-* min(DarkWarriorCapMax, ⌊n / DarkWarriorPer⌋), n being every monster given,
+* darkWarriorCap(n), n being every monster given,
 * the excess chosen at random. Each is redrawn as another brute of the pool, a
 * fodder when the pool has no brute outside the capped family, keeping where it
 * stands, its level and whether it is elite (FS-C8VM7 §C R24).
@@ -197,7 +207,7 @@ func (p floorPool) capDarkWarriors(rng populationRand, monsters []*MonsterConfig
 			over = append(over, m)
 		}
 	}
-	allowed := min(DarkWarriorCapMax, len(monsters)/DarkWarriorPer)
+	allowed := darkWarriorCap(len(monsters))
 	if len(over) <= allowed {
 		return
 	}

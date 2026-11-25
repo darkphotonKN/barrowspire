@@ -63,17 +63,14 @@ const fixtureSearchStep = 10.0
 // chest and stairs.
 const containerPadding = 10.0
 
-// dungeonContainers is how many containers a dungeon floor of rooms holds:
-// clamp(round(rooms / 2), 10, 14). FS-KE075 §B R15.
-func dungeonContainers(rooms int) int {
-	return min(max(int(math.Round(float64(rooms)/2)), 10), 14)
-}
-
 // dungeonFloor is one dungeon floor's layout as the floor build and the
 // placements read it: the generator's output, plus each cell's region and
 // whether it is a doorway, and where its seals stand. It is built once per
 // floor, its seals found before it is published, and never written after, so
-// any goroutine may read it.
+// any goroutine may read it. One exception: the population, later in the same
+// build and under its buildMu, may turn a rolled quiet room's contents to
+// monsters (holdTotal); no write comes after the floor map is first
+// published, so a later re-publish (a secret door opened) reads them final.
 type dungeonFloor struct {
 	layout levelgen.DungeonLayout
 	// region is each cell's region id, row by row; 0 is rock.
@@ -95,6 +92,9 @@ type dungeonFloor struct {
 	// encounter is the floor's encounter, its room and its NPCs' spots, nil
 	// with none (FS-4EC7Z §A R1-R2)
 	encounter *encounterPlan
+	// contents is what each room holds, by room index, given once the seals,
+	// respites and encounter are planned (FS-KE075 §Change: Room variety R77)
+	contents []roomContent
 }
 
 func newDungeonFloor(layout levelgen.DungeonLayout) *dungeonFloor {
@@ -182,6 +182,9 @@ func (s *Session) generateDungeonFloor(depth, arriving int) (*dungeonFloor, dung
 		if kind, ok := encounterFor(s.spawnRand, depth, s.isTopFloor(depth), s.tuning); ok {
 			s.planEncounter(d, kind)
 		}
+		// what every other room holds, the claims above made (FS-KE075
+		// §Change: Room variety R77)
+		d.planContents(depth)
 		slog.Debug("Dungeon floor generated",
 			"sessionID", s.ID, "floor", depth, "seed", seed, "attempt", layout.Attempt, "rooms", len(layout.Rooms))
 		return d, fixtures
@@ -339,48 +342,19 @@ func (s *Session) placeFixture(d *dungeonFloor, room int, rw, rh float64) (point
 }
 
 /**
-* layDungeonContainers places the floor's containers (FS-KE075 §B R15): a
-* chest in each treasure room, then one per room, a chest or at today's sack
-* share a sack, in rooms drawn from those that are neither the start, a
-* treasure room nor a quiet room (FS-5FZ4J §C R17), until the floor holds clamp(round(rooms / 2), 10, 14). A room
-* with no free spot is passed over for the next one drawn.
+* layDungeonContainers places the floor's containers (FS-KE075 §B R15, as
+* §Change: Room variety R81 has it): a chest in each treasure room, then one
+* in each room that rolled a chest or sack, a chest or at today's sack share a
+* sack. A room with no free spot is passed over, and logged.
 **/
 func (s *Session) layDungeonContainers(d *dungeonFloor) {
-	roles := d.layout.Roles
-	want := dungeonContainers(len(d.layout.Rooms))
-	placed := 0
-
-	for _, room := range roles.Treasure {
-		if s.placeDungeonContainer(d, room, components.ContainerKindChest) {
-			placed++
-		}
+	for _, room := range d.layout.Roles.Treasure {
+		s.placeDungeonContainer(d, room, components.ContainerKindChest)
 	}
-
-	taken := s.quietRooms(d)
-	taken[roles.Start] = true
-	for _, room := range roles.Treasure {
-		taken[room] = true
-	}
-	var others []int
 	for room := range d.layout.Rooms {
-		if !taken[room] {
-			others = append(others, room)
+		if d.content(room) == contentContainer {
+			s.placeDungeonContainer(d, room, spawnedContainerKind(s.containerKindRand))
 		}
-	}
-	shuffle(s.spawnRand, others)
-
-	for _, room := range others {
-		if placed >= want {
-			break
-		}
-		if s.placeDungeonContainer(d, room, spawnedContainerKind(s.containerKindRand)) {
-			placed++
-		}
-	}
-
-	if placed < want {
-		slog.Warn("Dungeon floor holds fewer containers than its rooms call for",
-			"sessionID", s.ID, "placed", placed, "want", want)
 	}
 }
 

@@ -1711,15 +1711,16 @@ describe("the baked manifest (public/art/manifest.json)", () => {
      * the move now (FS-HF0WW's and FS-3V7GC's, retired by FS-JS7C8 § Change: The knight's sprint,
      * and the attack-on-the-move clips retired R149).
      */
+    // and each class its roll, last (FS-7P736 R15)
     const OWN_CLIPS: Record<string, string[]> = {
       // his sprint dropped his attacks on the move, the last class's (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)
-      char_knight_base: ["run"],
+      char_knight_base: ["run", "roll"],
       // her sprint dropped her attacks on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
-      char_archer_base: ["run"],
+      char_archer_base: ["run", "roll"],
       // her sprint and pointed cast dropped her attacks on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131)
-      char_wizard_base: ["run"],
+      char_wizard_base: ["run", "roll"],
       // his sprint dropped his attacks on the move, the parry kept (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)
-      char_mercenary_base: ["parry", "run"],
+      char_mercenary_base: ["parry", "run", "roll"],
     };
     /** The class sheets re-baked with the run, at 1.5x (FS-JS7C8 slices 12, 7, 6, 8). */
     const RUNNING = ["char_archer_base", "char_wizard_base", "char_knight_base", "char_mercenary_base"];
@@ -1828,11 +1829,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
      * change in either dimension, so a tune round cannot grow either unseen. Integrated with
      * Looks v2 (2026-11-23): the looks' ceilings are their Looks v2 boxes (main 697260c6), which
      * the integrated bake matches exactly; the Berserker's heavy axes and pelt grew his from 267 × 240
-     * and the Guardian's bigger shield cut his to 255 × 219 there, not the sprint.
+     * and the Guardian's bigger shield cut his to 255 × 219 there, not the sprint. The roll (FS-7P736
+     * R15, I-7P736-3) turns him over, his cloak flung round him, and grew the base's from 276 × 228
+     * (anchor 114, 168) and the Guardian's from 255 × 219 (105, 165) to these, its own bake; the
+     * Berserker's held.
      */
     const KNIGHT_BOX: [string, { width: number; height: number; x: number; y: number }][] = [
-      ["char_knight_base", { width: 276, height: 228, x: 114, y: 168 }],
-      ["char_knight_guardian", { width: 255, height: 219, x: 105, y: 165 }],
+      ["char_knight_base", { width: 279, height: 234, x: 117, y: 174 }],
+      ["char_knight_guardian", { width: 270, height: 243, x: 120, y: 180 }],
       ["char_knight_berserker", { width: 291, height: 258, x: 117, y: 195 }],
     ];
     it.each(KNIGHT_BOX)("keeps %s's frame box and anchor within the pre-change ones (FS-JS7C8 R151, K5)", (name, max) => {

@@ -61,7 +61,7 @@ func levitateParty(t *testing.T, cells float64) (s *Session, mage uuid.UUID, mag
 }
 
 // A level-9 mage levitates a teammate 4 cells off by their player id: after
-// 1.5 s 35 mana is paid, the 90 s cooldown starts and the teammate is afloat
+// 1.5 s 55 mana is paid, the 90 s cooldown starts and the teammate is afloat
 // for 8 s, shown on their own state and on everyone else's; their slash is
 // refused while it runs and lands after. AC 1; R13, R23, R34.
 func TestCastSkill_LevitateLiftsATeammateWhoCannotSlashFor8Seconds(t *testing.T) {
@@ -74,7 +74,7 @@ func TestCastSkill_LevitateLiftsATeammateWhoCannotSlashFor8Seconds(t *testing.T)
 	assert.Equal(t, manaBefore, currentResource(mageBody), "nothing paid yet")
 	tick(s)
 
-	assert.Equal(t, manaBefore-35, currentResource(mageBody), "35 mana")
+	assert.Equal(t, manaBefore-55, currentResource(mageBody), "55 mana")
 	assert.Equal(t, components.BookCooldown{Remaining: 90, Total: 90}, bookOf(t, mageBody).Cooldowns[components.PageLevitate])
 	require.True(t, afloatOn(t, mateBody))
 	assert.False(t, afloatOn(t, mageBody), "the mage stays grounded")
@@ -169,7 +169,7 @@ func TestCastSkill_LevitateTargets(t *testing.T) {
 			}
 			ticks(s, castTicks(1.5))
 			assert.True(t, afloatOn(t, tt.lifted(mageBody, mateBody)))
-			assert.Equal(t, manaBefore-35, currentResource(mageBody))
+			assert.Equal(t, manaBefore-55, currentResource(mageBody))
 		})
 	}
 }
@@ -197,7 +197,7 @@ func TestCastSkill_LevitateOnATeammateWhoWalksOff(t *testing.T) {
 
 			if tt.lifts {
 				assert.True(t, afloatOn(t, mateBody))
-				assert.Equal(t, manaBefore-35, currentResource(mageBody))
+				assert.Equal(t, manaBefore-55, currentResource(mageBody))
 				return
 			}
 			assert.False(t, afloatOn(t, mateBody), "no afloat")

@@ -64,7 +64,7 @@ func clearOf(t *testing.T, a, b *ecs.Entity) bool {
 
 // A completed Recall stands two teammates from the far corners of the floor
 // within 2 cells of the mage, on the nearest free spots, clear of the mage and
-// of each other; 50 mana is paid and the page is spent, with no cooldown.
+// of each other; 75 mana is paid and the page is spent, with no cooldown.
 // AC 1; R25, R8.
 func TestBookSystemCast_RecallPullsEveryTeammateToTheMage(t *testing.T) {
 	em := ecs.NewEntityManager()
@@ -81,7 +81,7 @@ func TestBookSystemCast_RecallPullsEveryTeammateToTheMage(t *testing.T) {
 	}
 	assert.True(t, clearOf(t, near, far), "not on each other")
 	pool, _ := bookPool(mage)
-	assert.Equal(t, 50, pool.Current, "50 mana")
+	assert.Equal(t, 25, pool.Current, "75 mana")
 	book := bookOfT(t, mage)
 	assert.True(t, book.Spent[components.PageRecall], "spent")
 	assert.Empty(t, book.Cooldowns, "no cooldown")
@@ -157,7 +157,7 @@ func TestBookSystemCast_RecallBreaksWhatTheTeammateWasDoing(t *testing.T) {
 	mage, cast := recallCast(em)
 	mate := recallBody(em, "warrior", 9, 1000, 500, components.PageHardened)
 	mate.AddComponent(&components.TimedOpenComponent{TargetID: uuid.New(), Duration: 1.5, FromX: 1000, FromY: 500, HealthBeforeCombat: 100})
-	mate.AddComponent(&components.DashComponent{DirX: 1, Speed: 600, Remaining: 100})
+	mate.AddComponent(&components.DashComponent{Carry: components.Carry{DirX: 1, Speed: 600, Remaining: 100}})
 	var endedAt [2]float64
 	ground := recallGround
 	ground.EndCharge = func(e *ecs.Entity) {
@@ -181,6 +181,28 @@ func TestBookSystemCast_RecallBreaksWhatTheTeammateWasDoing(t *testing.T) {
 	assert.Nil(t, bookOfT(t, mate).Casting, "the cast broke")
 	assert.Equal(t, [2]float64{1000, 500}, endedAt, "the charge ended where they stood")
 	assert.False(t, mate.HasComponent(ecs.ComponentTypeDash))
+}
+
+// A recalled teammate mid-roll lands beside the caster with the roll over: it
+// never runs on from where they were set down. FS-7P736 §A R4.
+func TestBookSystemCast_RecallEndsATeammatesRoll(t *testing.T) {
+	em := ecs.NewEntityManager()
+	mage, cast := recallCast(em)
+	mate := recallBody(em, "warrior", 9, 1000, 500, components.PageHardened)
+	books := NewBookSystem(em)
+	require.NoError(t, books.Cast(cast))
+
+	for range recallTicks {
+		if !Rolling(mate) {
+			mate.RemoveComponent(ecs.ComponentTypeRollCooldown)
+			require.True(t, StartRoll(mate, 1, 0))
+		}
+		books.Update(castTick, em.GetAllEntities(), BookGround{})
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, recallGround, PageEntryPoints{})
+	}
+
+	require.InDelta(t, 2*constants.PlayerRadius, apart(t, mage, mate), 1e-6, "recalled")
+	assert.False(t, Rolling(mate), "the roll is over")
 }
 
 // A teammate never lands in a wall, past one, or on another body: with a wall

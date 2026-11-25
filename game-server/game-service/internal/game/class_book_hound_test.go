@@ -52,7 +52,7 @@ func houndOnWire(t *testing.T, s *Session, recipient uuid.UUID) map[string]any {
 	return nil
 }
 
-// A level-15 archer calls the hound 3 cells off: after 2 s 40 stamina is
+// A level-15 archer calls the hound 3 cells off: after 2 s 60 stamina is
 // paid, the 180 s cooldown starts and the hound is in every recipient's state
 // as kind "hound" with the archer's player id, its health of 40 % of the
 // archer's max, and what it is doing. AC 1; R28, R34.
@@ -66,7 +66,7 @@ func TestCastSkill_CallTheHoundShowsTheHoundToEveryone(t *testing.T) {
 	hound := callTheHound(t, s, archer, 500+3*cell, 500)
 	most := maxHealthOfT(t, body) // as worn gear and passives seat it
 
-	assert.Equal(t, staminaBefore-40, currentResource(body), "40 stamina")
+	assert.Equal(t, staminaBefore-60, currentResource(body), "60 stamina")
 	assert.Equal(t, components.BookCooldown{Remaining: 180, Total: 180}, bookOf(t, body).Cooldowns[components.PageCallTheHound])
 	want := float64(roundShare(most, 0.4))
 	for _, recipient := range []uuid.UUID{archer, mate} {

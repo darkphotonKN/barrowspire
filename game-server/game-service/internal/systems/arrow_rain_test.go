@@ -83,7 +83,7 @@ func rains(em *ecs.EntityManager) []*components.ArrowRainComponent {
 	return out
 }
 
-// A resolving Arrow Rain spends 35 stamina, starts a 12 s cooldown and the
+// A resolving Arrow Rain spends 55 stamina, starts a 12 s cooldown and the
 // attack pin, and centres a 70 px circle on the target, or 300 px along the
 // line toward it when the target is further. FS-04EEA §E R23, §A R4–R5.
 func TestCombatSystem_ArrowRain_CentresTheCircleWithin300AndPaysItsCost(t *testing.T) {
@@ -111,7 +111,7 @@ func TestCombatSystem_ArrowRain_CentresTheCircleWithin300AndPaysItsCost(t *testi
 				assert.InDelta(t, tt.wantY, got[0].Y, 1e-9)
 				assert.Equal(t, 70.0, got[0].Radius)
 			}
-			assert.Equal(t, 65, pool(archer))
+			assert.Equal(t, 45, pool(archer))
 			remaining, total := cooldownState(archer, components.AttackArrowRain)
 			assert.InDelta(t, 12, remaining, 1e-9)
 			assert.InDelta(t, 12, total, 1e-9)
@@ -135,10 +135,10 @@ func TestCombatSystem_ArrowRain_WornAttackSpeedShortensItsCooldown(t *testing.T)
 	assert.InDelta(t, 12/1.5, total, 1e-9)
 }
 
-// The wire's tree-ability cost reads Arrow Rain's 35. FS-04EEA §A R5;
+// The wire's tree-ability cost reads Arrow Rain's 55. FS-04EEA §A R5;
 // FS-Q18Q3 §A R5.
 func TestTreeAbilityCost_ArrowRain(t *testing.T) {
-	assert.Equal(t, 35, TreeAbilityCost(components.AttackArrowRain))
+	assert.Equal(t, 55, TreeAbilityCost(components.AttackArrowRain))
 }
 
 // runRain casts the archer's Arrow Rain at (x, y) and runs the world for the
@@ -270,7 +270,7 @@ func TestCombatSystem_ArrowRain_KeepsFallingAndCreditsTheArcherAfterTheyDie(t *t
 
 // Arrow Rain is refused, with nothing spent, no cooldown and no rain, from a
 // caster whose class names another tree ability, an archer without the node,
-// one short of 35 stamina and one inside its cooldown. FS-04EEA §A R3–R4.
+// one short of 55 stamina and one inside its cooldown. FS-04EEA §A R3–R4.
 func TestCombatSystem_ArrowRain_RefusedDoesNothing(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -288,7 +288,7 @@ func TestCombatSystem_ArrowRain_RefusedDoesNothing(t *testing.T) {
 			e.AddComponent(components.NewTreeAbilityComponent(components.AttackArrowRain, "archer.t3"))
 			return e
 		}, 100},
-		{"34 stamina", rainArcher, 34},
+		{"54 stamina", rainArcher, 54},
 		{"inside its cooldown", func(em *ecs.EntityManager) *ecs.Entity {
 			e := rainArcher(em)
 			c, _ := e.GetComponent(ecs.ComponentTypeCooldown)

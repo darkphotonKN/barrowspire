@@ -63,23 +63,23 @@ type BookPage struct {
 // FS-X2CMM §B R9–R12.
 var classBooks = map[components.PageID]BookPage{
 	// mage, Spellbook (mana), R9
-	components.PageWitchlight:   {Class: "mage", UnlockLevel: 2, Target: TargetGround, RangeCells: 8, CastTime: 1, Cost: 20, Cooldown: 45},
-	components.PageFarHand:      {Class: "mage", UnlockLevel: 5, Target: TargetInteractable, RangeCells: 6, CastTime: 1, Cost: 15, Cooldown: 30},
-	components.PageLevitate:     {Class: "mage", UnlockLevel: 9, Target: TargetAlly, AllowsSelf: true, RangeCells: 6, CastTime: 1.5, Cost: 35, Cooldown: 90},
-	components.PageBindingGlyph: {Class: "mage", UnlockLevel: 13, Target: TargetGround, RangeCells: 6, CastTime: 2.5, Cost: 40, Cooldown: 60},
-	components.PageRecall:       {Class: "mage", UnlockLevel: 17, Target: TargetNone, CastTime: 3, Cost: 50, Limit: PageLimitPerFloor},
+	components.PageWitchlight:   {Class: "mage", UnlockLevel: 2, Target: TargetGround, RangeCells: 8, CastTime: 1, Cost: 30, Cooldown: 45},
+	components.PageFarHand:      {Class: "mage", UnlockLevel: 5, Target: TargetInteractable, RangeCells: 6, CastTime: 1, Cost: 25, Cooldown: 30},
+	components.PageLevitate:     {Class: "mage", UnlockLevel: 9, Target: TargetAlly, AllowsSelf: true, RangeCells: 6, CastTime: 1.5, Cost: 55, Cooldown: 90},
+	components.PageBindingGlyph: {Class: "mage", UnlockLevel: 13, Target: TargetGround, RangeCells: 6, CastTime: 2.5, Cost: 60, Cooldown: 60},
+	components.PageRecall:       {Class: "mage", UnlockLevel: 17, Target: TargetNone, CastTime: 3, Cost: 75, Limit: PageLimitPerFloor},
 	// archer, Hunter's Journal (stamina), R10
-	components.PageTrackersEye:  {Class: "archer", UnlockLevel: 3, Target: TargetNone, Cost: 20, Cooldown: 60},
-	components.PageBrew:         {Class: "archer", UnlockLevel: 9, Target: TargetNone, CastTime: 3, Cost: 30, Cooldown: 120},
-	components.PageCallTheHound: {Class: "archer", UnlockLevel: 15, Target: TargetGround, RangeCells: 4, CastTime: 2, Cost: 40, Cooldown: 180},
+	components.PageTrackersEye:  {Class: "archer", UnlockLevel: 3, Target: TargetNone, Cost: 30, Cooldown: 60},
+	components.PageBrew:         {Class: "archer", UnlockLevel: 9, Target: TargetNone, CastTime: 3, Cost: 45, Cooldown: 120},
+	components.PageCallTheHound: {Class: "archer", UnlockLevel: 15, Target: TargetGround, RangeCells: 4, CastTime: 2, Cost: 60, Cooldown: 180},
 	// mercenary, The Ledger (no resource cost), R11
 	components.PagePickTheLock:   {Class: "mercenary", UnlockLevel: 3, Target: TargetInteractable, RangeCells: adjacentCells, CastTime: 4, Cooldown: 30},
 	components.PageStrikeADeal:   {Class: "mercenary", UnlockLevel: 9, Target: TargetInteractable, RangeCells: 4, CastTime: 2, Cooldown: 900},
 	components.PageTakeAContract: {Class: "mercenary", UnlockLevel: 15, Target: TargetNone, Limit: PageLimitPerDelve},
 	// warrior, Scars (stamina), R12
-	components.PageHeave:     {Class: "warrior", UnlockLevel: 3, Target: TargetInteractable, RangeCells: adjacentCells, CastTime: 2, Cost: 25, Cooldown: 20},
-	components.PageHardened:  {Class: "warrior", UnlockLevel: 9, Target: TargetSelf, Cost: 30, Cooldown: 90},
-	components.PageLongNight: {Class: "warrior", UnlockLevel: 15, Target: TargetSelf, Cost: 40, Cooldown: 120},
+	components.PageHeave:     {Class: "warrior", UnlockLevel: 3, Target: TargetInteractable, RangeCells: adjacentCells, CastTime: 2, Cost: 40, Cooldown: 20},
+	components.PageHardened:  {Class: "warrior", UnlockLevel: 9, Target: TargetSelf, Cost: 45, Cooldown: 90},
+	components.PageLongNight: {Class: "warrior", UnlockLevel: 15, Target: TargetSelf, Cost: 60, Cooldown: 120},
 }
 
 func init() {

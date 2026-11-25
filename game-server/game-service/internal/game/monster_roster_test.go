@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/stretchr/testify/assert"
@@ -119,9 +120,12 @@ func TestVariantSheets_MatchTheTableAtLevelOne(t *testing.T) {
 		"dark_warrior": {260, 30, 16, 10, 120}, "dark_reaper": {312, 35, 20, 13, 128},
 	}
 	for archetype, w := range want {
+		w.speed *= constants.PaceScale // the table's speeds are at full pace (FS-TAGWA)
 		sheet, ok := monsterSheets[archetype]
 		require.True(t, ok, "%s has a sheet", archetype)
 		got := stats{sheet.HP, sheet.Damage, sheet.Defense, sheet.MagicResistance, sheet.MoveSpeed}
+		assert.InDelta(t, w.speed, got.speed, 1e-9, "%s speed", archetype)
+		w.speed, got.speed = 0, 0
 		assert.Equal(t, w, got, archetype)
 	}
 }
@@ -149,7 +153,7 @@ func TestVariantSheets_EachStepIsStrictlyBetter(t *testing.T) {
 			assert.Equal(t, base.Shot, sheet.Shot, "%s shot", name)
 		}
 		for _, v := range family.Variants {
-			assert.Less(t, monsterSheets[v.Archetype].MoveSpeed, 200.0, "%s is outrun", v.Archetype)
+			assert.Less(t, monsterSheets[v.Archetype].MoveSpeed, constants.DefaultSpeed, "%s is outrun", v.Archetype)
 		}
 	}
 }

@@ -122,8 +122,8 @@ describe("the mercenary's spec looks in the cast (FS-1J1CB R9, R15)", () => {
     expect(CAST.filter((c) => c.group === r.group)).toHaveLength(1);
     expect(r).toMatchObject({ scale: 1.5, trim: true, module: "mercLooks" });
     expect(Object.keys(r.animations)).toEqual(Object.keys(base.animations));
-    // his six, the parry kept, no attack on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)
-    expect(Object.keys(r.animations)).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
+    // his six, the parry kept, no attack on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107), and the roll (FS-7P736 R15)
+    expect(Object.keys(r.animations)).toEqual(["idle", "walk", "attack", "death", "parry", "run", "roll"]);
     for (const [anim, spec] of Object.entries(base.animations)) expect(r.animations[anim], `${sheet} ${anim}`).toEqual(spec);
     for (const t of Object.values(OFFHAND_OF)) expect(r.animations[t]).toBeUndefined();
   });

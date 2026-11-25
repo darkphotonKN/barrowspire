@@ -59,7 +59,7 @@ func TestFormatStateToClientState_NoTreeAbilityFieldsWhileNotHeld(t *testing.T) 
 	}
 }
 
-// A warrior holding Earthbreaker is told its cost, 40, and its cooldown:
+// A warrior holding Earthbreaker is told its cost, 60, and its cooldown:
 // {0, 0} ready, {10, 10} on the tick a slam resolves, in every world.
 // FS-Q18Q3 §A R4–R5; FS-04EEA §B starting values.
 func TestFormatStateToClientState_TheHeldTreeAbilitysCostAndCooldown(t *testing.T) {
@@ -73,7 +73,7 @@ func TestFormatStateToClientState_TheHeldTreeAbilitysCostAndCooldown(t *testing.
 
 			me := ownFrame(t, em, world, warrior)
 			assert.Equal(t, map[string]any{"remaining": float64(0), "total": float64(0)}, me["tree_ability_cooldown"], "ready")
-			assert.Equal(t, float64(40), me["resource"].(map[string]any)["tree_ability_cost"])
+			assert.Equal(t, float64(60), me["resource"].(map[string]any)["tree_ability_cost"])
 
 			cast(body, components.AttackEarthbreaker)
 			combat.Update(cooldownTick, em.GetAllEntities(), nil)
@@ -117,6 +117,6 @@ func TestFormatStateToClientState_ATeammatesTreeAbilityCooldownIsNeverSent(t *te
 		other := w.frameFor(t, world, wren)[mate]
 		require.NotNil(t, other, world)
 		assert.NotContains(t, other, "tree_ability_cooldown", world)
-		assert.Equal(t, float64(40), other["resource"].(map[string]any)["tree_ability_cost"], world)
+		assert.Equal(t, float64(60), other["resource"].(map[string]any)["tree_ability_cost"], world)
 	}
 }

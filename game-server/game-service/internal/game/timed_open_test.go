@@ -297,6 +297,11 @@ func TestTimedOpen_MovingCancels(t *testing.T) {
 			// the cast lands on one tick and carries the body from the next
 			ticks(s, 2)
 		},
+		// FS-7P736 §A R10; AC 5
+		"a roll": func(t *testing.T, s *Session, player uuid.UUID) {
+			s.queueIntent(func() { s.roll(player, 0, 1) })
+			tick(s)
+		},
 	}
 	for name, move := range moves {
 		t.Run(name, func(t *testing.T) {
@@ -458,10 +463,10 @@ func TestTimedOpen_AHitCancelsThoughAKillsHealOutweighsIt(t *testing.T) {
 	wearing(t, s, delver, inHeadSlot, hollowCrown())
 	tick(s) // the gear seats
 	hurt(t, delver, 500, 1000)
-	ghoul := frailGhoul(s, 500, 545)
-
-	// the fireball flies 350 px/s from the mage and lands within 32 px of the
-	// ghoul: on the second tick after the cast's, the one after the reach's
+	// the fireball flies its paced 350 px/s from the mage and lands within 32 px
+	// of the ghoul: on the second tick after the cast's, the one after the
+	// reach's, with the ghoul a tick and a half of flight past that reach
+	ghoul := frailGhoul(s, 500, 500+32+1.5*350*constants.PaceScale/float64(constants.GameFrameRate))
 	require.NoError(t, s.handleCastSkill(player, "fireball", 500, 545))
 	tick(s)
 	reach(t, s, player, chest.ID)
@@ -1057,7 +1062,7 @@ func TestTimedOpen_AnEarlierCastStillAtWorkCancelsNothing(t *testing.T) {
 		skill    string
 		targetY  float64
 	}{
-		{"a fireball in flight", "mage", false, "fireball", 800},
+		{"a fireball in flight", "mage", false, "fireball", 500 + 300*constants.PaceScale},
 		{"an arrow rain falling", "archer", true, "arrow_rain", 700},
 	}
 	for _, tt := range tests {

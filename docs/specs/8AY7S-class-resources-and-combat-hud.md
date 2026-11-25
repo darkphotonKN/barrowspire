@@ -367,3 +367,45 @@ changes.
 ## Change: Sellsword's five parry charges → FS-E1ZDG
 
 ## Change: Ability bar → FS-Q18Q3
+
+## Change: A cost never exceeds the class's base pool
+
+Status: work-order
+Date: 2026-11-25
+
+> Charter item C (E1–E3) of the 2026-11-25 dungeon-crawler pace charter, promoted `--from-thread`
+> by charter child C. The charter slowed regen (stamina 20 → 7/s, mana 4 → 2/s) and raised every
+> stamina and mana cost ×1.5, rounded to 5 (`Tunes FS-8AY7S`, FS-JTNPR, FS-04EEA, FS-X2CMM). ×1.5
+> put Shadow Shot at 135, over the archer's 100 stamina, so it could never fire. The coordinator
+> approved making the cap a rule, not a one-off (2026-11-25).
+
+### Requirements
+
+P1. **No cost exceeds its class's base pool.** Every stamina or mana cost a class pays (its
+    class ability, its tree ability, its book pages) is at most that class's base pool max (R3:
+    100 stamina for the warrior and archer, 150 mana for the mage). A retune that would go over
+    is capped at the pool. *Coordinator-approved — reason: a cost above the base pool is an
+    ability a fresh delver can never cast; gear and passives raise the max above the base, never
+    the other way.*
+P2. **Shadow Shot costs 100** under P1 (90 ×1.5 = 135, capped): one shot takes a full pool.
+P3. **The mercenary's costs are unchanged (E3 is a no-op).** Its costs are parry-charge **counts**
+    gated by the pool size (the riposte spends 3 of 3; Settle the Debt needs at least 1 and spends
+    every charge held; its book pages cost nothing), not a regen pool, so ×1.5 has no meaning for
+    them (the riposte would need 4.5 of 3). Its gain rules are unchanged. *Coordinator-approved —
+    reason: counts, not a pool; the merc's scarcity is already how it earns charges.*
+
+### Acceptance Criteria
+
+- [ ] A test walks every class's attack-table cost and book-page cost and fails if any exceeds
+      the class's base pool max (parry-charge rows checked against the parry-charges max).
+- [ ] Shadow Shot costs 100; the mercenary's riposte (3) and Settle the Debt (least 1) are
+      unchanged.
+
+### Edge States
+
+- **A new ability priced over its pool** fails the test at once, before it ships.
+- **A Sellsword's 5 charges:** the riposte rule is FS-E1ZDG's; P1 checks against the base 3.
+
+### Out of Scope
+
+- Raising any pool. Scaling costs with level or gear.

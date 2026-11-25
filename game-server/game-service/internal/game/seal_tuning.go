@@ -1,6 +1,9 @@
 package game
 
-import "github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+import (
+	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+)
 
 /*
 	Sealed floors' tunables, in one place (FS-5FZ4J §Requirements): the seal
@@ -201,11 +204,14 @@ const (
 
 // Braziers: BrazierCount braziers, each in a room of its own; the window the
 // first lighting starts is BrazierWindow seconds, BrazierWindowSolo when one
-// delver is in play at that moment. FS-5FZ4J §E R34.
+// delver is in play at that moment. FS-5FZ4J §E R34. The windows are a walk's
+// allowance between rooms, a travel budget: 60 and 90 s at full pace, over
+// PaceScale, so the walk they allow is the same at any pace and a floor stays
+// solvable by one (FS-TAGWA R15, ADR-0092, ADR-0099).
 const (
 	BrazierCount      = 3
-	BrazierWindow     = 60.0
-	BrazierWindowSolo = 90.0
+	BrazierWindow     = 60 / commonconstants.PaceScale
+	BrazierWindowSolo = 90 / commonconstants.PaceScale
 )
 
 // MerchantFloorChance is the chance a floor 2+ below the top holds the
@@ -219,12 +225,15 @@ const (
 )
 
 // A merchant's wares, their prices in gold and the stock each is rolled with.
-// FS-9JV5K §A R3.
+// FS-9JV5K §A R3; the draught priced between the antidote and the potion,
+// §Change: The Restoring Draught D2.
 const (
 	MerchantPotionPrice   int64 = 60
 	MerchantPotionStock         = 3
 	MerchantAntidotePrice int64 = 40
 	MerchantAntidoteStock       = 3
+	MerchantDraughtPrice  int64 = 50
+	MerchantDraughtStock        = 3
 	MerchantTomePrice     int64 = 1500
 	MerchantTomeStock           = 1
 )
