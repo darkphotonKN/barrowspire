@@ -339,3 +339,122 @@ which keep their look; the target frame panel's own rim; floating damage numbers
 hovered at full health on floor 1 (the frame names it).
 
 ## Change: The party death flow and the spectate switcher → FS-QPDKN
+
+## Change: Floor 1 carries overhead markers; no floor uses the target frame
+Status: shipped
+Date: 2026-11-25
+
+Scoped and promoted in one run under the owner's approved charter (2026-11-25), by `write-a-spec
+--from-thread` with no interview and no `challenge-me` pass. The owner, Nick: 「塔一樓怪物的ui配置調整成跟2樓一樣」
+(make floor 1's monster UI the same as floor 2's). This reverses the owner's own 2026-11-07 choice,
+"floor 1 only" (§A.1, §F.19). The charter's decisions are marked **(charter default Fn)**; what the
+code forces (read on feat/run-floor1-overhead-markers at d500fecb) **(code)**; a default applied to a
+case the charter did not name, *Derived*, with its reason. Numbered from 24.
+
+The header's `Status:` still reads `work-order`: the original order's owner check (I-48CTQ-3) never
+closed. This section is gated on its own `Status:` line.
+
+**Lane.** game-client only. No server, proto, gateway or manifest change and no wire change.
+**(charter default)**
+
+### Facts (verified 2026-11-25 at d500fecb; client paths under `game-client/src/`)
+
+- **The table.** `MARKER_MODES` is `{ run: { 1: "frame" } }` (`render/creatures/markerMode.ts`);
+  `markerMode(world, floor, table = MARKER_MODES)` answers `overhead` for anything the table does not
+  name. **(code)**
+- **One reader.** `BarrowspireScene.handleGameStateUpdate` reads `markerMode("run", state.floor)` on
+  every broadcast, hands it to the roster (`MonsterRoster.setMarkerMode`) and keeps it for
+  `updateTargetFrame`, which picks a target only when the mode is `frame`. Nothing else reads the
+  table. The scene passes no table of its own, so a test cannot give the scene a `frame` floor
+  without the shipped table naming one. **(code)**
+- **What the roster does with the mode.** In `overhead` every living, shown monster carries its plate
+  (`nameplate`, the elite's prefix apart by `elitePlate`) and its bar at any health, the boss among
+  them; in `frame` no plate, and the bar alone while damaged (§F.18–19). **(code)**
+- **The frame is built on every floor** (`createUI`) and stays hidden until `updateTargetFrame` hands
+  it a monster. The last-hit hold is kept on every floor whatever the mode, and only
+  `updateTargetFrame` reads it; the boss's engaged latch is read only on a `frame` floor. **(code)**
+- **The map name and the position readout** give way to the frame's shown rectangle (FS-56CKV
+  § Change: Map name, E7); a hidden frame's rectangle covers nothing. **(code)**
+- **ADR-0061 Decision 12** decides the per-floor switch and notes "floor 1 today" as the state of the
+  table, not as the decision. The switch stays, so the ADR is not amended.
+
+### Requirements
+
+24. **Run floor 1's marker mode is `overhead`.** Every living monster on floor 1 carries its name,
+    its level and its health bar over its head, at any health, exactly as on floor 2 (§A.2; FS-77AB6
+    §37–39), the elite's prefix set apart in the hostile accent as today. The bar alone over a
+    damaged monster (§F.18–19) is no longer seen on floor 1: the plate comes with it. **(charter
+    default F1)**
+25. **No target frame appears on floor 1**, for a hovered monster, a struck one or an engaged boss.
+    The rare (1%) floor-1 demon carries the head plate, as floor 3's guaranteed demon does (§D.13's
+    second half, now true of both). Hovering a living monster still shows the strike-mark cursor
+    and a click still strikes it, on the same hit test (§C.5.1). **(charter default F2)**
+26. **The target frame and the per-floor table stay.** The table (`MARKER_MODES`) names no floor
+    now, so every world and floor is `overhead`. Everything a `frame` floor does (§B–§F.19) stays
+    built and tested. A later floor still opts in by one table entry and no other change, and a
+    test keeps proving it with a table entry of its own, for the table alone and for the run scene.
+    **(charter default F3)** *Derived*: the run scene reads the table through one replaceable
+    reference, so its frame tests supply their entry; the shipped scene uses `MARKER_MODES`.
+    **(code)**
+27. **The shared bar look is unchanged everywhere**: §F.21's look, §F.22's damage chip (the cap of 4
+    overhead chips included) and §F.23's redraw rule, for the overhead bar on every floor and the
+    frame's bar. **(charter default F4)**
+
+**Superseded, not edited** (the write-once rule): the Summary's first two paragraphs as they speak
+of floor 1; §A.1's "The table names run floor 1 as `frame`"; §D.13's "On floor 1 the boss is the 1%
+demon" as a frame boss; §F.19's "floor 1 stays `frame` in the table (§A.1), and no floor switches
+back to `overhead` for it"; §F.20's "floors 2–3 and the fields" (floor 1 joins them); user stories
+1, 11, 17 and 18; and the acceptance criteria that say "on floor 1", which now read "on a `frame`
+floor" and are proved under a test's table entry. FS-M8CSE's out-of-scope note "`MARKER_MODES` stays
+`run: {1: "frame"}`" describes the table as it was; its point, that floors 2+ keep overhead plates,
+stands.
+
+### Acceptance Criteria
+
+- [ ] `MARKER_MODES` names no world or floor; `markerMode` answers `overhead` for run floors 1, 2 and
+      3, a run with no floor, a field and the hub.
+- [ ] A test adds one floor to a table of its own and `markerMode` answers `frame` there and
+      `overhead` on the floors beside it.
+- [ ] In the run scene on floor 1 with the shipped table, a living monster at full health shows its
+      plate (`Ghoul · Lv 1`) over its head, as the same monster does on floor 2.
+- [ ] In the run scene on floor 1 with the shipped table, hovering a monster, striking one and an
+      engaged boss each leave the frame hidden.
+- [ ] In the run scene with a test's table entry naming a floor `frame`, that floor draws no plate and
+      the frame names the hovered monster, the engaged boss and the last-hit monster: every scene
+      test of the original order still passes there.
+- [ ] The roster's `frame` tests (no plate, the bar alone while damaged) and the frame's own tests
+      (`ui/targetFrame.test.ts`, `render/creatures/targetPick.test.ts`) pass unchanged.
+- [ ] The bar's tests (`render/markers/healthBar.test.ts`) and the bar's code are untouched in the
+      diff.
+- [ ] No game-server, proto or `ActionType` change in the diff.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's browser check of floor 1 passes.
+
+### Edge States
+
+- **The floor-1 demon.** A head plate and a bar, like any monster; engaged or not, it takes no frame.
+- **A monster at full health on floor 1.** Plate and bar shown, as on floor 2. The dungeon no longer
+  reads bare until the first hit.
+- **A damaged monster on floor 1.** Plate and bar, with the chip on each drop; at most 4 chips drain
+  at once (§F.22).
+- **A monster the fog or the hide rule hides on floor 1.** Its plate, prefix and bar hide with it
+  (FS-SRA9J §D), as on floor 2.
+- **A corpse.** No plate and no bar, as on every `overhead` floor.
+- **A strike or a cast at a hovered monster on floor 1.** The last-hit hold is still kept (Facts) and
+  shows nothing.
+- **The map name and the position readout on floor 1.** The frame never shows, so they never give
+  way to it there.
+- **Climbing from floor 1 to floor 2.** Both are `overhead`: nothing about the markers changes.
+- **A later floor added to the table.** It behaves as §A–§F say a `frame` floor does, the bar alone
+  while damaged included.
+- **A crowded room on floor 1.** One plate and bar per living, shown monster, overlapping as they do
+  on floor 2. Accepted: it is what the owner asked for.
+
+### Out of Scope
+
+- Deleting the target frame, the last-hit hold, the engaged-boss latch or the table.
+- Changing the bar's look, the chip, the plate's text or the elite's wash.
+- Floors 2–3, the field worlds and the hub.
+- Naming any floor `frame`.
+- The server, the wire and every other service.
+- Declutter rules for plates in a crowd (the parked "monster health bar" idea stays parked).

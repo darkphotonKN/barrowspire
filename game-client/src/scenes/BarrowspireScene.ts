@@ -169,7 +169,7 @@ import {
   type MonsterEffects,
   type MonsterTargeting,
 } from "@/render/creatures";
-import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
+import { MARKER_MODES, markerMode, type MarkerMode, type MarkerModes } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { Minimap, type MinimapFixture } from "@/ui/minimap";
@@ -996,6 +996,12 @@ export class BarrowspireScene extends Phaser.Scene {
     },
     hit: () => this.gameplaySounds?.play("hit_monster"),
   };
+  /**
+   * The table the floor's marker mode is read from: the shipped one, which names no floor today, or
+   * the entry a test opts a floor in by (FS-48CTQ § Change: Floor 1 carries overhead markers; no
+   * floor uses the target frame, 26).
+   */
+  private markerModes: MarkerModes = MARKER_MODES;
   /** The floor's marker mode (FS-48CTQ §A.1): overhead plates, or the target frame. */
   private markers: MarkerMode = "overhead";
   /** The top-centre frame naming one monster on a `frame` floor (FS-48CTQ §C). */
@@ -3914,7 +3920,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Monsters and corpses: the broadcast is the whole truth (FS-77AB6 req 32, 36), plated or not
     // as the floor's marker mode says (FS-48CTQ §A.1); a drop in the last-hit monster's health may
     // be the player's own hit (§C.6)
-    this.markers = markerMode("run", state.floor);
+    this.markers = markerMode("run", state.floor, this.markerModes);
     this.monsters?.setMarkerMode(this.markers);
     this.monsters?.sync(state.monsters ?? []);
     this.lastHit.observe(state.monsters ?? [], this.time.now);
