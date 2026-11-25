@@ -98,6 +98,26 @@ Where the build settled what this FS left loose. Each is [derived] and overridab
 - **Each page entry also carries `cast_time`** (seconds, 0 for an instant page) for the open
   tome's "cost · cast time · cooldown" line (§Change C5).
 
+### Reconciled at wave 2 (2026-11-25, against FS-5FZ4J as built)
+
+§J was written before the Spire's floors were built. Where the built floor differs, the page
+follows the floor. Each is [derived] and overridable.
+
+- **Reveal finds secret doors and traps; there are no hidden switches** (R49). A tripwire is a
+  trap. A revealed trap is detected for the party (FS-5FZ4J R30) and goes out with
+  `revealed: true`, the hook FS-5FZ4J left on the trap wire; a secret door has no such flag,
+  detecting it is what puts it on the wire.
+- **The hound bays at secret doors now, and at ambush rooms once FS-4EC7Z's are built** (R49).
+- **No fall rule exists** (R51): FS-5FZ4J's pits are rock and "a body is never inside one". An
+  afloat delver whose state ends over a pit is set down on the nearest walkable cell, unhurt.
+- **No jammed portcullis exists** (R52): the gate opens only by its seals (ADR-0092), so Heave
+  shoves stone blocks only, and only within the block's plates room, as the Spire's push keeps it.
+- **A plate takes no interact** (R50): it is held by weight, so Far Hand cannot work one; a hound
+  standing on it holds it (R58).
+- **Hardened stops a poisoning from taking hold** (R53): a gas vent's puff does not poison a
+  hardened warrior, and a trap's hit (a wrong lever's darts too) deals them nothing; a poison
+  already running runs on.
+
 ## Requirements
 
 ### §A. The book and its pages (game-service)

@@ -3,7 +3,7 @@ id: I-X2CMM-18
 status: open
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-1", "I-X2CMM-7", "FS-5FZ4J (trap damage and poison)"]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-X2CMM slice 18: Hardened ignores trap damage and poison, and a draught cures poison"
 ---
 Implements FS-X2CMM §J R53, R54
@@ -12,9 +12,15 @@ Implements FS-X2CMM §J R53, R54
 
 ## What to Build
 
-**Wave 2.** Do not start until the Spire entities it names exist on this branch.
+**Wave 2.** The Spire entities it names are on this branch (merged at df34f73c).
 
 While hardened, trap damage and poisoning on the warrior are ignored. Drinking a draught also cures poison.
+
+## Against the Spire as built
+
+- Trap damage is `hitByTrap` (`game/trap_hit.go`, also a wrong lever's darts); poisoning is `systems.Poison` from a gas vent. While hardened neither lands; a poison already running runs on.
+- Brew's cure is `systems.CurePoison`, the entry point FS-5FZ4J named for it.
+- Seams: `/Users/kranti/Library/Application Support/Claude/side-session-notes/local_928fe7ae-6c9c-45f9-b619-b451ce11c57b/class-books-wave2-seams.md`.
 
 ## Acceptance Criteria
 

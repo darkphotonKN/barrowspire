@@ -3,7 +3,7 @@ id: I-X2CMM-14
 status: open
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-2", "I-X2CMM-6", "I-X2CMM-8", "FS-5FZ4J (traps, secret doors and the per-recipient detection rule)", "FS-4EC7Z (ambush rooms)"]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-X2CMM slice 14: Witchlight and Tracker's Eye reveal traps and secret doors, and the hound bays at them"
 ---
 Implements FS-X2CMM §J R49
@@ -12,9 +12,16 @@ Implements FS-X2CMM §J R49
 
 ## What to Build
 
-**Wave 2.** Do not start until the Spire entities it names exist on this branch.
+**Wave 2.** The Spire entities it names are on this branch (merged at df34f73c).
 
 Witchlight detects hidden doors, switches and traps within 3 cells while it burns; tracker's eye detects every trap, tripwire and secret door within 10 cells of the archer; the hound bays (a sound and a mark) at a secret door or an ambush room within 6 cells. Detection follows FS-5FZ4J's rule: once detected by anyone, known to the party; never sent before. Server rules and the client's marks and bay.
+
+## Against the Spire as built
+
+- Hidden switches do not exist: reveal finds secret doors and traps (tripwires are traps).
+- Reveal = `DetectableComponent.Detected` (the party's, FS-5FZ4J R30) plus `revealed: true` on the trap's wire entry (the hook FS-5FZ4J left).
+- The hound bays at secret doors now; ambush rooms wait for FS-4EC7Z (the second merge).
+- Seams: `/Users/kranti/Library/Application Support/Claude/side-session-notes/local_928fe7ae-6c9c-45f9-b619-b451ce11c57b/class-books-wave2-seams.md`.
 
 ## Acceptance Criteria
 
