@@ -49,13 +49,13 @@ type DungeonParams struct {
 	HiddenRooms int
 }
 
-// DungeonFloor1Params is floor 1's parameter set (FS-KE075 §A.2–6), sealed
-// (FS-5FZ4J §A): 72 x 48 cells of 80 px (5 760 x 3 840 px), 18–28 rooms from
-// 4x4 to 10x8, corridors 2–3 wide in segments of at most 16 cells,
-// round(0.1 x rooms) extra connections, a start room of at least 5x5, 3–4
-// treasure rooms, no escape door and no hidden room. Floors 2+ set EscapeDoor
-// and their hidden-room count on a copy. The 1 000-seed property test is the
-// gate for any change.
+// DungeonFloor1Params is floor 1's parameter set (FS-KE075 §A.2–6, §Change:
+// Room variety R62–R65), sealed (FS-5FZ4J §A): 60 x 40 cells of 80 px
+// (4 800 x 3 200 px), 16–22 rooms from 4x4 to 8x7, corridors 2–3 wide in
+// segments of at most 12 cells, round(0.1 x rooms) extra connections, a start
+// room of at least 5x5, 3–4 treasure rooms, no escape door and no hidden room.
+// Floors 2+ set EscapeDoor and their hidden-room count on a copy. The 1 000-seed
+// property test is the gate for any change.
 var DungeonFloor1Params = DungeonParams{
 	CellSize:       80,
 	Cols:           60,
@@ -163,9 +163,13 @@ type Region struct {
 	Cells []CellRect `json:"cells"`
 }
 
-// Room is one rectangular chamber.
+// Room is one chamber: its rect, less the cells its shape cuts (FS-KE075
+// §Change: Room variety R68).
 type Room struct {
 	Rect CellRect `json:"rect"`
+	// Shape is the room's shape; its floor, the room's region, is Rect less
+	// the shape's cuts (R73-R74).
+	Shape RoomShape `json:"shape"`
 	// Region is the room's region id.
 	Region int `json:"region"`
 	// Doorways are the room's cells 4-adjacent to a corridor cell, row by row.
@@ -327,10 +331,19 @@ func buildDungeon(p DungeonParams, rooms int, seed uint64) (DungeonLayout, error
 	if edges, open, err = addExtraEdges(p, rng, rects, rest, edges, open, start, barrable); err != nil {
 		return DungeonLayout{}, err
 	}
+	// the roles read the rooms whole, before any is shaped: a room's distance
+	// is the walk over its rect (R73 leaves every corridor its way through)
+	roles, err := assignRoles(p, rng, rects, open, start, barrable)
+	if err != nil {
+		return DungeonLayout{}, err
+	}
 
+	shapes := drawShapes(rng, rects, rectangularRooms(roles))
+	floor, cut := roomFloors(p.Cols, p.Rows, rects, shapes, carvedCells(p.Cols, len(open), rects, edges))
 	corridor := make([]bool, len(open))
 	for c := range open {
-		corridor[c] = open[c] && !inRoom[c]
+		open[c] = open[c] && !cut[c]
+		corridor[c] = open[c] && floor[c] == 0
 	}
 	l := DungeonLayout{
 		CellSize: p.CellSize,
@@ -338,12 +351,8 @@ func buildDungeon(p DungeonParams, rooms int, seed uint64) (DungeonLayout, error
 		Rows:     p.Rows,
 		Bounds:   Size{W: float64(p.Cols) * p.CellSize, H: float64(p.Rows) * p.CellSize},
 		Edges:    edges,
-		Regions:  buildRegions(p.Cols, p.Rows, rects, corridor, p.SegmentMax),
+		Regions:  buildRegions(p.Cols, p.Rows, len(rects), floor, corridor, p.SegmentMax),
 		Walls:    mergeWalls(p.Cols, p.Rows, shellCells(p.Cols, p.Rows, open), p.CellSize),
-	}
-	roles, err := assignRoles(p, rng, rects, open, start, barrable)
-	if err != nil {
-		return DungeonLayout{}, err
 	}
 	l.Roles = roles.Roles
 	grid := l.Grid()
@@ -356,8 +365,9 @@ func buildDungeon(p DungeonParams, rooms int, seed uint64) (DungeonLayout, error
 	for i, r := range rects {
 		l.Rooms[i] = Room{
 			Rect:     r,
+			Shape:    shapes[i],
 			Region:   i + 1,
-			Doorways: roomDoorways(p.Cols, p.Rows, r, corridor),
+			Doorways: roomDoorways(p.Cols, p.Rows, r, floor, corridor),
 			Distance: roles.dist[i],
 		}
 	}
@@ -412,6 +422,31 @@ func drawEdge(p DungeonParams, rng *rand.Rand, pr [2]int, extra bool) Edge {
 		HorizontalFirst: rng.IntN(2) == 0,
 		Extra:           extra,
 	}
+}
+
+// carvedCells marks every cell the rooms' rects and the edges' corridors
+// open: the floor before any room is shaped.
+func carvedCells(cols, n int, rects []CellRect, edges []Edge) []bool {
+	carved := make([]bool, n)
+	for _, e := range edges {
+		for _, c := range corridorCells(cols, rects[e.A], rects[e.B], e.Width, e.HorizontalFirst) {
+			carved[c] = true
+		}
+	}
+	return carved
+}
+
+// rectangularRooms is the rooms that keep the rectangle (R72): the start,
+// stairs, switch and escape door rooms and every hidden room.
+func rectangularRooms(r roomRoles) map[int]bool {
+	keep := map[int]bool{r.Start: true, r.Stairs: true}
+	if r.HasEscapeDoor() {
+		keep[r.Switch], keep[r.EscapeDoor] = true, true
+	}
+	for _, h := range r.hidden {
+		keep[h.Room] = true
+	}
+	return keep
 }
 
 // carveEdge opens e's corridor cells on open. Corridors run between room
