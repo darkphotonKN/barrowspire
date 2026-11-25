@@ -440,12 +440,12 @@ func stoneBlocksOf(entities []*ecs.Entity) []stoneBlock {
 
 /*
 walkAlongAxis is the push a body makes this tick, if it makes one: a body
-that pushes (a delver in play, never a monster) walking, not charging nor
+that pushes (a delver in play, never a monster) walking, not charging, rolling nor
 pinned, its held direction along one axis. A walk off an axis slides along a
 face and pushes nothing.
 */
 func walkAlongAxis(entity *ecs.Entity) (p push, x, y float64, walking bool) {
-	if !BodyKindOf(entity).Pushes() || entity.HasComponent(ecs.ComponentTypeDash) {
+	if !BodyKindOf(entity).Pushes() || carried(entity) {
 		return push{}, 0, 0, false
 	}
 	vc, moves := entity.GetComponent(ecs.ComponentTypeVelocity)

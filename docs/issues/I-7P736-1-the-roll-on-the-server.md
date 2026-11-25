@@ -1,9 +1,9 @@
 ---
 id: I-7P736-1
-status: open
+status: done
 implements: FS-7P736
 blocked_by: []
-labels: [blocked]
+labels: [ready-for-agent]
 title: FS-7P736 slice 1: the roll on the server, its cooldown and its state on the wire
 ---
 Implements FS-7P736 §A

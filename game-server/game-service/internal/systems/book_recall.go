@@ -142,12 +142,13 @@ func bodyOn(entities []*ecs.Entity, mate *ecs.Entity, x, y float64) bool {
 }
 
 // pull moves the teammate to (x, y): a charge in flight ends where they stood
-// first, and their timed open and cast break.
+// first, a roll ends (FS-7P736 §A R4), and their timed open and cast break.
 func pull(mate *ecs.Entity, x, y float64, endCharge func(*ecs.Entity)) {
 	if endCharge != nil {
 		endCharge(mate)
 	}
 	mate.RemoveComponent(ecs.ComponentTypeDash)
+	mate.RemoveComponent(ecs.ComponentTypeRoll)
 	mate.RemoveComponent(ecs.ComponentTypeTimedOpen)
 	if book, ok := bookOf(mate); ok {
 		book.Casting = nil

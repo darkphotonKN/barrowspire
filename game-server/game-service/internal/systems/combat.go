@@ -501,8 +501,10 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		pending := intents.Pending
 		intents.Pending = nil
 
-		// a dead or resolved attacker is out of play: what it queued is dropped
-		if !canAct(entity) {
+		// a dead or resolved attacker is out of play: what it queued is
+		// dropped; so is a rolling delver's, never kept for after (FS-7P736
+		// §A R8)
+		if !canAct(entity) || Rolling(entity) {
 			continue
 		}
 
@@ -1052,10 +1054,12 @@ func startCharge(attacker *ecs.Entity, at *components.TransformComponent, aimX, 
 		dirX, dirY = dx/dist, dy/dist
 	}
 	attacker.AddComponent(&components.DashComponent{
-		DirX: dirX, DirY: dirY,
-		Speed:     dashSpeed,
-		Remaining: dashDistance,
-		FromX:     at.X, FromY: at.Y,
+		Carry: components.Carry{
+			DirX: dirX, DirY: dirY,
+			Speed:     dashSpeed,
+			Remaining: dashDistance,
+		},
+		FromX: at.X, FromY: at.Y,
 	})
 }
 
@@ -1499,7 +1503,9 @@ func alive(entity *ecs.Entity) bool {
 // nothing lands on a caged captive, behind bars (§D R13). A hired ally's
 // lands on a monster and nothing else (§C R9). Nothing whose source is a
 // delver or a hired ally lands on a hound, whatever the player-damage setting
-// (FS-X2CMM R28, §Change: The archer's wolf W3): this one rule, here.
+// (FS-X2CMM R28, §Change: The archer's wolf W3): this one rule, here. Nothing
+// lands on a rolling delver: no strike, shot, area, trap or trail, so a
+// projectile flies through them (FS-7P736 §A R5).
 func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage PlayerDamage) bool {
 	if !alive(target) || BodyKindOf(target) == BodyCaptive {
 		return false
@@ -1516,6 +1522,11 @@ func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage P
 
 	targetIsDelver := target.HasComponent(ecs.ComponentTypePlayer)
 	if targetIsDelver && !InPlay(target) {
+		return false
+	}
+	// no hit of any source lands on a rolling delver, and one refused here
+	// does nothing at all (FS-7P736 §A R5)
+	if targetIsDelver && Rolling(target) {
 		return false
 	}
 	if attack.FromMonster && target.HasComponent(ecs.ComponentTypeEnemy) {

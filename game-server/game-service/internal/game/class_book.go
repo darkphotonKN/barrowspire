@@ -33,6 +33,10 @@ var (
 // anything else to the attack rows. Page ids are never attack kinds.
 // FS-X2CMM §A R2, §F R35.
 func (s *Session) castSkill(playerID uuid.UUID, cast types.PlayerCastSkillPayload) error {
+	// a rolling delver's ability or page is dropped, unanswered (FS-7P736 §A R8)
+	if s.rolling(playerID) {
+		return nil
+	}
 	if page, ok := systems.BookPageOf(cast.SkillID); ok {
 		s.castPage(playerID, page, cast)
 		return nil
