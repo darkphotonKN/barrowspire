@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type Phaser from "phaser";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { sweepPolygon } from "./abilityCooldown";
+import { CARVE_INSET, RIM_ALPHA } from "./hudWell";
 import { RollPip } from "./RollPip";
 import { rollPipFrame, type RollPipView } from "./rollPipView";
 
@@ -88,6 +89,15 @@ describe("RollPip (FS-7P736 R16)", () => {
     new RollPip(scene, VIEW).show(READY);
     const w = well();
     expect(ops()).toContainEqual({ m: "fillRect", args: [w.x, w.y, w.width, w.height] });
+  });
+
+  it("should wear the ability bar's own well: its carved line at the bar's inset, its faint rim when cooling", () => {
+    const { scene, ops } = fakeScene();
+    new RollPip(scene, VIEW).show(cooling(1.5));
+    const w = well();
+    const i = CARVE_INSET;
+    expect(ops()).toContainEqual({ m: "strokeRect", args: [w.x + i, w.y + i, w.width - 2 * i, w.height - 2 * i] });
+    expect(ops()).toContainEqual({ m: "lineStyle", args: [1, palette.frame, RIM_ALPHA] });
   });
 
   it("should sweep the wire's cooldown and dim while it runs", () => {

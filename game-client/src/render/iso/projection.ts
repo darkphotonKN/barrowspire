@@ -44,6 +44,12 @@ export const TILE_HEIGHT = 32;
  */
 export const WORLD_PX_PER_TILE = 40;
 
+/**
+ * Half a body's side, world px: the server's `PlayerRadius` (common/constants/game.go). A player's
+ * swept box and its footprint, and every monster archetype's body too.
+ */
+export const PLAYER_RADIUS = 20;
+
 const HALF_W = TILE_WIDTH / 2 / WORLD_PX_PER_TILE;
 const HALF_H = TILE_HEIGHT / 2 / WORLD_PX_PER_TILE;
 

@@ -138,6 +138,7 @@ import {
   addWorldPlane,
   facingFrom,
   nearestScreenFacing,
+  PLAYER_RADIUS,
   projectedBounds,
   screenToWorld,
   standAt,
@@ -329,8 +330,6 @@ const OWN_BODY = "self";
  * `cell_size` and the server's own fallback for a page's range (`bookCellSize`, FS-X2CMM §B R12, R24).
  */
 const DEFAULT_CELL = 80;
-/** A player's footprint, in world px: the server's `PlayerRadius`. */
-const PLAYER_FOOTPRINT_RADIUS = 20;
 /**
  * The resolved player's card (FS-QPDKN req 1–6): over the HUD (1000), under the passing notices
  * (2000), which still have the last word while it is up.
@@ -5311,7 +5310,7 @@ export class BarrowspireScene extends Phaser.Scene {
           hitArea: {},
           hitAreaCallback: footprintHitArea(
             () => this.otherPlayersPos.get(playerData.id) ?? pos,
-            PLAYER_FOOTPRINT_RADIUS,
+            PLAYER_RADIUS,
           ),
         });
 
