@@ -20,6 +20,10 @@ stays, at every body in its cloud whose kind Breathes: a peaceful encounter
 NPC already in it among them, though one alone never makes it puff (FS-4EC7Z
 §C R9 amended, Edge States). A trap that fires is detected from that tick.
 
+An afloat delver fires nothing and breathes nothing (FS-X2CMM §J R51): over a
+trap's cell they stand on it, so a trap their afloat ends on fires only once
+they step off and on again; in a cloud they are not there at all.
+
 The system only says what fired at whom: what a spring does, a hit, an ambush
 or a poisoning, is the floor's (game's) to apply. Monsters fire nothing.
 */
@@ -44,7 +48,9 @@ func (s *TrapSystem) Update(dt float64, entities []*ecs.Entity) []TrapSpring {
 	if s.CellSize <= 0 {
 		return nil
 	}
-	var traps, bodies, breathers []*ecs.Entity
+	// bodies stand on traps' cells; firers, the grounded ones, make vents puff
+	var traps, firers, breathers []*ecs.Entity
+	var bodies []trapBody
 	for _, e := range entities {
 		if e.HasComponent(ecs.ComponentTypeTrap) {
 			traps = append(traps, e)
@@ -53,11 +59,14 @@ func (s *TrapSystem) Update(dt float64, entities []*ecs.Entity) []TrapSpring {
 		if !e.HasComponent(ecs.ComponentTypeTransform) {
 			continue
 		}
-		kind := BodyKindOf(e)
+		kind, floating := BodyKindOf(e), afloat(e)
 		if kind.FiresTraps() {
-			bodies = append(bodies, e)
+			bodies = append(bodies, trapBody{body: e, afloat: floating})
+			if !floating {
+				firers = append(firers, e)
+			}
 		}
-		if kind.Breathes() {
+		if kind.Breathes() && !floating {
 			breathers = append(breathers, e)
 		}
 	}
@@ -68,7 +77,7 @@ func (s *TrapSystem) Update(dt float64, entities []*ecs.Entity) []TrapSpring {
 		trap := tc.(*components.TrapComponent)
 		trap.Age += dt
 		if trap.Kind == components.TrapGasVent {
-			springs = append(springs, s.cloud(dt, e, trap, bodies, breathers)...)
+			springs = append(springs, s.cloud(dt, e, trap, firers, breathers)...)
 			continue
 		}
 		s.rearm(dt, trap)
@@ -88,19 +97,25 @@ func (s *TrapSystem) rearm(dt float64, trap *components.TrapComponent) {
 	}
 }
 
-// step fires an armed trap at the first body whose centre entered its cell
-// this tick, and notes who stands on it now.
-func (s *TrapSystem) step(e *ecs.Entity, trap *components.TrapComponent, bodies []*ecs.Entity) []TrapSpring {
+// trapBody is a body whose kind fires traps, and whether it is afloat.
+type trapBody struct {
+	body   *ecs.Entity
+	afloat bool
+}
+
+// step fires an armed trap at the first grounded body whose centre entered
+// its cell this tick, and notes who stands on it now, afloat or not.
+func (s *TrapSystem) step(e *ecs.Entity, trap *components.TrapComponent, bodies []trapBody) []TrapSpring {
 	var on []uuid.UUID
 	var springs []TrapSpring
-	for _, body := range bodies {
-		if s.cellOf(body) != trap.Cell {
+	for _, b := range bodies {
+		if s.cellOf(b.body) != trap.Cell {
 			continue
 		}
-		on = append(on, body.ID)
-		if trap.Armed && !slices.Contains(trap.On, body.ID) {
+		on = append(on, b.body.ID)
+		if trap.Armed && !b.afloat && !slices.Contains(trap.On, b.body.ID) {
 			s.fire(e, trap)
-			springs = append(springs, TrapSpring{Trap: e, Kind: trap.Kind, Body: body})
+			springs = append(springs, TrapSpring{Trap: e, Kind: trap.Kind, Body: b.body})
 		}
 	}
 	trap.On = on

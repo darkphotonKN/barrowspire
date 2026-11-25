@@ -29,7 +29,7 @@ func witchlightCast(em *ecs.EntityManager, x float64) (*ecs.Entity, BookCast) {
 // moving or striking.
 func castTicks(s *BookSystem, em *ecs.EntityManager, n int) {
 	for range n {
-		s.Update(castTick, em.GetAllEntities())
+		s.Update(castTick, em.GetAllEntities(), BookGround{})
 		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookGround{Walkable: anyGround})
 	}
 }

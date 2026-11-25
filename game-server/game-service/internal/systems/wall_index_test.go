@@ -54,6 +54,10 @@ func closedDoor(door *ecs.Entity) bool {
 	return !hasOpenable || !openableC.(*components.OpenableComponent).IsOpen
 }
 
+// passingPits is the scan itself: it stands beside the index over floors that
+// lay no pit, so it never meets one.
+func (f *fullScan) passingPits() wallTests { return f }
+
 func (f *fullScan) sweepX(x, y, dx float64) float64 {
 	minTx := 1.0
 	for _, wallEntity := range f.walls {

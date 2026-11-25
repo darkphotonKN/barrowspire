@@ -898,8 +898,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// (FS-P9G8R §Requirements 9)
 	systems.NewPotionSystem(s.EntityManager).Update(deltaTime, entities)
 
-	// book cooldowns and book states count down, the tick's casts included (FS-X2CMM §A R8)
-	systems.NewBookSystem(s.EntityManager).Update(deltaTime, entities)
+	// book cooldowns and book states count down, the tick's casts included,
+	// and a delver whose afloat ends over a pit is set down (FS-X2CMM §A R8, §J R51)
+	systems.NewBookSystem(s.EntityManager).Update(deltaTime, entities, s.bookGround())
 
 	// class resources regenerate toward this tick's maxima, before any cast
 	// this tick is judged against them (FS-8AY7S §Requirements 5)

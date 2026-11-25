@@ -529,3 +529,91 @@ func TestWalkDistances_RoundRockAndStoppedByAShutCell(t *testing.T) {
 	assert.Equal(t, -1, g.WalkDistances(0)[4], "shut off")
 	assert.Equal(t, -1, g.WalkDistances(3)[0], "from rock, nothing")
 }
+
+// Nearest is the walkable cell whose centre lies nearest a point: where a
+// delver whose afloat ends over a pit is set down. FS-X2CMM §J R51.
+func TestNearest(t *testing.T) {
+	g, cols := gridOf(t,
+		".....",
+		"###..",
+		"###..",
+		".....",
+	)
+
+	cases := []struct {
+		name string
+		x, y float64
+		want int
+	}{
+		{"a walkable cell is its own nearest", 40, 40, at(cols, 0, 0)},
+		{"from rock, the nearer side wins", 60, 100, at(cols, 0, 0)},
+		{"from rock, the other side when it is nearer", 60, 230, at(cols, 0, 3)},
+		{"from rock, the nearest of several", 230, 150, at(cols, 3, 1)},
+		{"a tie goes to the first row by row", 40, 160, at(cols, 0, 0)},
+		{"off the grid", -500, 40, at(cols, 0, 0)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := g.Nearest(tc.x, tc.y)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// Nearest looks past the first ring that holds a walkable cell while a
+// farther ring can still hold a nearer one.
+func TestNearest_AFartherRingCanBeNearer(t *testing.T) {
+	g, cols := gridOf(t,
+		"#####",
+		"#####",
+		".####",
+		"###.#",
+		"#####",
+	)
+
+	// from (165, 165) in cell (2,2): the ring-1 diagonal (3,3) is 163 px off,
+	// the ring-2 cell (0,2) 130
+	got, ok := g.Nearest(165, 165)
+
+	require.True(t, ok)
+	assert.Equal(t, at(cols, 0, 2), got)
+}
+
+// A grid of rock has no nearest cell.
+func TestNearest_AllRock(t *testing.T) {
+	g, _ := gridOf(t, "##", "##")
+
+	_, ok := g.Nearest(40, 40)
+
+	assert.False(t, ok)
+}
+
+// Nearest answers as a look over every cell would, on random ground from
+// points on it and off it.
+func TestNearest_AsEveryCellLookedOver(t *testing.T) {
+	rng := rand.New(rand.NewPCG(5, 16))
+	for range 200 {
+		cols, rows := 1+rng.IntN(12), 1+rng.IntN(12)
+		walkable := make([]bool, cols*rows)
+		for i := range walkable {
+			walkable[i] = rng.IntN(4) == 0
+		}
+		g := navigation.NewGrid(cols, rows, cell, walkable)
+		x := (rng.Float64()*1.5 - 0.25) * float64(cols) * cell
+		y := (rng.Float64()*1.5 - 0.25) * float64(rows) * cell
+
+		want, wantD := -1, math.Inf(1)
+		for c, ok := range walkable {
+			if cx, cy := g.Centre(c); ok && math.Hypot(cx-x, cy-y) < wantD {
+				want, wantD = c, math.Hypot(cx-x, cy-y)
+			}
+		}
+
+		got, ok := g.Nearest(x, y)
+		require.Equal(t, want >= 0, ok, "(%v, %v) on %dx%d", x, y, cols, rows)
+		if ok {
+			require.Equal(t, want, got, "(%v, %v) on %dx%d", x, y, cols, rows)
+		}
+	}
+}

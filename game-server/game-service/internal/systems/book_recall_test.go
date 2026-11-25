@@ -38,7 +38,7 @@ func recallCast(em *ecs.EntityManager) (*ecs.Entity, BookCast) {
 // recallThrough counts a Recall's whole cast, nothing else in the world moving.
 func recallThrough(s *BookSystem, em *ecs.EntityManager, ground BookGround) {
 	for range recallTicks {
-		s.Update(castTick, em.GetAllEntities())
+		s.Update(castTick, em.GetAllEntities(), ground)
 		s.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground)
 	}
 }
@@ -170,7 +170,7 @@ func TestBookSystemCast_RecallBreaksWhatTheTeammateWasDoing(t *testing.T) {
 
 	// the teammate starts a cast of their own on the recall's last tick
 	for range recallTicks {
-		books.Update(castTick, em.GetAllEntities())
+		books.Update(castTick, em.GetAllEntities(), BookGround{})
 		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, ground)
 	}
 	bookOfT(t, mate).Casting = &components.BookCasting{Page: components.PageHardened, Total: 1, FromX: 1000, FromY: 500, HealthBeforeCombat: 100}

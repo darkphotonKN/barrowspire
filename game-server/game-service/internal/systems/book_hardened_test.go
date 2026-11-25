@@ -24,7 +24,7 @@ func hardenedWarrior(t *testing.T, em *ecs.EntityManager) *ecs.Entity {
 func runHardenedOut(em *ecs.EntityManager) {
 	books := NewBookSystem(em)
 	for range 10*30 + 1 {
-		books.Update(poisonTick, em.GetAllEntities())
+		books.Update(poisonTick, em.GetAllEntities(), BookGround{})
 	}
 }
 

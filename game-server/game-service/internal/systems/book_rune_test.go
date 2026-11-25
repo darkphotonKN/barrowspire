@@ -121,7 +121,7 @@ func TestBookSystemUpdate_ARuneLaidUnderAMonsterStunsItOnTheFirstTick(t *testing
 			layRune(t, em, books)
 			require.Zero(t, monster(m).StunRemaining, "nothing caught as it is laid")
 
-			books.Update(castTick, em.GetAllEntities())
+			books.Update(castTick, em.GetAllEntities(), BookGround{})
 
 			assert.Equal(t, tt.want, monster(m).StunRemaining)
 			if tt.want > 0 {
@@ -146,7 +146,7 @@ func TestBookSystemUpdate_ARuneCatchesTheFirstThreeThenGoes(t *testing.T) {
 	for i, m := range walkers {
 		at, _ := bodyCentre(m)
 		at.Y = 0 // walks onto the rune
-		books.Update(castTick, em.GetAllEntities())
+		books.Update(castTick, em.GetAllEntities(), BookGround{})
 		if i < 3 {
 			assert.Equal(t, 4.0, monster(m).StunRemaining, "walker %d is caught", i)
 			assert.Equal(t, i+1, caught(t, r))
@@ -168,7 +168,7 @@ func TestBookSystemUpdate_ARuneCatchesTheNearestFirst(t *testing.T) {
 	}
 	layRune(t, em, books)
 
-	books.Update(castTick, em.GetAllEntities())
+	books.Update(castTick, em.GetAllEntities(), BookGround{})
 
 	assert.Zero(t, monster(ms[0]).StunRemaining, "the farthest is left")
 	for _, m := range ms[1:] {
@@ -185,11 +185,11 @@ func TestBookSystemUpdate_AMonsterIsCaughtOncePerRune(t *testing.T) {
 	m := hunter(em, runePoint, 0)
 	r := layRune(t, em, books)
 
-	books.Update(castTick, em.GetAllEntities())
+	books.Update(castTick, em.GetAllEntities(), BookGround{})
 	require.Equal(t, 4.0, monster(m).StunRemaining)
 	monster(m).StunRemaining = 0 // its stun has run out, still on the rune
 
-	books.Update(castTick, em.GetAllEntities())
+	books.Update(castTick, em.GetAllEntities(), BookGround{})
 
 	assert.Zero(t, monster(m).StunRemaining, "not caught twice")
 	assert.Equal(t, 1, caught(t, r))
@@ -217,7 +217,7 @@ func TestBookSystemUpdate_ARuneKeepsALongerStun(t *testing.T) {
 	r := layRune(t, em, books)
 	stun(monster(m), 6)
 
-	books.Update(castTick, em.GetAllEntities())
+	books.Update(castTick, em.GetAllEntities(), BookGround{})
 
 	assert.Equal(t, 6.0, monster(m).StunRemaining)
 	assert.Equal(t, 1, caught(t, r), "held all the same, so caught")

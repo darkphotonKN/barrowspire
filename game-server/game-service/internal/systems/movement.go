@@ -148,6 +148,9 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 	// a floor's stone blocks move, so the walk tests them live beside the
 	// static index (FS-5FZ4J §C R19)
 	blockers := withStoneBlocks(against(wallEntities, doorEntities), entities)
+	// an afloat body's, over the same index, set up the first time one moves
+	// (FS-X2CMM §J R51)
+	var afloatBlockers wallTests
 
 	for _, entity := range movers {
 		targetEntity := entity
@@ -175,11 +178,21 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 			dy = velocity.VY * speed * deltaTime
 		}
 
+		// an afloat body passes a chasm's pits; walls, closed doors and
+		// blocks stop it as they stop anyone
+		walls := blockers
+		if afloat(targetEntity) {
+			if afloatBlockers == nil {
+				afloatBlockers = blockers.passingPits()
+			}
+			walls = afloatBlockers
+		}
+
 		// split-axis swept collision against walls and closed doors, X first
-		newX := transform.X + dx*blockers.sweepX(transform.X, transform.Y, dx)
+		newX := transform.X + dx*walls.sweepX(transform.X, transform.Y, dx)
 
 		// Y second
-		newY := transform.Y + dy*blockers.sweepY(newX, transform.Y, dy)
+		newY := transform.Y + dy*walls.sweepY(newX, transform.Y, dy)
 
 		// check collision in 9-grid and resolve position by hashmap; a charge
 		// runs through bodies, as the teleport it replaced did
@@ -204,7 +217,7 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 
 		// depenetration: push player out of walls, then closed doors, after
 		// entity collision resolve
-		newX, newY = blockers.depenetrate(newX, newY)
+		newX, newY = walls.depenetrate(newX, newY)
 
 		// clamp position to this world's boundaries
 		mapWidth, mapHeight := s.bounds()

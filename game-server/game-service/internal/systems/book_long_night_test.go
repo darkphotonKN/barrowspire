@@ -131,7 +131,7 @@ func TestMonsterAISystem_TheLongNightOfADeadWarriorTurnsNoOne(t *testing.T) {
 func TestMonsterAISystem_AfterTheLongNightMonstersPickTheirTargetsNormally(t *testing.T) {
 	em, books, warrior, mate := nightField(t)
 	for range ticks(6) {
-		books.Update(tickSeconds, em.GetAllEntities())
+		books.Update(tickSeconds, em.GetAllEntities(), BookGround{})
 	}
 	require.NotContains(t, bookOfT(t, warrior).States, components.BookStateLongNight, "the night is over")
 	assert.False(t, warrior.HasComponent(ecs.ComponentTypeLongNight), "its reach goes with it")
@@ -177,7 +177,7 @@ func heldPastTheNight(t *testing.T, em *ecs.EntityManager, books *BookSystem, wa
 	require.Equal(t, warrior.ID, monster(g).Target, "held while the night runs")
 
 	for range ticks(6) {
-		books.Update(tickSeconds, em.GetAllEntities())
+		books.Update(tickSeconds, em.GetAllEntities(), BookGround{})
 	}
 	require.NotContains(t, bookOfT(t, warrior).States, components.BookStateLongNight, "the night is over")
 	think(em)

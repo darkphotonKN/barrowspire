@@ -140,6 +140,48 @@ func (g *Grid) Within(dst []int, x, y, radius float64) []int {
 	return dst
 }
 
+/*
+Nearest is the walkable cell whose centre lies nearest (x, y), a tie to the
+lowest cell; false when no cell is walkable. A point anywhere, on rock or off
+the grid, has one while any cell does: where a delver whose afloat ends over a
+pit is set down (FS-X2CMM §J R51).
+
+It looks in square rings of cells round the point's cell, nearest first. A
+cell k rings out has its centre at least (k-0.5) cells from the point, so the
+search stops at the first ring that cannot beat the nearest found; one that
+could tie it is still looked over, for the lower cell.
+*/
+func (g *Grid) Nearest(x, y float64) (int, bool) {
+	cx, cy := int(math.Floor(x/g.size)), int(math.Floor(y/g.size))
+	best, bestD := -1, math.Inf(1)
+	consider := func(col, row int) {
+		if !g.ground(col, row) {
+			return
+		}
+		c := row*g.cols + col
+		centreX, centreY := g.Centre(c)
+		if d := math.Hypot(centreX-x, centreY-y); d < bestD || d == bestD && c < best {
+			best, bestD = c, d
+		}
+	}
+	// the rings that touch the grid: from its nearest cell to its farthest
+	first := max(0, -cx, cx-(g.cols-1), -cy, cy-(g.rows-1))
+	last := max(cx, g.cols-1-cx, cy, g.rows-1-cy)
+	for k := first; k <= last && bestD >= (float64(k)-0.5)*g.size; k++ {
+		for row := max(cy-k, 0); row <= min(cy+k, g.rows-1); row++ {
+			if row == cy-k || row == cy+k {
+				for col := max(cx-k, 0); col <= min(cx+k, g.cols-1); col++ {
+					consider(col, row)
+				}
+				continue
+			}
+			consider(cx-k, row)
+			consider(cx+k, row)
+		}
+	}
+	return best, best >= 0
+}
+
 // ground is whether the cell at column x, row y is on the grid and walkable.
 func (g *Grid) ground(x, y int) bool {
 	return x >= 0 && y >= 0 && x < g.cols && y < g.rows && g.walkable[y*g.cols+x]

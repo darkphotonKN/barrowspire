@@ -95,7 +95,7 @@ func newHoundFloor(em *ecs.EntityManager) *houndFloor {
 func (f *houndFloor) run(n int) []KillRecord {
 	var kills []KillRecord
 	for range n {
-		NewBookSystem(f.em).Update(castTick, f.em.GetAllEntities())
+		NewBookSystem(f.em).Update(castTick, f.em.GetAllEntities(), BookGround{})
 		f.ai.Update(castTick, f.em.GetAllEntities())
 		f.walk.Update(castTick, f.em.GetAllEntities())
 		kills = append(kills, f.combat.Update(castTick, f.em.GetAllEntities(), nil)...)
@@ -216,7 +216,7 @@ func TestBookSystemUpdate_AHoundGoesAtNoHealthOrAfter40Seconds(t *testing.T) {
 	books := NewBookSystem(em)
 
 	healthT(t, hound).CurrentHealth = 0
-	books.Update(castTick, em.GetAllEntities())
+	books.Update(castTick, em.GetAllEntities(), BookGround{})
 	assert.Empty(t, houndsIn(em), "at no health it goes")
 
 	callHound(t, em, archer, 3*testCell)
@@ -298,7 +298,7 @@ func TestHound_OnTheTickItsTimeIsUpItActsNoMore(t *testing.T) {
 	floor := newHoundFloor(em)
 
 	entities := em.GetAllEntities() // the tick's entities, as the session reads them once
-	NewBookSystem(em).Update(castTick, entities)
+	NewBookSystem(em).Update(castTick, entities, BookGround{})
 	floor.ai.Update(castTick, entities)
 	kills := floor.combat.Update(castTick, entities, nil)
 

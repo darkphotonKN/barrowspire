@@ -75,7 +75,7 @@ func TestBookSystemUpdate_ADraughtStandsUntilDrunk(t *testing.T) {
 
 	books := NewBookSystem(em)
 	for range 30 * 600 { // ten minutes
-		books.Update(draughtTick, em.GetAllEntities())
+		books.Update(draughtTick, em.GetAllEntities(), BookGround{})
 	}
 
 	_, ok := em.GetEntity(draught.ID)
@@ -99,20 +99,20 @@ func TestBookSystemDrinkDraught_HealsThirtyPercentOverSixSeconds(t *testing.T) {
 	assert.Equal(t, 6.0, bookOfT(t, mate).States[components.BookStateDraught])
 
 	for range 90 { // 3 s, half the heal
-		books.Update(draughtTick, em.GetAllEntities())
+		books.Update(draughtTick, em.GetAllEntities(), BookGround{})
 	}
 	assert.Equal(t, 80, healthT(t, mate).CurrentHealth, "half of 60 in 3 s")
 	assert.Contains(t, bookOfT(t, mate).States, components.BookStateDraught)
 	assert.True(t, mate.HasComponent(ecs.ComponentTypeDraughtHeal), "the heal rides the drinker")
 
 	for range 90 {
-		books.Update(draughtTick, em.GetAllEntities())
+		books.Update(draughtTick, em.GetAllEntities(), BookGround{})
 	}
 	assert.Equal(t, 110, healthT(t, mate).CurrentHealth, "50 + 30 % of 200")
 	assert.NotContains(t, bookOfT(t, mate).States, components.BookStateDraught, "healed, the state goes")
 	assert.False(t, mate.HasComponent(ecs.ComponentTypeDraughtHeal), "and the heal with it")
 
-	books.Update(draughtTick, em.GetAllEntities())
+	books.Update(draughtTick, em.GetAllEntities(), BookGround{})
 	assert.Equal(t, 110, healthT(t, mate).CurrentHealth, "nothing after the 6 s")
 }
 
@@ -129,7 +129,7 @@ func TestBookSystemDrinkDraught_HealsInEvenPartsEachTick(t *testing.T) {
 	// 300 over 180 ticks: 1 or 2 a tick, never 0 for long, never more
 	for range 180 {
 		before := healthT(t, mate).CurrentHealth
-		books.Update(draughtTick, em.GetAllEntities())
+		books.Update(draughtTick, em.GetAllEntities(), BookGround{})
 		gained := healthT(t, mate).CurrentHealth - before
 		assert.GreaterOrEqual(t, gained, 1)
 		assert.LessOrEqual(t, gained, 2)
@@ -147,7 +147,7 @@ func TestBookSystemDrinkDraught_NeverHealsAboveMax(t *testing.T) {
 	require.NoError(t, books.DrinkDraught(mate, draught))
 
 	for range 180 {
-		books.Update(draughtTick, em.GetAllEntities())
+		books.Update(draughtTick, em.GetAllEntities(), BookGround{})
 		require.LessOrEqual(t, healthT(t, mate).CurrentHealth, 100)
 	}
 	assert.Equal(t, 100, healthT(t, mate).CurrentHealth)
@@ -166,14 +166,14 @@ func TestBookSystemDrinkDraught_ASecondDraughtRestartsTheHeal(t *testing.T) {
 
 	require.NoError(t, books.DrinkDraught(mate, first))
 	for range 90 {
-		books.Update(draughtTick, em.GetAllEntities())
+		books.Update(draughtTick, em.GetAllEntities(), BookGround{})
 	}
 	require.Equal(t, 40, healthT(t, mate).CurrentHealth, "half of the first")
 
 	require.NoError(t, books.DrinkDraught(mate, second))
 	assert.Equal(t, 6.0, bookOfT(t, mate).States[components.BookStateDraught], "the 6 s restart")
 	for range 180 {
-		books.Update(draughtTick, em.GetAllEntities())
+		books.Update(draughtTick, em.GetAllEntities(), BookGround{})
 	}
 	assert.Equal(t, 100, healthT(t, mate).CurrentHealth, "40 + the whole 60 again")
 }

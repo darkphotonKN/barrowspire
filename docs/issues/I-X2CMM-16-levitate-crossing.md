@@ -1,6 +1,6 @@
 ---
 id: I-X2CMM-16
-status: open
+status: done
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-3", "FS-5FZ4J (chasm cells and traps)"]
 labels: [ready-for-agent]

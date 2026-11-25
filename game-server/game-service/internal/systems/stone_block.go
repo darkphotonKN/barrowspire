@@ -481,6 +481,12 @@ func (w blockedWalls) sweepY(x, y, dy float64) float64 {
 	return t
 }
 
+// passingPits is the walls as an afloat body meets them, the blocks still
+// standing: a block is no pit.
+func (w blockedWalls) passingPits() wallTests {
+	return blockedWalls{walls: w.walls.passingPits(), blocks: w.blocks}
+}
+
 // depenetrate pushes a body out of the walls, then the blocks, then the
 // walls again, so a body a sliding block leans on is never left in a wall.
 func (w blockedWalls) depenetrate(x, y float64) (float64, float64) {

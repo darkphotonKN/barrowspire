@@ -67,6 +67,10 @@ type BookGround struct {
 	// does before it moves its caster (CombatSystem.EndCharge). Nil only
 	// stops it.
 	EndCharge func(entity *ecs.Entity)
+	// Footing is a dungeon floor's walkable cells, where a delver whose
+	// afloat ends over a pit is set down (book_levitate.go). Nil off a
+	// dungeon floor: no one is set down.
+	Footing Footing
 }
 
 // pageResolver has a page's effect, once its cast is accepted and paid for.
@@ -180,11 +184,12 @@ func (s *BookSystem) resolve(cast BookCast, book *components.BookComponent) {
 // Update is the books' tick, in simulation time: the floor's book effects
 // first (ageBookEffects), then each drinker's draught heal, then every book
 // run down. It runs before the monsters think, so a monster a rune caught
-// stands from this tick. FS-X2CMM §A R8, §E R21, R24, R27.
-func (s *BookSystem) Update(deltaTime float64, entities []*ecs.Entity) {
+// stands from this tick. A delver whose afloat ends over a pit is set down
+// on ground's footing. FS-X2CMM §A R8, §E R21, R24, R27, §J R51.
+func (s *BookSystem) Update(deltaTime float64, entities []*ecs.Entity, ground BookGround) {
 	s.ageBookEffects(deltaTime, entities)
 	s.healDraughts(deltaTime, entities)
-	runDownBooks(deltaTime, entities)
+	runDownBooks(deltaTime, entities, ground)
 }
 
 // stateComponents is the component a timed book state keeps on its delver,
@@ -196,8 +201,9 @@ var stateComponents = map[components.BookStateName]ecs.ComponentType{
 
 // runDownBooks runs every book down by the tick: its book cooldowns and its
 // timed states, each gone once its time is up, a state's own component with
-// it. A book's run across floors.
-func runDownBooks(deltaTime float64, entities []*ecs.Entity) {
+// it, and an afloat ended over a pit sets its delver down. A book's run
+// across floors.
+func runDownBooks(deltaTime float64, entities []*ecs.Entity, ground BookGround) {
 	for _, entity := range entities {
 		book, ok := bookOf(entity)
 		if !ok {
@@ -215,6 +221,9 @@ func runDownBooks(deltaTime float64, entities []*ecs.Entity) {
 				delete(book.States, name)
 				if kept, ok := stateComponents[name]; ok {
 					entity.RemoveComponent(kept)
+				}
+				if name == components.BookStateAfloat {
+					setDownOffPit(entities, entity, ground)
 				}
 				continue
 			}
@@ -370,8 +379,8 @@ func resolveTrackersEye(_ *ecs.EntityManager, cast BookCast) {
 const afloatSeconds = 8.0
 
 // resolveLevitate makes the cast's target afloat, the mage themself or an
-// ally; a second Levitate restarts the 8 s. Crossing chasms and not firing
-// traps are wave 2 (R51).
+// ally; a second Levitate restarts the 8 s. While afloat they cross a
+// chasm's pits and fire no trap (R51, book_levitate.go).
 func resolveLevitate(_ *ecs.EntityManager, cast BookCast) {
 	setBookState(cast.Target, components.BookStateAfloat, afloatSeconds)
 }
