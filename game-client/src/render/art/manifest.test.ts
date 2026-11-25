@@ -1262,7 +1262,6 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ["chapel_altar", "chapelAltar", { default: 1 }],
       ["lectern", "lectern", { default: 1 }],
       ["dais", "dais", { default: 1 }],
-      ["belfry", "belfry", { default: 1 }],
       ["headstone", "headstone", { intact: 2, weathered: 3, broken: 2 }],
       ["grave_flowers", "graveFlowers", { fresh: 1, withered: 1 }],
       ["grave_mound", "graveMound", { default: 1 }],
@@ -1365,7 +1364,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     );
 
     it("packs them into a resident group of their own, so no existing atlas reflows and the hub draws them without a scene change", () => {
-      const ours = [...CHAPEL.map(([n]) => n), ...CHAPEL_BUILDING.map(([n]) => n), "chapel_roof_gable_x", "chapel_roof_gable_y"];
+      const ours = [...CHAPEL.map(([n]) => n), ...CHAPEL_BUILDING.map(([n]) => n), "chapel_roof_gable_x", "chapel_roof_gable_y", "chapel_tower"];
       for (const [name, s] of Object.entries(baked.sheets) as [string, Sheet][])
         if (atlasGroup(s.atlas) === "chapel") expect(ours).toContain(name);
       expect(SCENE_SCOPED_GROUPS.has("chapel")).toBe(false);
@@ -1404,12 +1403,15 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       for (const [name] of CHAPEL) expect(sheet(name).light, name).toBeUndefined();
       for (const [name] of CHAPEL_BUILDING) expect(sheet(name).light, name).toBeUndefined();
       for (const axis of ["x", "y"]) expect(sheet(`chapel_roof_gable_${axis}`).light).toBeUndefined();
+      // nor the bell tower: its belfry is unlit (§Change: the bell tower, T15)
+      expect(sheet("chapel_tower").light).toBeUndefined();
       expect(sheet("candelabra").light).toBeDefined();
       // the chapel's altar is its own sheet: `altar` stays the run's Altar of Consecration
       expect(atlasGroup(sheet("altar").atlas)).toBe("summoning");
     });
 
-    // the rect each sheet stands on, world px (x × y) about its spot (R12, R14, R30); the mound's
+    // the rect each sheet stands on, world px (x × y) about its spot (R12, R14; the bell tower's
+    // 140 × 140 wall, §Change: the bell tower, T6, T24); the mound's
     // heap is rounded, never reaching its rect's corners (tools/bake/page/models/chapel.test.mjs
     // holds it inside 50 × 28)
     const FOOTPRINTS: [string, number, number][] = [
@@ -1417,7 +1419,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ["chapel_altar", 30, 80],
       ["lectern", 20, 20],
       ["dais", 130, 200],
-      ["belfry", 40, 40],
+      ["chapel_tower", 140, 140],
       ["wayside_cross", 40, 40],
     ];
 
@@ -1445,12 +1447,53 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(s.anchor.y * s.frameHeight).toBeLessThanOrEqual(top + 10);
     });
 
-    it("stands the belfry over a body's height, the stone cross over every headstone", () => {
+    it("stands the stone cross over every headstone, the graveyard wall under them", () => {
       const standing = (name: string) => sheet(name).anchor.y * sheet(name).frameHeight;
-      expect(standing("belfry")).toBeGreaterThan(baked.sheets.folk_spirewarden.crown);
-      expect(standing("belfry")).toBeGreaterThan(standing("stone_cross"));
       expect(standing("stone_cross")).toBeGreaterThan(standing("headstone"));
       expect(standing("graveyard_wall")).toBeLessThan(standing("headstone"));
+    });
+
+    describe("the bell tower (§Change: The chapel moves to the far left and gains a bell tower, T17, T24, T25)", () => {
+      // the east gable's cross tops out 9.7 tile edges over the ground (T24); the tower's stands
+      // at least 2.5 over that
+      const GABLE_CROSS = 9.7;
+
+      it("bakes chapel_tower as one prop frame on the chapel's atlas, authored in models/chapelTower.js", () => {
+        const s = sheet("chapel_tower");
+        expect(s, "chapel_tower").toBeDefined();
+        expect(s.source).toBe("authored: tools/bake/page/models/chapelTower.js#chapelTower");
+        expect(s.licence).toBe(baked.sheets.brazier.licence);
+        expect(s.atlas).toMatch(/^chapel-\d+$/);
+        expect(s.directions).toBe(1);
+        expect(frameCounts(s)).toEqual({ default: 1 });
+      });
+
+      it("drops the belfry sheet: the bell hangs in the tower (T17)", () => {
+        expect(baked.sheets.belfry).toBeUndefined();
+      });
+
+      it("puts the anchor on the footprint's centre and bakes no ground shadow: the frame stays as wide right of its anchor as left, a hair past the footprint's diamond", () => {
+        const s = sheet("chapel_tower");
+        const ax = s.anchor.x * s.frameWidth;
+        const half = worldToScreen(70, -70).x;
+        // a ground shadow of a tower this tall would run hundreds of px screen-right of it
+        expect(ax).toBeLessThanOrEqual(half + 12);
+        expect(s.frameWidth - ax).toBeLessThanOrEqual(half + 12);
+        // the footprint's near (south-east) corner lies inside the frame, under the anchor
+        const ay = s.anchor.y * s.frameHeight;
+        expect(s.frameHeight - ay).toBeGreaterThanOrEqual(worldToScreen(70, 70).y);
+        expect(s.frameHeight - ay).toBeLessThanOrEqual(worldToScreen(70, 70).y + 12);
+      });
+
+      it("stands its cross at least 2.5 tile edges over the east gable's cross (T24)", () => {
+        const s = sheet("chapel_tower");
+        // the drawn top over the origin: the frame's top is the cross's, a pad above it
+        expect(s.anchor.y * s.frameHeight).toBeGreaterThanOrEqual((GABLE_CROSS + 2.5) * BAKE.VPX);
+        // as built (A4): the cross's top about 15.1 edges, the tower raised so its whole belfry
+        // clears the chapel's roof
+        expect(s.anchor.y * s.frameHeight).toBeGreaterThanOrEqual(14.5 * BAKE.VPX);
+        expect(s.anchor.y * s.frameHeight).toBeLessThanOrEqual(16 * BAKE.VPX);
+      });
     });
 
     it("stands the wayside cross tall, over a body's height and the graveyard's stone cross (R41)", () => {

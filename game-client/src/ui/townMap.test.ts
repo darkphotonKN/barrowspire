@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HUB_TOWN_GOLDEN } from "@/render/world/hubTownGolden";
-import { townOutline } from "@/render/world/hubTown.fixture";
+import { townOutline, townWalls } from "@/render/world/hubTown.fixture";
 import { HUB_SIZE } from "@/render/world/hubKeepOut";
 import type { WallState } from "@/types/gameState";
 import { HUB_STASH_CHEST } from "@/render/world/hubStash";
@@ -103,6 +103,55 @@ describe("townMap (FS-P0HSP §B, I-P0HSP-1)", () => {
       ]);
     });
     expect(HUB_TOWN_GOLDEN.buildings.map((b) => b.doorFace)).toContain("east");
+  });
+
+  describe("the moved chapel and its bell tower (FS-R4MYX §Change: the chapel moves to the far left, T26)", () => {
+    const tower = HUB_TOWN_GOLDEN.bellTower;
+    /** The town's walls with the bell tower's one wall, under its own house id (hubTown.fixture.ts). */
+    const WITH_TOWER: WallState[] = [...WALLS, ...townWalls().filter((w) => w.position.x === tower.x && w.position.y === tower.y)];
+    const solids = townMap({ walls: WITH_TOWER, gates: GATES }, TOWN).solids!(NORMAL);
+    const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
+
+    it("should carry the tower's wall in the state: one more wall than the buildings'", () => {
+      expect(WITH_TOWER).toHaveLength(WALLS.length + 1);
+    });
+
+    it("should show the tower's block solid in the walls' ink, with no notch: its plain rect", () => {
+      expect(solids).toHaveLength(HUB_TOWN_GOLDEN.buildings.length + 1);
+      expect(solids.at(-1)).toEqual([
+        { x: tower.x, y: tower.y },
+        { x: tower.x + tower.w, y: tower.y },
+        { x: tower.x + tower.w, y: tower.y + tower.h },
+        { x: tower.x, y: tower.y + tower.h },
+      ]);
+    });
+
+    it("should stand the block against the chapel's west side, within its depth", () => {
+      expect(tower.x + tower.w).toBe(chapel.x);
+      expect(tower.y).toBeGreaterThanOrEqual(chapel.y);
+      expect(tower.y + tower.h).toBeLessThanOrEqual(chapel.y + chapel.h);
+    });
+
+    it("should show the chapel at its new place, its door notched on its east side", () => {
+      const d = notchDepth(20, NORMAL);
+      const [east, south] = [chapel.x + chapel.w, chapel.y + chapel.h];
+      const g = chapel.doorGap;
+      expect([chapel.x, chapel.y]).toEqual([220, 1300]);
+      expect(solids[HUB_TOWN_GOLDEN.buildings.indexOf(chapel)]).toEqual([
+        { x: chapel.x, y: chapel.y },
+        { x: east, y: chapel.y },
+        { x: east, y: g.y },
+        { x: east - d, y: g.y },
+        { x: east - d, y: g.y + g.h },
+        { x: east, y: g.y + g.h },
+        { x: east, y: south },
+        { x: chapel.x, y: south },
+      ]);
+    });
+
+    it("should change the other buildings' solids in nothing for the tower", () => {
+      expect(solids.slice(0, -1)).toEqual(townMap({ walls: WALLS, gates: GATES }, TOWN).solids!(NORMAL));
+    });
   });
 
   it("should change its key only with what it draws: the same state twice, one key", () => {

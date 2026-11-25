@@ -15,11 +15,13 @@ import type { WallState } from "@/types/gameState";
 
 /**
  * The hub's size in world px: game-service's HubMapWidth × HubMapHeight, grown south for the
- * chapel and its graveyard (FS-R4MYX R1). The one hub size on the client (R22): K7, and
+ * chapel and its graveyard (FS-R4MYX R1), and again to 2000 when the chapel moved to the far left
+ * with its graveyard along its south wall (T4, T26), and to 2200 when the owner had the strip made
+ * twice as deep (A5). The one hub size on the client (R22): K7, and
  * HubScene's ground, camera, blackout and town minimap. `hubKeepOut.test.ts` holds it to the town
  * golden's `mapSize`, which the server's golden test writes from those constants.
  */
-export const HUB_SIZE = { width: 2000, height: 1700 } as const;
+export const HUB_SIZE = { width: 2000, height: 2200 } as const;
 
 /**
  * Screen px of dark beyond the projected diamond the camera may show at the map edge: the
@@ -70,28 +72,35 @@ export const HUB_APPROACHES: Record<GateDestination, PathRect[]> = {
  * hub_map.go's order: the Inn, the Quartermaster's store, the smithy, the chapel. Kept by hand and
  * held to the golden's door gaps by `hubKeepOut.test.ts`: the store's and the smithy's gaps are
  * centred, the Inn's stands at x 525–605, against its partition (ADR-0073), the chapel's at
- * y 1280–1360 in its east wall, its spur running to the chapel lane.
+ * y 1480–1560 in its east wall, its spur running to the chapel lane.
  */
 export const HUB_DOOR_SPURS: PathRect[] = [
   [525, 490, 80, 65],
   [1240, 390, 80, 30],
   [1590, 290, 80, 50],
-  [1580, 1280, 120, 80],
+  [840, 1480, 120, 80],
 ];
 
 /**
- * The trodden way to the chapel and its graveyard (FS-R4MYX R31), in the town's grown south: the
- * hearth's east arm carried on east to the chapel lane, the lane south past the chapel's east
- * side to the graveyard spur, the spur west along the chapel's south side, and the short path
- * into the graveyard's gap. The chapel's door spur meets the lane (HUB_DOOR_SPURS). It goes round
- * the chapel, never across it: the first layout's lane ran where the bigger chapel stands.
+ * The chapel lane (FS-R4MYX R31, redrawn by T22): south from the foot of the square's own path,
+ * past the spawn, to the graveyard spur. Its x 960–1030 clears the crates and the signpost south
+ * of the spawn. The chapel's door spur meets it from the west (HUB_DOOR_SPURS).
  */
-const HUB_CHAPEL_WAY: PathRect[] = [
-  [1380, 660, 390, 70],
-  [1700, 730, 70, 875],
-  [490, 1555, 1280, 50],
-  [500, 1520, 70, 35],
-];
+export const HUB_CHAPEL_LANE: PathRect = [960, 820, 70, 1100];
+
+/**
+ * The graveyard spur (T22): from the chapel lane west to the gap in the east side of the
+ * graveyard's low wall (hubGraveyard.ts), south of the chapel's door spur.
+ */
+export const HUB_GRAVEYARD_SPUR: PathRect = [840, 1855, 120, 50];
+
+/**
+ * The trodden way to the chapel and its graveyard in the town's far south-west (T22): the lane
+ * and the graveyard spur. Nothing leads to the chapel's old site: the four rects of R31's way
+ * (the hearth's east arm carried on, the lane east of the old chapel, the spur along its south
+ * side and the path into the old gap) are gone (T5).
+ */
+const HUB_CHAPEL_WAY: PathRect[] = [HUB_CHAPEL_LANE, HUB_GRAVEYARD_SPUR];
 
 /**
  * Trodden ground, joining the spawn to the people worth walking to, then the way to the chapel,
@@ -131,7 +140,7 @@ export const HUB_KEEP_OUT = {
   /**
    * K6: the residents' quarters, each wholly outside every town building (FS-B0H2D R7), held to
    * the golden's `wanderRegions` (FS-R4MYX R40). The Woodcutter's and the Bellringer's lie in the
-   * field east of the chapel, in front of it on screen (R5, R39).
+   * east field, where no building's bulk shares a screen column with them (R5, R39, T2).
    */
   wander: [
     { name: "Cottar", x: 560, y: 560, width: 180, height: 200 },

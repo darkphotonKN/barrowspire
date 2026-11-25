@@ -93,10 +93,13 @@ translation belongs to the surface that renders words.
 - **The chapel** — the whitewashed stone church below the square (FS-R4MYX, owner feedback F6):
   pews either side of an aisle from its east door to a **dais** at the west end, the altar on it;
   the **Confessor** stands in front of the dais, at the aisle's head. Dim, lit by two candelabra.
-  Nothing offered there yet.
-- **Graveyard** — the ground screen-left of the chapel, where its roof hides none of it, behind a
-  low broken wall: headstones, fresh mounds, flowers, stone crosses, dead trees, and **mourners**
-  at the graves. All of it dressing but the mourners.
+  Nothing offered there yet. It stands at the screen's far left, in the map's south-west, with a
+  **bell tower** (rendering terms below) against its west end (FS-R4MYX §Change: The chapel moves
+  to the far left and gains a bell tower).
+- **Graveyard** — a walled strip along the outside of the chapel's south wall, a small walkway
+  between them, where the chapel's roof hides none of it (same Change), behind a low broken
+  wall: headstones, fresh mounds, flowers, stone crosses, dead trees, and **mourners** at the
+  graves. All of it dressing but the mourners.
 - **Innkeeper**, **patron**, **smith**, **Confessor**, **worshipper**, **mourner** — the people in
   the town buildings and the graveyard: game-service's **fixed
   residents** ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "NPCs"),
@@ -421,8 +424,18 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   **indoor dressing**: dressing placed inside a house, with no collision.
 - **Dais**: the chapel's raised west end, drawn as a flat stone platform on the floor decal layer
   (like a rug). The one indoor dressing allowed under a furnishing: the altar stands on it.
-- **Belfry**: the tall weathered bell frame by the chapel's door, under a bent iron cross. Outdoor
-  dressing, an occluder; it never rings.
+- **Belfry**: the open bell stage at the top of the chapel's **bell tower**, where the dark bell
+  hangs behind pointed openings (FS-R4MYX §Change: The chapel moves to the far left and gains a
+  bell tower). Part of the tower's sheet, never a prop or a sheet of its own; it never rings.
+  The bell frame that stood by the chapel's door, and its `belfry` sheet and `HUB_BELFRY`, are
+  gone: no sheet, constant or file keeps the name for a prop.
+- **Bell tower**: the square stone tower against the chapel's west end, on the ridge's line
+  (same Change). On the server one solid wall with a `house_id` of its own, outside the chapel's
+  footprint; on the client told by its rect (the golden's), **not a house** and not a loose wall:
+  drawn as one baked prop (`chapel_tower`). It never fades (the player shows through as the
+  silhouette), and it hides with the street while the player is in any building. Not "the
+  tower": that is the Spire, so an exported name says `bellTower` / `BELL_TOWER`, never a bare
+  `tower`. Not dressing: it has collision.
 - **Bay**: one lancet window in the chapel's fixed rhythm: a buttress on either side of it on the
   south wall's outward face, and a lancet at the same x on the north wall's inner face (FS-R4MYX
   §Change: The chapel's windows match inside and out). Written in the chapel's **fixed kinds**, never hashed.

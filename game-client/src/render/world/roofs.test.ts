@@ -304,6 +304,42 @@ describe("a roof set's prefix (FS-R4MYX R23, R42: the chapel's slate roof)", () 
   );
 });
 
+describe("planGables' plain ends (FS-R4MYX §Change: the bell tower, T16)", () => {
+  // the chapel beside its tower: 620 × 440, the ridge along x, so its gables stand west and east
+  const chapel = { id: "chapel", x: 220, y: 1300, width: 620, height: 440 };
+  // a house deeper than wide: the ridge along y, its gables north and south
+  const deep = { id: "deep", x: 100, y: 100, width: 200, height: 320 };
+  const apexes = (gables: ReturnType<typeof planGables>) => gables.filter((g) => g.index === GABLE_APEX);
+
+  it("should lay the plain frame at the apex of an end named plain, and the apex frame at the other end", () => {
+    const gables = planGables(chapel, 20, "chapel_", ["w"]);
+    const [west, east] = [chapel.x + 10, chapel.x + chapel.width - 10];
+    expect(gables.filter((g) => g.at.x === west).map((g) => g.index)).toEqual(gables.filter((g) => g.at.x === west).map(() => 0));
+    expect(gables.filter((g) => g.at.x === west).length).toBeGreaterThan(0);
+    // the east gable keeps its two half-crosses, meeting over the ridge
+    expect(apexes(gables).map((g) => g.at.x)).toEqual([east, east]);
+  });
+
+  it("should change nothing but those frames: every piece stands, lifts and sorts as before", () => {
+    const strip = (gables: ReturnType<typeof planGables>) => gables.map(({ index: _index, ...rest }) => rest);
+    expect(strip(planGables(chapel, 20, "chapel_", ["w"]))).toEqual(strip(planGables(chapel, 20, "chapel_")));
+  });
+
+  it("should name a y ridge's ends north and south, and ignore an end the ridge does not have", () => {
+    const north = deep.y + 10;
+    expect(apexes(planGables(deep, 20, "", ["n"])).every((g) => g.at.y !== north)).toBe(true);
+    expect(apexes(planGables(deep, 20, "", ["n"]))).toHaveLength(2);
+    expect(apexes(planGables(deep, 20, "", ["s", "n"]))).toEqual([]);
+    expect(planGables(deep, 20, "", ["w", "e"])).toEqual(planGables(deep, 20));
+    expect(planGables(chapel, 20, "chapel_", ["n", "s"])).toEqual(planGables(chapel, 20, "chapel_"));
+  });
+
+  it("should keep four apex pieces on a roof that names no plain end", () => {
+    expect(apexes(planGables(chapel, 20, "chapel_", []))).toHaveLength(4);
+    expect(planGables(chapel, 20, "chapel_", [])).toEqual(planGables(chapel, 20, "chapel_"));
+  });
+});
+
 describe("planChimney (FS-KYPQ9 §A.6)", () => {
   // the hub's scenery seed (HubScene SCENERY_SEED)
   const SEED = 1_396_919_857;

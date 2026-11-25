@@ -52,7 +52,7 @@ const { useAuthStore } = await import("@/stores/authStore");
 const { MARKER_DEPTH } = await import("@/render/markers");
 const { HUB_STASH_CHEST, STASH_NAME } = await import("@/render/world/hubStash");
 const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
-const { townOutline } = await import("@/render/world/hubTown.fixture");
+const { townOutline, townWalls } = await import("@/render/world/hubTown.fixture");
 const interiors = await import("@/render/world/hubInteriors");
 const walls_ = await import("@/render/world/walls");
 const roofs_ = await import("@/render/world/roofs");
@@ -3507,7 +3507,10 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
   );
   const PARTITION_WALLS = PARTITIONS.map(([house, x, y, w, h], i) => wall(`p${i}`, house, x, y, w, h));
   const FURNISHING_WALLS = FURNISHINGS.map(([house, x, y, w, h], i) => wall(`f${i}`, house, x, y, w, h));
-  const TOWN = [...BUILDING_WALLS, ...PARTITION_WALLS, ...FURNISHING_WALLS];
+  /** The bell tower's one wall, under a house id of its own (hub_map.go addHubSolid; FS-R4MYX T6). */
+  const TOWER: Rect5 = (({ x, y, w, h }) => ["bell-tower", x, y, w, h] as Rect5)(HUB_TOWN_GOLDEN.bellTower);
+  const TOWER_WALL = wall("bell-tower-wall", TOWER[0], TOWER[1], TOWER[2], TOWER[3], TOWER[4]);
+  const TOWN = [...BUILDING_WALLS, ...PARTITION_WALLS, ...FURNISHING_WALLS, TOWER_WALL];
 
   /** In the Inn's taproom, on the open floor before the bar. */
   const IN_INN = { x: 690, y: 370 };
@@ -3737,6 +3740,173 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       expect(calls.some((c) => sameRect(c, ["", w.position.x, w.position.y, w.width, w.height]) && c[6] === WALL_HEIGHT)).toBe(true);
   });
 
+  describe("the bell tower's wall (FS-R4MYX §Change: the chapel moves to the far left, T10)", () => {
+    interface TowerHub {
+      roofs: { house: { id: string } }[];
+      looseWalls: unknown[];
+      playerBuilding?: { id: string };
+    }
+    const HOUSE_IDS = ["chapel", "inn", "smithy", "store"];
+    const wallsHanded = (calls: unknown[][]) => calls.flatMap((c) => c[2] as { entity_id: string }[]).map((w) => w.entity_id);
+
+    it.each([
+      ["with the town's art", BAKED],
+      ["without art", BARE],
+    ])("should make no house of it %s: no roof, floor, interior or inside test, and no loose wall pieces", (_, art) => {
+      const paint = vi.spyOn(world.GroundLayer.prototype, "paint");
+      const { hub, standIn } = town(art);
+      const tower = hub as unknown as TowerHub;
+      expect(tower.roofs.map((r) => r.house.id).sort()).toEqual(HOUSE_IDS);
+      expect(hub.interiors.map((r) => r.house.id).sort()).toEqual(HOUSE_IDS);
+      expect(tower.looseWalls).toEqual([]);
+      // its wall is handed to neither the buildings' walls nor the loose walls
+      expect(wallsHanded(vi.mocked(world.addBuildings).mock.calls)).not.toContain(TOWER_WALL.entity_id);
+      expect(wallsHanded(vi.mocked(world.addWalls).mock.calls)).not.toContain(TOWER_WALL.entity_id);
+      // nobody stands "in" it: a point of its footprint is in no building
+      standIn({ x: TOWER[1] + TOWER[3] / 2, y: TOWER[2] + TOWER[4] / 2 });
+      expect(tower.playerBuilding).toBeUndefined();
+      for (const [houses] of paint.mock.calls) expect((houses as readonly { id: string }[]).map((h) => h.id)).not.toContain(TOWER[0]);
+      paint.mockRestore();
+    });
+
+    /** The tower's baked prop as the scene drew it, if it did. */
+    const towerProps = () => {
+      const calls = vi.mocked(world.addProp).mock.calls;
+      return calls.flatMap(([, , sheet, at], i) =>
+        sheet === interiors.BELL_TOWER_SHEET ? [{ at, sprite: (vi.mocked(world.addProp).mock.results[i].value as { sprite: Made }).sprite }] : [],
+      );
+    };
+    const towerBlocks = () => vi.mocked(iso.addUprightBlock).mock.calls.filter((c) => sameRect(c, TOWER));
+    /** A manifest older than the tower: the town's art without its sheet. */
+    const withoutTowerArt = () => {
+      const manifest = JSON.parse(readFileSync(new URL("../../public/art/manifest.json", import.meta.url), "utf8")) as {
+        sheets: Record<string, unknown>;
+      };
+      delete manifest.sheets[interiors.BELL_TOWER_SHEET];
+      return new ArtLibrary(manifest as never, quiet);
+    };
+    const IN_CHAPEL = { x: 710, y: 1520 };
+    /** In the chapel's door gap, in its east wall: inside, by the inclusive inside test. */
+    const IN_CHAPEL_DOORWAY = { x: 830, y: 1520 };
+
+    it("should draw chapel_tower on its rect's centre with the town's art, one prop and no block (T10)", () => {
+      town(BAKED);
+      const props = towerProps();
+      expect(props).toHaveLength(1);
+      expect(props[0].at).toEqual({ x: TOWER[1] + TOWER[3] / 2, y: TOWER[2] + TOWER[4] / 2 });
+      expect(props[0].at).toEqual(interiors.HUB_BELL_TOWER_AT);
+      expect(towerBlocks()).toEqual([]);
+    });
+
+    it.each([
+      ["without art", () => BARE],
+      ["with art that lacks the tower's sheet", withoutTowerArt],
+    ])("should draw a placeholder block on its rect %s, taller than a wall: solid is never nothing (T10)", (_, art) => {
+      town(art());
+      expect(towerProps()).toEqual([]);
+      const mine = towerBlocks();
+      expect(mine).toHaveLength(1);
+      expect(mine[0][6]).toBeGreaterThan(WALL_HEIGHT);
+    });
+
+    it("should sort it by the tower's own sort point, not by where it is drawn (T11)", () => {
+      town(BAKED);
+      const { HUB_BELL_TOWER_SORT: sort } = interiors;
+      expect(towerProps()[0].sprite.depth).toBe(iso.worldDepth(sort.x, sort.y));
+    });
+
+    it("should count it among what covers the player, as the roofs do, and never among the occluders that fade (T12)", () => {
+      const { hub } = town(BAKED);
+      const scene = hub as unknown as {
+        roofCover: { part: unknown; depth: number }[];
+        occluders: { items: { sprite: Made }[] };
+        drawScenery(walls: unknown[]): void;
+      };
+      scene.drawScenery(TOWN);
+      const [{ sprite }] = towerProps();
+      const cover = scene.roofCover.filter((c) => c.part === sprite);
+      expect(cover).toHaveLength(1);
+      expect(cover[0].depth).toBe(sprite.depth);
+      expect(scene.occluders.items.map((i) => i.sprite)).not.toContain(sprite);
+      expect(sprite.calls).not.toContain("setAlpha");
+    });
+
+    it.each([
+      ["the chapel", IN_CHAPEL],
+      ["the chapel's doorway", IN_CHAPEL_DOORWAY],
+      ["the Inn", IN_INN],
+      ["the store", IN_STORE],
+      ["the smithy", IN_SMITHY],
+    ])("should hide it with the street while the player stands in %s, and show it whole on the street again (T13, T14)", (_, inside) => {
+      const { hub, standIn } = town(BAKED);
+      const [{ sprite }] = towerProps();
+      expect(sprite.visible).toBe(true);
+      standIn(inside);
+      expect((hub as unknown as TowerHub).playerBuilding).toBeDefined();
+      expect(sprite.visible).toBe(false);
+      standIn(ON_THE_STREET);
+      expect(sprite.visible).toBe(true);
+      // behind it, in its pocket: still drawn whole, the player shows through as a silhouette
+      standIn({ x: TOWER[1] - 30, y: TOWER[2] - 30 });
+      expect(sprite.visible).toBe(true);
+    });
+
+    it("should hide its placeholder block indoors too", () => {
+      const { standIn } = town(BARE);
+      const blocks = vi.mocked(iso.addUprightBlock).mock.results[vi.mocked(iso.addUprightBlock).mock.calls.findIndex((c) => sameRect(c, TOWER))]
+        .value as Made[];
+      expect(blocks.length).toBeGreaterThan(0);
+      standIn(IN_INN);
+      expect(blocks.every((b) => !b.visible)).toBe(true);
+      standIn(ON_THE_STREET);
+      expect(blocks.every((b) => b.visible)).toBe(true);
+    });
+
+    it("should add no light for it: the bell stage is unlit (T15)", () => {
+      const lit = (walls: typeof TOWN) => {
+        const { hub } = hubOnStage() as unknown as { hub: InteriorHub };
+        hub.art = BAKED;
+        hub.lightMap = { add: vi.fn() };
+        hub.renderStructures(walls);
+        return hub.lightMap.add.mock.calls.length;
+      };
+      expect(BAKED.light(interiors.BELL_TOWER_SHEET)).toBeUndefined();
+      expect(lit(TOWN)).toBe(lit(TOWN.filter((w) => w !== TOWER_WALL)));
+    });
+
+    it("should leave the chapel's west gable plain and crown its east gable; the other houses' gables are as they were (T16)", () => {
+      const { hub } = town(BAKED);
+      const roofs = (hub as unknown as { roofs: { house: { id: string }; parts: Made[] }[] }).roofs;
+      const gablesOf = (id: string) => roofs.find((r) => r.house.id === id)!.parts.filter((m) => /roof_gable_/.test(String(m.args[3])));
+      const indexOf = (m: Made) => Number(String(m.args[3]).split("/")[3]);
+      const chapel = { id: "chapel", ...interiors.HUB_CHAPEL };
+      const plan = roofs_.planGables(chapel, 20, "chapel_", ["w"]);
+      expect(gablesOf("chapel").map(indexOf)).toEqual(plan.map((p) => p.index));
+      const westX = iso.worldToScreen(chapel.x + 10, chapel.y + chapel.height / 2).x;
+      const crowned = gablesOf("chapel").filter((m) => indexOf(m) === roofs_.GABLE_APEX);
+      expect(crowned).toHaveLength(2);
+      // both stand at the east end: screen-right of the ridge's west end
+      for (const m of crowned) expect(m.args[0] as number).toBeGreaterThan(westX + 100);
+      for (const id of ["inn", "store", "smithy"]) expect(gablesOf(id).every((m) => indexOf(m) === 0), id).toBe(true);
+    });
+
+    it("should draw no block for a tower the state does not carry", () => {
+      vi.mocked(iso.addUprightBlock).mockClear();
+      const { hub } = hubOnStage() as unknown as { hub: InteriorHub };
+      hub.art = BAKED;
+      hub.renderStructures(TOWN.filter((w) => w !== TOWER_WALL));
+      expect(vi.mocked(iso.addUprightBlock).mock.calls.filter((c) => sameRect(c, TOWER))).toEqual([]);
+    });
+
+    it("should still build a house from a lone-id wall on any other rect: the tower is told by its rect", () => {
+      const { hub } = hubOnStage() as unknown as { hub: InteriorHub };
+      hub.art = BAKED;
+      hub.lightMap = { add: vi.fn() };
+      hub.renderStructures([...TOWN, wall("shed-wall", "shed", 1700, 1500, 140, 140)]);
+      expect((hub as unknown as TowerHub).roofs.map((r) => r.house.id).sort()).toEqual([...HOUSE_IDS, "shed"].sort());
+    });
+  });
+
   it("should hide every room, and whoever is in one, while its roof is on", () => {
     const { hub, rival, room } = town(BAKED);
     for (const id of ["inn", "store", "smithy", "chapel"]) {
@@ -3786,7 +3956,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
 
       const seed = world.worldSeed("hub");
       const { MASONRY_WALLS, TIMBER_WALLS, INTERIOR_PARTITION, planWalls, thicknessPx } = walls_;
-      const houses = world.housesFrom(TOWN);
+      // the bell tower's wall is no house and no loose wall: it casts no wall shadow (FS-R4MYX T10)
+      const houses = world.housesFrom(TOWN.filter((w) => w !== TOWER_WALL));
       const expected = [
         // a wall of no house casts as a back wall (R28)
         ...planWallShadows(planWalls([LOOSE], seed), thicknessPx(TIMBER_WALLS)),
@@ -3962,7 +4133,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
 
   describe("the chapel (FS-R4MYX §C R14–R15, §E R23–R25)", () => {
     /** In the chapel's aisle, between the pew rows. */
-    const IN_CHAPEL = { x: 1450, y: 1320 };
+    const IN_CHAPEL = { x: 710, y: 1520 };
     const chapelRect = (sheet: string) => interiors.HUB_FURNISHINGS.filter((f) => f.sheet === sheet).map((f) => f.rect);
 
     /** The shipped art, with the chapel's own sheets (I-R4MYX-8's bake) baked or taken away. */
@@ -5830,10 +6001,10 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
     vi.restoreAllMocks();
   });
 
-  it("should fit the town's whole grown diamond, 2000 × 1700, the one hub size (FS-R4MYX R22)", () => {
+  it("should fit the town's whole grown diamond, 2000 × 2200, the one hub size (FS-R4MYX R22, T26 as amended, A5)", () => {
     const { render, map } = townWithMap();
     render();
-    expect((map() as unknown as { world: unknown }).world).toEqual({ width: 2000, height: 1700 });
+    expect((map() as unknown as { world: unknown }).world).toEqual({ width: 2000, height: 2200 });
   });
 
   it("should build no map before a state carries the town's walls, then one with the first that does", () => {
@@ -7255,12 +7426,12 @@ describe("HubScene auras (FS-1J1CB R35)", () => {
 
 const graveyard = await import("@/render/world/hubGraveyard");
 
-describe("HubScene the graveyard, the belfry and the wayside cross (FS-R4MYX R27–R30, R41; FS-KYPQ9 §A.9)", () => {
+describe("HubScene the graveyard and the wayside cross (FS-R4MYX R27–R29, R41, T17–T20; FS-KYPQ9 §A.9)", () => {
   type Manifest = { sheets: Record<string, { animations: Record<string, { frames: unknown[][] }> }> };
   const SHIPPED = (): Manifest =>
     JSON.parse(readFileSync(new URL("../../public/art/manifest.json", import.meta.url), "utf8")) as Manifest;
-  /** The sheets the graveyard, the belfry and the wayside cross draw from, the reused dead trees among them. */
-  const SHEETS = ["headstone", "grave_flowers", "grave_mound", "stone_cross", "belfry", "wayside_cross", "graveyard_wall", "tree_dead", "tree_dead_snag"];
+  /** The sheets the graveyard and the wayside cross draw from, the reused dead trees among them. */
+  const SHEETS = ["headstone", "grave_flowers", "grave_mound", "stone_cross", "wayside_cross", "graveyard_wall", "tree_dead", "tree_dead_snag"];
 
   /**
    * The shipped manifest with the graveyard's sheets as the bake lays them out (I-R4MYX-8), on a
@@ -7280,6 +7451,7 @@ describe("HubScene the graveyard, the belfry and the wayside cross (FS-R4MYX R27
     m.sheets.grave_flowers = sheet({ fresh: 1, withered: 1 });
     m.sheets.grave_mound = sheet({ default: 1 });
     m.sheets.stone_cross = sheet({ default: 1 });
+    // older art than the code: a manifest that still has the bell frame's sheet (T17)
     m.sheets.belfry = sheet({ default: 1 });
     m.sheets.wayside_cross = sheet({ default: 1 });
     m.sheets.graveyard_wall = sheet({ x: 2, y: 2 });
@@ -7302,16 +7474,8 @@ describe("HubScene the graveyard, the belfry and the wayside cross (FS-R4MYX R27
     drawScenery(walls: unknown[]): void;
   }
 
-  /** The town's walls as hub_map.go lays them out, from its golden: blocked() has the last word. */
-  const TOWN_WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
-    townOutline(b).map(([x, y, width, height], k) => ({
-      entity_id: `b${i}w${k}`,
-      house_id: `b${i}`,
-      position: { x, y },
-      width,
-      height,
-    })),
-  );
+  /** The town's walls as hub_map.go lays them out, the bell tower's included, from its golden: blocked() has the last word. */
+  const TOWN_WALLS = townWalls();
 
   /** The scenery drawn round the town with `manifest`: what was placed, and the hub. */
   function scenery(manifest: Manifest) {
@@ -7333,7 +7497,7 @@ describe("HubScene the graveyard, the belfry and the wayside cross (FS-R4MYX R27
   }
 
   const same = (a: { x: number; y: number }, b: { x: number; y: number }) => a.x === b.x && a.y === b.y;
-  const ALL = [...graveyard.HUB_GRAVEYARD, ...graveyard.HUB_GRAVEYARD_WALL, graveyard.HUB_BELFRY, graveyard.HUB_WAYSIDE_CROSS];
+  const ALL = [...graveyard.HUB_GRAVEYARD, ...graveyard.HUB_GRAVEYARD_WALL, graveyard.HUB_WAYSIDE_CROSS];
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -7342,24 +7506,32 @@ describe("HubScene the graveyard, the belfry and the wayside cross (FS-R4MYX R27
   it("should stand every piece on its spot with its state and variant when the sheets exist", () => {
     const { placed } = scenery(withGraveyardArt());
     for (const piece of ALL) {
-      const mine = placed.filter((p) => p.sheet === piece.sheet && same(p.at, piece.at));
+      // by its animation too: where two wall runs meet at a corner, a trimmed x tile and a trimmed
+      // y tile share one origin
+      const mine = placed.filter((p) => p.sheet === piece.sheet && same(p.at, piece.at) && p.animation === piece.animation);
       expect(mine, `${piece.sheet} at (${piece.at.x}, ${piece.at.y})`).toHaveLength(1);
       expect([mine[0].animation, mine[0].index]).toEqual([piece.animation, piece.index ?? 0]);
     }
   });
 
-  it("should fade the tall pieces over the player: the crosses, the dead trees, the belfry and the wayside cross", () => {
+  it("should draw no bell frame by the door, even from a manifest that still has its sheet (T17)", () => {
+    const { placed } = scenery(withGraveyardArt());
+    expect(placed.filter((p) => /belfry/.test(p.sheet))).toEqual([]);
+    expect(Object.keys(graveyard)).not.toContain("HUB_BELFRY");
+  });
+
+  it("should fade the tall pieces over the player: the crosses, the dead trees and the wayside cross", () => {
     const { hub, placed } = scenery(withGraveyardArt());
     const fading = new Set(hub.occluders.items.map((i) => i.sprite));
     const ours = placed.filter((p) => ALL.some((g) => g.sheet === p.sheet && same(g.at, p.at)));
     const tall = ours.filter((p) => fading.has(p.sprite)).map((p) => p.sheet).sort();
-    expect(tall).toEqual(["belfry", "stone_cross", "stone_cross", "tree_dead", "tree_dead", "tree_dead_snag", "wayside_cross"]);
+    expect(tall).toEqual(["stone_cross", "stone_cross", "tree_dead", "tree_dead", "tree_dead_snag", "wayside_cross"]);
   });
 
   it("should sort the wall's pieces by their tile's back corner and trim the last of a run", () => {
     const { placed } = scenery(withGraveyardArt());
     for (const piece of graveyard.HUB_GRAVEYARD_WALL) {
-      const { sprite } = placed.find((p) => p.sheet === "graveyard_wall" && same(p.at, piece.at))!;
+      const { sprite } = placed.find((p) => p.sheet === "graveyard_wall" && same(p.at, piece.at) && p.animation === piece.animation)!;
       expect(sprite.depth).toBe(iso.worldDepth(piece.depthAt.x, piece.depthAt.y));
       expect(sprite.calls.includes("setCrop")).toBe(piece.keep < 1);
     }
@@ -7373,7 +7545,7 @@ describe("HubScene the graveyard, the belfry and the wayside cross (FS-R4MYX R27
     expect(flowers.sprite.depth).toBeGreaterThan(mound.sprite.depth!);
   });
 
-  it("should draw nothing of the graveyard, the belfry or the wayside cross without their sheets, and say which are missing", () => {
+  it("should draw nothing of the graveyard or the wayside cross without their sheets, and say which are missing", () => {
     const { placed, warned } = scenery(withoutGraveyardArt());
     expect(placed.filter((p) => ALL.some((g) => g.sheet === p.sheet && same(g.at, p.at)))).toEqual([]);
     const warning = warned.find((w) => w.startsWith("hub: no art for"));

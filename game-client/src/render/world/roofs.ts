@@ -100,7 +100,10 @@ export interface GablePiece {
   sheet: `${string}roof_gable_x` | `${string}roof_gable_y`;
   /** The roof half it closes, by that half's downhill side: n/s on an x ridge, e/w on a y ridge. */
   animation: string;
-  /** Its frame: `GABLE_APEX` for the piece against the ridge, 0 (the plain end wall) elsewhere. */
+  /**
+   * Its frame: `GABLE_APEX` for the piece against the ridge, 0 (the plain end wall) elsewhere, and
+   * at an end the roof names plain (`GableEnd`).
+   */
   index: number;
   /** World position of its footprint centre, on the end wall's centreline. */
   at: Point;
@@ -124,6 +127,12 @@ export interface GablePiece {
 export const GABLE_APEX = 1;
 
 /**
+ * One end of a roof, by the side of the house its gable closes: west or east under a ridge along
+ * x, north or south under one along y.
+ */
+export type GableEnd = "n" | "e" | "s" | "w";
+
+/**
  * The timber gables that close a roof's two ends (FS-9PN7X, ADR-0036): the triangle between an end
  * wall's top and the roof's slopes, so a closed block never shows its inside under the roof.
  *
@@ -133,11 +142,15 @@ export const GABLE_APEX = 1;
  * on the side wall's centreline, where the corner post stands, so none pokes out under the eave.
  * `wallThickness` is the server's (20 world px for the hub and runs alike); `prefix` names the roof
  * set, as `planRoof`'s.
+ *
+ * An end named in `plain` lays the plain frame at its apex too, so nothing crowns it (the chapel's
+ * west end, where its bell tower stands: FS-R4MYX T16). An end the ridge does not have is ignored.
  */
 export function planGables(
   house: House,
   wallThickness: number,
   prefix = "",
+  plain: readonly GableEnd[] = [],
 ): GablePiece[] {
   const alongX = house.width >= house.height;
   const across = alongX ? house.height : house.width;
@@ -152,15 +165,16 @@ export function planGables(
   // from the ridge to the side walls' centreline
   const reach = across / 2 - half;
   const count = Math.max(1, Math.ceil(reach / T - 1e-6));
-  const ends = alongX
-    ? [house.x + half, house.x + house.width - half]
-    : [house.y + half, house.y + house.height - half];
+  const ends: [GableEnd, number][] = alongX
+    ? [["w", house.x + half], ["e", house.x + house.width - half]]
+    : [["n", house.y + half], ["s", house.y + house.height - half]];
   const [downhillFar, downhillNear] = alongX ? ["s", "n"] : ["e", "w"];
   const point = (along: number, acrossAt: number): Point =>
     alongX ? { x: along, y: acrossAt } : { x: acrossAt, y: along };
 
   const pieces: GablePiece[] = [];
-  for (const end of ends)
+  for (const [side, end] of ends) {
+    const crowned = !plain.includes(side);
     for (const [animation, sign] of [
       [downhillFar, 1],
       [downhillNear, -1],
@@ -172,7 +186,7 @@ export function planGables(
         pieces.push({
           sheet: `${prefix}roof_gable_${alongX ? "x" : "y"}`,
           animation,
-          index: k === 0 ? GABLE_APEX : 0,
+          index: k === 0 && crowned ? GABLE_APEX : 0,
           at: point(end, centre),
           lift: base + (rows - (inner + T) / T) * rise - GABLE_FOOT,
           // the end wall's back face, a tile before the piece's low corner: behind the wall
@@ -180,6 +194,7 @@ export function planGables(
           depthAt: point(end - half, centre - T / 2 - T),
         });
       }
+  }
   return pieces;
 }
 

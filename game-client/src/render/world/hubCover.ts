@@ -17,8 +17,14 @@
  * `NPC_BODY_HALF` either side along screen x. Ground east or south of the eaves is in front of the
  * building and never hidden; the hidden ground lies north and west of it, in its columns.
  *
+ * The chapel's bell tower has a bulk too (§Change: The chapel moves to the far left and gains a
+ * bell tower, T23): its footprint raised as a box to the top of what is drawn there
+ * (`BELL_TOWER_TOP`). And the model protects one more thing: the dev test room's gate's ground
+ * (T3, `devGateGround`).
+ *
  * Pure maths over the projection and the bake's heights, no drawing. The scene does not read it:
- * the tests hold the town's outdoor people and its graveyard to it (hubCover.test.ts).
+ * the tests hold the town's outdoor people, its graveyard and the dev gate's ground to it
+ * (hubCover.test.ts).
  */
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
@@ -69,7 +75,15 @@ export function ridgeAllowance(roof: RoofSet): number {
  */
 export const ROOF_OVERDRAW = 10;
 
-/** One roof tile of the bulk: its square and the height drawn over each point of it. */
+/**
+ * How far above its footprint's centre the bell tower is drawn, in screen px (T23): the top of
+ * the `chapel_tower` sheet's frame above its origin, spire and cross included. Named for the tests
+ * that run without the art; `hubCover.test.ts` derives it from the manifest's frame (its anchor's
+ * height, rounded up) and fails when the art and the number part.
+ */
+export const BELL_TOWER_TOP = 600;
+
+/** One piece of a bulk: its ground rect (a roof tile's square, or the tower's footprint) and the height drawn over each point of it. */
 interface BulkTile {
   square: Rect;
   /** Screen px of height at a world point of the square. */
@@ -127,6 +141,47 @@ export function bulkOf(footprint: Rect, roof: RoofSet): Bulk {
     };
   });
   return { tiles };
+}
+
+/**
+ * The bell tower's bulk (T23): its footprint as one box, drawn up to `top` screen px over every
+ * point of it. A box to the sheet's drawn top hides more than the spire does; it is the model
+ * until a test needs the room.
+ */
+export function bellTowerBulk(footprint: Rect, top: number = BELL_TOWER_TOP): Bulk {
+  return { tiles: [{ square: footprint, heightAt: () => top }] };
+}
+
+/**
+ * The dev test room's gate in the hub (game-service dev_test_room.go devTestRoomHubGate, FS-BDRTJ
+ * R4): the gate's point, where its label is drawn, its range (`GateRange`), its arrival, and half
+ * the width of the walk between the two (`PlayerRadius`).
+ */
+export const HUB_DEV_GATE = { at: { x: 120, y: 900 }, range: 80, arrival: { x: 260, y: 900 }, walkHalf: 20 } as const;
+
+/**
+ * The dev gate's ground (T3), as points on a grid no coarser than `step`: the gate's point, every
+ * point within its range of it, its arrival, and the straight walk between the two, a player wide.
+ * No part of the chapel or of its tower may be drawn over any of them.
+ */
+export function devGateGround(step = 10): Point[] {
+  const { at, range, arrival, walkHalf } = HUB_DEV_GATE;
+  const span = (lo: number, hi: number) => {
+    const n = Math.max(1, Math.ceil((hi - lo) / step));
+    return Array.from({ length: n + 1 }, (_, i) => lo + ((hi - lo) * i) / n);
+  };
+  /** Distance from `p` to the walk's line, from the gate to its arrival. */
+  const offTheWalk = (p: Point) => {
+    const [dx, dy] = [arrival.x - at.x, arrival.y - at.y];
+    const t = Math.max(0, Math.min(1, ((p.x - at.x) * dx + (p.y - at.y) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(p.x - (at.x + t * dx), p.y - (at.y + t * dy));
+  };
+  const xs = span(Math.min(at.x - range, arrival.x - walkHalf), Math.max(at.x + range, arrival.x + walkHalf));
+  const ys = span(Math.min(at.y - range, arrival.y - walkHalf), Math.max(at.y + range, arrival.y + walkHalf));
+  const ground = xs.flatMap((x) => ys.map((y) => ({ x, y }))).filter(
+    (p) => Math.hypot(p.x - at.x, p.y - at.y) <= range || offTheWalk(p) <= walkHalf,
+  );
+  return [at, arrival, ...ground];
 }
 
 /**

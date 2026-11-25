@@ -99,7 +99,6 @@ import {
   HEADSTONES,
   MURALS,
   WALL_STATES,
-  belfry,
   chapelAltar,
   chapelCrucifix,
   chapelMural,
@@ -122,6 +121,7 @@ import {
   chapelRoofSlope,
   chapelWall,
 } from "./models/chapelBuilding.js";
+import { chapelTower } from "./models/chapelTower.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -771,7 +771,6 @@ function chapelSheets() {
     sheet("lectern", "lectern", one(lectern)),
     // laid flat on the floor under the altar: no ground shadow, and a hair of pad, like the rug
     sheet("dais", "dais", one(dais), { shadow: false, pad: 0.04 }),
-    sheet("belfry", "belfry", one(belfry)),
     sheet(
       "headstone",
       "headstone",
@@ -863,6 +862,23 @@ function chapelBuildingSheets() {
   return [...walls, ...roof];
 }
 
+/**
+ * The chapel's bell tower (FS-R4MYX §Change: The chapel moves to the far left and gains a bell
+ * tower, T24–T25; models/chapelTower.js): one prop frame on the `chapel` atlas, framed round the
+ * tower wall's 140 × 140 footprint with its anchor on the centre. Unlit (T15), and no baked ground
+ * shadow: a tower this tall would paint its own across the chapel's roof from inside one sprite.
+ */
+function chapelTowerSheet() {
+  return {
+    name: "chapel_tower",
+    group: "chapel",
+    kind: "prop",
+    animations: { default: still(chapelTower) },
+    source: "authored: tools/bake/page/models/chapelTower.js#chapelTower",
+    shadow: false,
+  };
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
@@ -883,4 +899,5 @@ export const CATALOGUE = [
   ...buildingSheets(),
   ...chapelSheets(),
   ...chapelBuildingSheets(),
+  chapelTowerSheet(),
 ].map((s) => ({ licence: LICENCE, ...s }));

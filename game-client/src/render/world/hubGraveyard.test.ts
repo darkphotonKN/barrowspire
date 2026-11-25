@@ -4,9 +4,12 @@ import { describe, expect, it } from "vitest";
 import { WORLD_PX_PER_TILE, worldToScreen, type Point } from "@/render/iso/projection";
 import { decodePng } from "../../../tools/bake/lib/png.mjs";
 import type { WallState } from "@/types/gameState";
+import * as graveyard from "./hubGraveyard";
 import {
   GRAVEYARD_ENCLOSURE,
-  HUB_BELFRY,
+  GRAVEYARD_GAP,
+  GRAVEYARD_LINES,
+  GRAVEYARD_SLOTS,
   HUB_GRAVEYARD,
   HUB_GRAVEYARD_WALL,
   HUB_GRAVEYARD_WALL_RUNS,
@@ -15,7 +18,9 @@ import {
   type GraveyardWallPiece,
 } from "./hubGraveyard";
 import {
+  HUB_CHAPEL_LANE,
   HUB_DOOR_SPURS,
+  HUB_GRAVEYARD_SPUR,
   HUB_PATHS,
   fenceFootprint,
   keepOutBreaches,
@@ -23,11 +28,11 @@ import {
   type Footprint,
   type PropSpot,
 } from "./hubKeepOut";
-import { townDoorGap, townDoorStrip, townOutline } from "./hubTown.fixture";
+import { townDoorGap, townDoorStrip, townWalls } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
 import { BAKE } from "./bake";
 import { gapDoor } from "./buildingLooks";
-import { bulkOf, hiddenBehind } from "./hubCover";
+import { bulkOf, hiddenBehind, bellTowerBulk } from "./hubCover";
 import { townHouseLook } from "./hubInteriors";
 import { ROOF_EAVE } from "./roofs";
 
@@ -58,16 +63,12 @@ function drawnPixels(sheet: string, animation: string, at: Point, alpha = 0): st
   return out;
 }
 
-/** The town's walls as the golden lays them out, the chapel's included (as hubKeepOut.test.ts). */
-const TOWN_WALLS: WallState[] = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
-  townOutline(b).map(([x, y, width, height], k) => ({
-    entity_id: `b${i}w${k}`,
-    house_id: `b${i}`,
-    position: { x, y },
-    width,
-    height,
-  })),
-);
+/**
+ * The town's walls as the golden lays them out, the chapel's and the bell tower's included (as
+ * hubKeepOut.test.ts; FS-R4MYX T9).
+ */
+const TOWN_WALLS: WallState[] = townWalls();
+const CHAPEL = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
 const breaches = (fp: Footprint) => keepOutBreaches(fp, TOWN_WALLS, ROOF_EAVE);
 
 /**
@@ -135,15 +136,17 @@ const insideEnclosure = (fp: Footprint) => {
   return x >= ex && y >= ey && x + w <= ex + ew && y + h <= ey + eh;
 };
 
-/** Every piece's footprint: the graveyard's, each wall piece's, the belfry's and the wayside cross's. */
-const EVERY_PIECE: [string, Footprint][] = [
+/** The graveyard's own pieces' footprints: its stones, mounds, flowers, crosses and trees, and each wall piece. */
+const GRAVEYARD_PIECES: [string, Footprint][] = [
   ...HUB_GRAVEYARD.map((s) => [label(s), spotFootprint(s)] as [string, Footprint]),
   ...HUB_GRAVEYARD_WALL.map((p) => [`${label(p)}, keeping ${p.keep}`, pieceFootprint(p)] as [string, Footprint]),
-  [label(HUB_BELFRY), spotFootprint(HUB_BELFRY)],
-  [label(HUB_WAYSIDE_CROSS), spotFootprint(HUB_WAYSIDE_CROSS)],
 ];
+/** Every piece's footprint: the graveyard's, each wall piece's and the wayside cross's. */
+const EVERY_PIECE: [string, Footprint][] = [...GRAVEYARD_PIECES, [label(HUB_WAYSIDE_CROSS), spotFootprint(HUB_WAYSIDE_CROSS)]];
 
-describe("the graveyard's layout (FS-R4MYX R28)", () => {
+describe("the graveyard's layout (FS-R4MYX R28's counts, T19, T20)", () => {
+  const [A, B, C, , , F, G] = GRAVEYARD_LINES;
+
   it("counts 24 headstones: 10 intact in both shapes, 9 weathered, 5 broken", () => {
     expect(of("headstone")).toHaveLength(24);
     expect(of("headstone", "intact")).toHaveLength(10);
@@ -152,9 +155,9 @@ describe("the graveyard's layout (FS-R4MYX R28)", () => {
     expect(of("headstone", "broken")).toHaveLength(5);
   });
 
-  it("keeps the broken stumps in the two old rows and the fresh mounds in the two new ones", () => {
-    for (const s of of("headstone", "broken")) expect([140, 240], label(s)).toContain(s.at.x);
-    for (const m of of("grave_mound")) expect([340, 440], label(m)).toContain(m.at.x - 25);
+  it("keeps the broken stumps in the three old lines and the fresh mounds in the two newest", () => {
+    for (const s of of("headstone", "broken")) expect([A, B, C], label(s)).toContain(s.at.x);
+    for (const m of of("grave_mound")) expect([F, G], label(m)).toContain(m.at.x - 25);
   });
 
   it("counts 3 fresh mounds and flowers at 6 graves, 4 fresh and 2 withered", () => {
@@ -164,42 +167,41 @@ describe("the graveyard's layout (FS-R4MYX R28)", () => {
     expect(of("grave_flowers", "withered")).toHaveLength(2);
   });
 
-  it("stands the two tall stone crosses and the three dead trees where the table puts them", () => {
+  it("stands the two tall stone crosses and the three dead trees where the plan puts them", () => {
     const tall = (sheet: string) => of(sheet).map((s) => [s.at.x, s.at.y, !!s.tall]);
     expect(tall("stone_cross")).toEqual([
-      [85, 1170, true],
-      [85, 1380, true],
+      [250, 1880, true],
+      [250, 2080, true],
     ]);
     expect(tall("tree_dead")).toEqual([
-      [80, 1060, true],
-      [290, 1050, true],
+      [808, 1816, true],
+      [515, 1850, true],
     ]);
-    expect(tall("tree_dead_snag")).toEqual([[80, 1480, true]]);
+    expect(tall("tree_dead_snag")).toEqual([[250, 1980, true]]);
   });
 
-  it("lays the graves in four rows of seven slots, oldest west, one slot empty, as the table reads", () => {
+  it("lays the graves in seven lines of four slots, oldest west, one slot empty for a dead tree, as the table reads", () => {
+    expect(GRAVEYARD_LINES).toEqual([290, 365, 440, 515, 590, 665, 740]);
+    expect(GRAVEYARD_SLOTS).toEqual([1850, 1940, 2025, 2115]);
     const at = (x: number, y: number) =>
       HUB_GRAVEYARD.filter((s) => s.at.x === x && s.at.y === y && s.sheet === "headstone").map((s) => s.animation)[0] ??
       (of("grave_mound").some((m) => m.at.x === x + 25 && m.at.y === y) ? "mound" : "-");
-    const rows = [140, 240, 340, 440].map((x) => [1080, 1140, 1200, 1260, 1320, 1380, 1440].map((y) => at(x, y)));
-    expect(rows).toEqual([
-      ["broken", "weathered", "intact", "broken", "weathered", "intact", "weathered"],
-      ["intact", "broken", "weathered", "intact", "broken", "weathered", "broken"],
-      ["intact", "weathered", "intact", "mound", "weathered", "intact", "-"],
-      ["intact", "weathered", "intact", "mound", "mound", "intact", "weathered"],
+    expect(GRAVEYARD_LINES.map((x) => GRAVEYARD_SLOTS.map((y) => at(x, y)))).toEqual([
+      ["broken", "weathered", "intact", "broken"],
+      ["intact", "broken", "weathered", "weathered"],
+      ["broken", "intact", "weathered", "broken"],
+      ["-", "intact", "weathered", "weathered"],
+      ["intact", "weathered", "intact", "weathered"],
+      ["mound", "intact", "mound", "intact"],
+      ["intact", "mound", "weathered", "intact"],
     ]);
-  });
-
-  it("is about twice the first graveyard's ground (390 × 350), screen-left of the chapel (FS-R4MYX R27, R28)", () => {
-    const [, , w, h] = ENCLOSURE;
-    expect(w * h).toBeGreaterThanOrEqual(1.9 * 390 * 350);
-    const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
-    // screen x runs with x − y: the enclosure's middle lies left of the chapel's leftmost corner,
-    // and every piece left of the chapel's middle (the belfry and the wayside cross stand by its door)
-    const [ex, ey] = ENCLOSURE;
-    expect(ex + w / 2 - (ey + h / 2)).toBeLessThan(chapel.x - (chapel.y + chapel.h));
-    for (const [what, fp] of EVERY_PIECE.filter(([w]) => !/^(belfry|wayside_cross) /.test(w)))
-      expect(fp.to.x - fp.to.y, what).toBeLessThan(chapel.x + chapel.w / 2 - (chapel.y + chapel.h / 2));
+    // the empty slot holds a dead tree, and every stone and mound's head stands in a slot
+    expect(of("tree_dead").map((t) => t.at)).toContainEqual({ x: GRAVEYARD_LINES[3], y: GRAVEYARD_SLOTS[0] });
+    const heads = [...of("headstone").map((s) => s.at), ...of("grave_mound").map((m) => ({ x: m.at.x - 25, y: m.at.y }))];
+    for (const h of heads) {
+      expect(GRAVEYARD_LINES, `(${h.x}, ${h.y})`).toContain(h.x);
+      expect(GRAVEYARD_SLOTS, `(${h.x}, ${h.y})`).toContain(h.y);
+    }
   });
 
   it("lays each grave's flowers 18 px east of its stone, or of its mound's head", () => {
@@ -219,18 +221,66 @@ describe("the graveyard's layout (FS-R4MYX R28)", () => {
         expect(sort.x + sort.y + (f.layer ?? 0) / 10).toBeGreaterThan(mound.at.x + mound.at.y);
       }
     }
+    // one of the three mounds carries flowers: the Keener's
+    expect(of("grave_flowers").filter((f) => f.depthAt)).toHaveLength(1);
   });
 });
 
-describe("the low broken wall (FS-R4MYX R29)", () => {
-  it("lays the six runs of the table", () => {
+describe("the graveyard lies only along the outside of the chapel's south wall (FS-R4MYX T19)", () => {
+  const south = CHAPEL.y + CHAPEL.h;
+  const [west, east] = [CHAPEL.x, CHAPEL.x + CHAPEL.w];
+
+  it("spans no more than the south wall's x span, wholly south of the wall", () => {
+    const [ex, ey, ew] = ENCLOSURE;
+    expect(ex).toBeGreaterThanOrEqual(west);
+    expect(ex + ew).toBeLessThanOrEqual(east);
+    expect(ey).toBeGreaterThan(south);
+  });
+
+  it.each(GRAVEYARD_PIECES)("%s stands south of the south wall, neither west of the west wall nor east of the east wall", (_, fp) => {
+    const [x, y, w] = squareOf({ ...fp, r: 0 });
+    expect(y).toBeGreaterThan(south);
+    expect(x).toBeGreaterThanOrEqual(west);
+    expect(x + w).toBeLessThanOrEqual(east);
+  });
+
+  it("parts the low wall's north run from the south wall's outer face by a small walkway, 40–80 px", () => {
+    const north = HUB_GRAVEYARD_WALL_RUNS.filter((r) => r.axis === "x" && r.at.y === ENCLOSURE[1]);
+    expect(north.length).toBeGreaterThan(0);
+    for (const run of north) {
+      expect(run.at.y - south).toBeGreaterThanOrEqual(40);
+      expect(run.at.y - south).toBeLessThanOrEqual(80);
+    }
+  });
+
+  it("keeps the walkway itself clear: no piece of the graveyard stands on it", () => {
+    const walkway: Rect4 = [west, south, CHAPEL.w, ENCLOSURE[1] - south];
+    for (const [what, fp] of GRAVEYARD_PIECES) expect(crosses(squareOf({ ...fp, r: 0 }), walkway), what).toBe(false);
+  });
+
+  it("is in front of the chapel and its tower on screen, hidden behind neither (T23)", () => {
+    const foot = { x: CHAPEL.x, y: CHAPEL.y, width: CHAPEL.w, height: CHAPEL.h };
+    const chapel = bulkOf(foot, townHouseLook({ id: "", ...foot }).roof);
+    const { x, y, w, h } = HUB_TOWN_GOLDEN.bellTower;
+    const tower = bellTowerBulk({ x, y, width: w, height: h });
+    for (const [what, fp] of GRAVEYARD_PIECES)
+      for (const p of [fp.from, fp.to]) {
+        expect(hiddenBehind(p, chapel), what).toBe(false);
+        expect(hiddenBehind(p, tower), what).toBe(false);
+      }
+  });
+});
+
+describe("the low broken wall (FS-R4MYX R29, T20)", () => {
+  it("lays the seven runs of the table", () => {
     expect(HUB_GRAVEYARD_WALL_RUNS.map((r) => [r.at.x, r.at.y, r.axis, r.length])).toEqual([
-      [40, 1020, "x", 240],
-      [330, 1020, "x", 250],
-      [40, 1020, "y", 230],
-      [40, 1300, "y", 220],
-      [40, 1520, "x", 450],
-      [580, 1020, "y", 500],
+      [220, 1790, "x", 240],
+      [520, 1790, "x", 320],
+      [220, 1790, "y", 170],
+      [220, 2000, "y", 170],
+      [220, 2170, "x", 620],
+      [840, 1790, "y", 50],
+      [840, 1920, "y", 250],
     ]);
   });
 
@@ -272,40 +322,76 @@ describe("the low broken wall (FS-R4MYX R29)", () => {
 
   it("is HUB_GRAVEYARD_WALL: every run cut into pieces", () => {
     expect(HUB_GRAVEYARD_WALL).toEqual(HUB_GRAVEYARD_WALL_RUNS.flatMap(graveyardWallPieces));
-    expect(HUB_GRAVEYARD_WALL.length).toBe(6 + 7 + 6 + 6 + 12 + 13);
+    expect(HUB_GRAVEYARD_WALL.length).toBe(6 + 8 + 5 + 5 + 16 + 2 + 7);
   });
 
-  it("leaves the south-east corner open, the gap path running into it from the graveyard spur", () => {
+  /** The stretches of one side of the enclosure no run covers, as [from, to] along it. */
+  function openings(axis: "x" | "y", line: number): [number, number][] {
     const [ex, ey, ew, eh] = ENCLOSURE;
-    const south = ey + eh;
-    const GAP: Rect4 = [490, south - 20, ex + ew - 490, 40];
-    // the wall's line stops at the gap's west side: no piece runs on along it
-    for (const p of HUB_GRAVEYARD_WALL.filter((p) => p.animation === "x"))
-      expect(crosses(squareOf({ ...pieceFootprint(p), r: 0 }), GAP), label(p)).toBe(false);
-    const gapPath: Rect4 = [500, 1520, 70, 35];
-    expect(HUB_PATHS).toContainEqual(gapPath);
-    // the path lies within the gap's span and reaches the enclosure's south edge
-    expect(gapPath[0]).toBeGreaterThanOrEqual(490);
-    expect(gapPath[0] + gapPath[2]).toBeLessThanOrEqual(ex + ew);
-    expect(gapPath[1]).toBeLessThanOrEqual(south);
+    const [lo, hi] = axis === "x" ? [ex, ex + ew] : [ey, ey + eh];
+    const spans = HUB_GRAVEYARD_WALL_RUNS.filter((r) => r.axis === axis && (axis === "x" ? r.at.y : r.at.x) === line)
+      .map((r): [number, number] => (axis === "x" ? [r.at.x, r.at.x + r.length] : [r.at.y, r.at.y + r.length]))
+      .sort((a, b) => a[0] - b[0]);
+    const open: [number, number][] = [];
+    let at = lo;
+    for (const [from, to] of spans) {
+      if (from > at) open.push([at, from]);
+      at = Math.max(at, to);
+    }
+    if (at < hi) open.push([at, hi]);
+    return open;
+  }
+
+  it("has a collapsed stretch on its north side and on its west side, and a whole south side", () => {
+    const [ex, ey, , eh] = ENCLOSURE;
+    expect(openings("x", ey)).toEqual([[460, 520]]);
+    expect(openings("y", ex)).toEqual([[1960, 2000]]);
+    expect(openings("x", ey + eh)).toEqual([]);
+  });
+
+  it("has one gap, in its east side, facing the path: the graveyard spur runs into it from the lane (T22)", () => {
+    const [ex, , ew] = ENCLOSURE;
+    expect(GRAVEYARD_GAP.x).toBe(ex + ew);
+    expect(openings("y", GRAVEYARD_GAP.x)).toEqual([[GRAVEYARD_GAP.from, GRAVEYARD_GAP.to]]);
+    // a gap is a way in a player's body passes and a path leads to; a collapsed stretch is neither
+    const [sx, sy, sw, sh] = HUB_GRAVEYARD_SPUR;
+    expect(sx).toBe(GRAVEYARD_GAP.x);
+    expect(sy).toBeGreaterThanOrEqual(GRAVEYARD_GAP.from);
+    expect(sy + sh).toBeLessThanOrEqual(GRAVEYARD_GAP.to);
+    expect(sx + sw).toBe(HUB_CHAPEL_LANE[0]);
+    expect(HUB_PATHS).toContainEqual(HUB_GRAVEYARD_SPUR);
+    // no path leads to either collapsed stretch
+    for (const [x, y, w, h] of HUB_PATHS) {
+      expect(crosses([x, y, w, h], [460, ENCLOSURE[1] - 8, 60, 16]), `[${x}, ${y}, ${w}, ${h}]`).toBe(false);
+      expect(crosses([x, y, w, h], [ex - 8, 1960, 16, 40]), `[${x}, ${y}, ${w}, ${h}]`).toBe(false);
+    }
+    // no wall piece stands in the gap
+    const gap: Rect4 = [GRAVEYARD_GAP.x - 8, GRAVEYARD_GAP.from, 16, GRAVEYARD_GAP.to - GRAVEYARD_GAP.from];
+    for (const p of HUB_GRAVEYARD_WALL) expect(crosses(squareOf({ ...pieceFootprint(p), r: 0 }), gap), label(p)).toBe(false);
   });
 });
 
-describe("the belfry (FS-R4MYX R30)", () => {
-  it("stands tall by the chapel's door, north of its spur", () => {
-    expect(HUB_BELFRY).toEqual({ sheet: "belfry", at: { x: 1635, y: 1220 }, r: 20, tall: true });
-    const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
-    const threshold = townDoorStrip(townDoorGap(chapel), 80, "outside");
-    expect(crosses(squareOf(spotFootprint(HUB_BELFRY)), threshold)).toBe(false);
+describe("the bell frame by the door is gone: the bell hangs in the tower (FS-R4MYX T17)", () => {
+  it("exports no HUB_BELFRY", () => {
+    expect(Object.keys(graveyard)).not.toContain("HUB_BELFRY");
+  });
+
+  it("lays no belfry sheet among the graveyard's pieces or by the door", () => {
+    const sheets = [...HUB_GRAVEYARD, ...HUB_GRAVEYARD_WALL, HUB_WAYSIDE_CROSS].map((s) => s.sheet);
+    expect(sheets.filter((sheet) => /belfry/.test(sheet))).toEqual([]);
   });
 });
 
-describe("the wayside cross (FS-R4MYX R41)", () => {
-  const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
+describe("the wayside cross (FS-R4MYX R41, T18)", () => {
+  const chapel = CHAPEL;
   const square = squareOf(spotFootprint(HUB_WAYSIDE_CROSS));
 
   it("stands tall, a stone calvary on its own sheet, by the chapel's door", () => {
-    expect(HUB_WAYSIDE_CROSS).toEqual({ sheet: "wayside_cross", at: { x: 1635, y: 1480 }, r: 20, tall: true });
+    expect(HUB_WAYSIDE_CROSS).toEqual({ sheet: "wayside_cross", at: { x: 895, y: 1680 }, r: 20, tall: true });
+  });
+
+  it("keeps its place relative to the door: (675, 380) from the chapel's corner, as built (T18)", () => {
+    expect([HUB_WAYSIDE_CROSS.at.x - chapel.x, HUB_WAYSIDE_CROSS.at.y - chapel.y]).toEqual([675, 380]);
   });
 
   it("stands clear of the chapel's doorway on screen: its door, its head and its jambs", () => {
@@ -330,8 +416,8 @@ describe("the wayside cross (FS-R4MYX R41)", () => {
     expect(spur).toBeDefined();
     expect(square[1]).toBeGreaterThanOrEqual(spur[1] + spur[3]);
     expect(square[0]).toBeGreaterThanOrEqual(chapel.x + chapel.w + ROOF_EAVE);
-    const lane = HUB_PATHS.find(([x, , w, h]) => w === 70 && h > 400 && x > chapel.x + chapel.w)!;
-    expect(square[0] + square[2]).toBeLessThanOrEqual(lane[0]);
+    expect(HUB_PATHS).toContainEqual(HUB_CHAPEL_LANE);
+    expect(square[0] + square[2]).toBeLessThanOrEqual(HUB_CHAPEL_LANE[0]);
   });
 
   it("stands on no path and no door threshold", () => {
@@ -340,9 +426,11 @@ describe("the wayside cross (FS-R4MYX R41)", () => {
     expect(crosses(square, threshold)).toBe(false);
   });
 
-  it("is drawn behind no town building: east of the chapel's eave, in front of it (R39)", () => {
+  it("is drawn behind no town building nor the bell tower: east of the chapel's eave, in front of it (R39, T23)", () => {
     const { at, r } = HUB_WAYSIDE_CROSS;
     const corners = [at, ...[-r, r].flatMap((dx) => [-r, r].map((dy) => ({ x: at.x + dx, y: at.y + dy })))];
+    const { x, y, w, h } = HUB_TOWN_GOLDEN.bellTower;
+    for (const p of corners) expect(hiddenBehind(p, bellTowerBulk({ x, y, width: w, height: h })), `the tower over (${p.x}, ${p.y})`).toBe(false);
     for (const b of HUB_TOWN_GOLDEN.buildings) {
       const foot = { x: b.x, y: b.y, width: b.w, height: b.h };
       const bulk = bulkOf(foot, townHouseLook({ id: "", ...foot }).roof);
@@ -351,7 +439,13 @@ describe("the wayside cross (FS-R4MYX R41)", () => {
   });
 });
 
-describe("every graveyard piece keeps its place (FS-R4MYX R27)", () => {
+describe("every graveyard piece keeps its place (FS-R4MYX R27, T19)", () => {
+  it("checks K1 against the bell tower's wall too (T9)", () => {
+    const { x, y, w, h } = HUB_TOWN_GOLDEN.bellTower;
+    expect(TOWN_WALLS).toContainEqual(expect.objectContaining({ position: { x, y }, width: w, height: h }));
+    expect(breaches(spotFootprint({ sheet: "headstone", at: { x: x - 15, y: y + h / 2 }, r: 13 }))).toContain("K1");
+  });
+
   it.each(EVERY_PIECE)("%s clears K1–K8", (_, fp) => {
     expect(breaches(fp)).toEqual([]);
   });
@@ -414,7 +508,8 @@ describe("the graveyard's checks catch a bad placement", () => {
   });
 
   it("flags a stone on the graveyard spur (K2)", () => {
-    const stone: PropSpot = { sheet: "headstone", at: { x: 700, y: 1580 }, r: 13 };
+    const [sx, sy, sw, sh] = HUB_GRAVEYARD_SPUR;
+    const stone: PropSpot = { sheet: "headstone", at: { x: sx + sw / 2, y: sy + sh / 2 }, r: 13 };
     expect(breaches(spotFootprint(stone))).toContain("K2");
   });
 

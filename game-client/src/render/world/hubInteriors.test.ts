@@ -8,12 +8,16 @@ import {
   HUB_FIXED_RESIDENTS,
   HUB_FURNISHINGS,
   HUB_INDOOR_DRESSING,
+  CHAPEL_EAST_LANCETS,
+  CHAPEL_NAVE_LANCETS,
   CHAPEL_WEST_BEHIND_HUNG,
+  HUB_BELL_TOWER,
   HUB_CHAPEL,
   HUB_INN,
   INN_FLOOR,
   TOWN_ROOF,
   furnishingOf,
+  isBellTower,
   isChapel,
   isFurnishing,
   isInn,
@@ -22,15 +26,17 @@ import {
   partitionInside,
   placeholderWarning,
   residentFacing,
+  splitBellTower,
   splitFurnishings,
   type IndoorSpot,
 } from "./hubInteriors";
 import { eastDoorWalls } from "./eastDoor.fixture";
 import { HUB_GRAVEYARD } from "./hubGraveyard";
 import { buildingAt, hidden } from "./indoors";
-import { TOWN_WALL_THICK, townDoorGap, townDoorStrip, townOutline } from "./hubTown.fixture";
+import { TOWN_WALL_THICK, townDoorGap, townDoorStrip, townOutline, townWalls } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN, type TownRect } from "./hubTownGolden";
 import { doorGaps, doorHead } from "./buildingLooks";
+import { GABLE_APEX, planGables } from "./roofs";
 import { CHAPEL_WALLS, MASONRY_WALLS, TIMBER_WALLS } from "./walls";
 
 /**
@@ -197,6 +203,80 @@ describe("HUB_CHAPEL, the chapel's footprint (hub_map.go hubBuildings; FS-R4MYX 
   });
 });
 
+describe("the chapel moved whole (FS-R4MYX §Change: the chapel moves to the far left, T1, T9)", () => {
+  const from = (p: { x: number; y: number }) => [p.x - HUB_CHAPEL.x, p.y - HUB_CHAPEL.y];
+
+  it("should stand the chapel at the golden's place, in the map's south-west", () => {
+    expect(HUB_CHAPEL).toEqual({ x: 220, y: 1300, width: 620, height: 440 });
+  });
+
+  it("should keep every indoor piece at its shipped offset from the chapel's north-west corner", () => {
+    const inChapel = HUB_INDOOR_DRESSING.filter((s) => insideHouse(s.at, { id: "", ...HUB_CHAPEL }));
+    expect(inChapel.map((s) => [s.sheet, ...from(s.at)])).toEqual([
+      ["dais", 145, 220],
+      ["lectern", 230, 150],
+      ["candelabra", 175, 150],
+      ["candelabra", 175, 290],
+      ["chapel_crucifix", 22, 220],
+      ["chapel_mural", 22, 110],
+      ["chapel_mural", 22, 330],
+    ]);
+  });
+
+  it("should keep the window bays at their shipped offsets: six nave lancets and one each side of the door (W3–W5)", () => {
+    expect(CHAPEL_NAVE_LANCETS.map((x) => x - HUB_CHAPEL.x)).toEqual([100, 180, 260, 340, 420, 500]);
+    expect(CHAPEL_EAST_LANCETS.map((y) => y - HUB_CHAPEL.y)).toEqual([100, 360]);
+    // mirrored about the wall's middle and about the door's centre, to within half a tile
+    const [midX, midY] = [HUB_CHAPEL.x + HUB_CHAPEL.width / 2, HUB_CHAPEL.y + HUB_CHAPEL.height / 2];
+    expect(Math.abs(CHAPEL_NAVE_LANCETS.reduce((sum, x) => sum + x - midX, 0) / CHAPEL_NAVE_LANCETS.length)).toBeLessThanOrEqual(20);
+    expect(Math.abs((CHAPEL_EAST_LANCETS[0] + CHAPEL_EAST_LANCETS[1]) / 2 - midY)).toBeLessThanOrEqual(20);
+  });
+});
+
+describe("HUB_BELL_TOWER, the bell tower's rect (hub_map.go hubBellTower; FS-R4MYX T6, T9, T10)", () => {
+  const { x, y, w, h } = HUB_TOWN_GOLDEN.bellTower;
+  const tower = wall("tower", "tower-own-id", [x, y, w, h]);
+  const TOWN_AND_TOWER = [...BUILDING_WALLS, tower];
+
+  it("should mirror the golden's bell tower", () => {
+    expect(HUB_BELL_TOWER).toEqual({ x, y, width: w, height: h });
+  });
+
+  it("should stand it wholly west of the chapel's west wall's outer face, against it, on the ridge's line (T6, T14)", () => {
+    expect(HUB_BELL_TOWER.x + HUB_BELL_TOWER.width).toBe(HUB_CHAPEL.x);
+    expect(HUB_BELL_TOWER.y + HUB_BELL_TOWER.height / 2).toBe(HUB_CHAPEL.y + HUB_CHAPEL.height / 2);
+    expect(HUB_BELL_TOWER.width).toBe(HUB_BELL_TOWER.height);
+  });
+
+  it("should tell the tower's wall by its rect, and no other wall of the town", () => {
+    expect(isBellTower(tower)).toBe(true);
+    expect(BUILDING_WALLS.filter(isBellTower)).toEqual([]);
+    expect(isBellTower(wall("near", "x", [x + 1, y, w, h]))).toBe(false);
+    expect(isBellTower(wall("smaller", "x", [x, y, w - 10, h]))).toBe(false);
+    expect(townWalls().filter(isBellTower)).toHaveLength(1);
+  });
+
+  it("should take the tower's wall out of the walls houses are built from, so it makes no house", () => {
+    const { tower: found, rest } = splitBellTower(TOWN_AND_TOWER);
+    expect(found).toBe(tower);
+    expect(rest).toEqual(BUILDING_WALLS);
+    expect(housesFrom(rest).map((house) => house.id)).toEqual(HOUSES.map((house) => house.id));
+    // left in, its lone house id would build a fifth house
+    expect(housesFrom(TOWN_AND_TOWER)).toHaveLength(HOUSES.length + 1);
+  });
+
+  it("should find no tower in a state without one, and leave its walls as they came", () => {
+    expect(splitBellTower(BUILDING_WALLS)).toEqual({ tower: undefined, rest: BUILDING_WALLS });
+  });
+
+  it("should leave a lone-id wall on any other rect a house as before: the tower is told by its rect, not by standing alone", () => {
+    const shed = wall("shed", "shed-own-id", [1700, 1500, 140, 140]);
+    const { tower: found, rest } = splitBellTower([...BUILDING_WALLS, shed]);
+    expect(found).toBeUndefined();
+    expect(housesFrom(rest).map((house) => house.id)).toContain("shed-own-id");
+  });
+});
+
 describe("townHouseLook, how each town building is built", () => {
   it("should build the Inn in timber with no lit kind, on planks, under the town's roof", () => {
     const { sheets, floor, roof } = townHouseLook(HOUSES[0]);
@@ -228,12 +308,28 @@ describe("townHouseLook, how each town building is built", () => {
     });
 
     it("should roof it in the chapel_roof_ set, with no chimney: a church has no hearth to vent", () => {
-      expect(townHouseLook(chapel()).roof).toEqual({ prefix: "chapel_", chimney: false });
+      expect(townHouseLook(chapel()).roof).toMatchObject({ prefix: "chapel_", chimney: false });
+    });
+
+    it("should leave its west gable plain, where the bell tower stands, and crown its east gable; no other house names a plain end (§Change: the bell tower, T16)", () => {
+      const { roof } = townHouseLook(chapel());
+      expect(roof.plainGables).toEqual(["w"]);
+      // the tower stands against that end: west of the west wall, on the ridge's line
+      expect(HUB_BELL_TOWER.x + HUB_BELL_TOWER.width).toBe(HUB_CHAPEL.x);
+      const gables = planGables(chapel(), 20, roof.prefix, roof.plainGables);
+      const [west, east] = [HUB_CHAPEL.x + 10, HUB_CHAPEL.x + HUB_CHAPEL.width - 10];
+      expect(gables.filter((g) => g.at.x === west).every((g) => g.index === 0)).toBe(true);
+      expect(gables.filter((g) => g.at.x === east && g.index === GABLE_APEX)).toHaveLength(2);
+      for (const house of HOUSES.filter((h) => !isChapel(h))) {
+        const look = townHouseLook(house);
+        expect(look.roof.plainGables ?? []).toEqual([]);
+        expect(planGables(house, 20, look.roof.prefix, look.roof.plainGables)).toEqual(planGables(house, 20, look.roof.prefix));
+      }
     });
 
     it("should stand it on the town's flagstone, drawn as baked: no tint over any part (owner feedback F6)", () => {
       const { fixed, ...look } = townHouseLook(chapel());
-      expect(look).toEqual({ sheets: CHAPEL_WALLS, roof: { prefix: "chapel_", chimney: false } });
+      expect(look).toEqual({ sheets: CHAPEL_WALLS, roof: { prefix: "chapel_", chimney: false, plainGables: ["w"] } });
       expect(fixed).toBeDefined();
     });
 
@@ -248,7 +344,7 @@ describe("townHouseLook, how each town building is built", () => {
     });
 
     it("should derive the west wall's plain pieces from the hung dressing: every piece behind the crucifix and the murals (W6)", () => {
-      expect(CHAPEL_WEST_BEHIND_HUNG).toEqual([1160, 1200, 1240, 1320, 1400, 1440, 1480]);
+      expect(CHAPEL_WEST_BEHIND_HUNG).toEqual([1360, 1400, 1440, 1520, 1600, 1640, 1680]);
       expect(Object.keys(townHouseLook(chapel()).fixed!.back!.west!.at).map(Number)).toEqual([...CHAPEL_WEST_BEHIND_HUNG]);
     });
 
@@ -408,13 +504,13 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
   it("should dress the chapel with its dais, lectern, two candelabra, the crucifix and two murals, nothing else (FS-R4MYX R14, amended by W12)", () => {
     const inChapel = HUB_INDOOR_DRESSING.filter((s) => insideHouse(s.at, { id: "", ...HUB_CHAPEL }));
     expect(inChapel.map((s) => [s.sheet, s.at, s.size])).toEqual([
-      ["dais", { x: 1105, y: 1320 }, [130, 200]],
-      ["lectern", { x: 1190, y: 1250 }, [20, 20]],
-      ["candelabra", { x: 1135, y: 1250 }, [30, 30]],
-      ["candelabra", { x: 1135, y: 1390 }, [30, 30]],
-      ["chapel_crucifix", { x: 982, y: 1320 }, [4, 40]],
-      ["chapel_mural", { x: 982, y: 1210 }, [4, 64]],
-      ["chapel_mural", { x: 982, y: 1430 }, [4, 64]],
+      ["dais", { x: 365, y: 1520 }, [130, 200]],
+      ["lectern", { x: 450, y: 1450 }, [20, 20]],
+      ["candelabra", { x: 395, y: 1450 }, [30, 30]],
+      ["candelabra", { x: 395, y: 1590 }, [30, 30]],
+      ["chapel_crucifix", { x: 242, y: 1520 }, [4, 40]],
+      ["chapel_mural", { x: 242, y: 1410 }, [4, 64]],
+      ["chapel_mural", { x: 242, y: 1630 }, [4, 64]],
     ]);
   });
 
@@ -426,8 +522,8 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
     /** The dais's centre: the aisle's line, where the Confessor stands before it. */
     const DAIS_Y = HUB_INDOOR_DRESSING.find((s) => s.sheet === "dais")!.at.y;
 
-    it("should hang one crucifix facing east within 10 px of the dais's line, y 1320", () => {
-      expect(DAIS_Y).toBe(1320);
+    it("should hang one crucifix facing east within 10 px of the dais's line, y 1520", () => {
+      expect(DAIS_Y).toBe(1520);
       expect(crucifix).toBeDefined();
       expect(crucifix.animation).toBe("e");
       expect(Math.abs(crucifix.at.y - DAIS_Y)).toBeLessThanOrEqual(10);
@@ -446,14 +542,14 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
       }
     });
 
-    it("should hang all three on the west wall's inner face, inside y 1120–1520, none overlapping another", () => {
+    it("should hang all three on the west wall's inner face, inside y 1320–1720, none overlapping another", () => {
       for (const s of hung) {
         expect(homeOf(s)).toBe(chapel);
         // 2 px off the face, as the Inn's west-wall paintings hang
         expect(s.at.x - inner(chapel).x, s.sheet).toBe(2);
         const f = footprint(s);
-        expect(f.y).toBeGreaterThanOrEqual(1120);
-        expect(f.y + f.height).toBeLessThanOrEqual(1520);
+        expect(f.y).toBeGreaterThanOrEqual(1320);
+        expect(f.y + f.height).toBeLessThanOrEqual(1720);
       }
       for (const [i, a] of hung.entries())
         for (const b of hung.slice(i + 1)) expect(overlaps(footprint(a), footprint(b)), `${a.sheet} ${b.sheet}`).toBe(false);
@@ -505,7 +601,7 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
 
   it("should lay the chapel's indoor threshold west of its east door's sill (FS-R4MYX R10)", () => {
     const chapel = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Chapel")!;
-    expect(townDoorStrip(townDoorGap(chapel), 80, "inside")).toEqual([1500, 1280, 80, 80]);
+    expect(townDoorStrip(townDoorGap(chapel), 80, "inside")).toEqual([760, 1480, 80, 80]);
   });
 
   it("should dress every house: the Inn's two rooms, the store's shelves, the smithy's anvil", () => {
