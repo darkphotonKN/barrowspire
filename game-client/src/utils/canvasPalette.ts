@@ -492,6 +492,12 @@ export const palette = {
    */
   merchantStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.vellumDark, 0.5), 0.45),
   /**
+   * FS-4EC7Z §H R36: the dungeon encounters' stand-in until their group lands (ADR-0071), the
+   * mercenary's resident base sheet under the merchant's road-dust wash, so a pilgrim, captive,
+   * cutthroat or mark reads as a drab stranger and not as a player.
+   */
+  encounterStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.vellumDark, 0.5), 0.45),
+  /**
    * FS-9JV5K §F R21: the wandering merchant's soft lantern light, in the interactable's amber (design
    * guideline "Gameplay accent"): the player can act on him.
    */

@@ -8,14 +8,14 @@
  */
 
 import type * as Phaser from "phaser";
-import { CharacterAnimator } from "@/render/art/character";
+import { CharacterAnimator, variantClip } from "@/render/art/character";
 import type { ArtLibrary } from "@/render/art/library";
 import { PLACEHOLDER_TEXTURE } from "@/render/art/library";
 import { directionIndex } from "@/render/art/manifest";
 import type { Facing8 } from "@/render/iso/facing";
 import { standAt } from "@/render/iso/draw";
 import type { Point } from "@/render/iso/projection";
-import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
+import { MARKER_DEPTH, TEAMMATE_BAR, markerBase, paintTeammateBar, teammateBarTop } from "@/render/markers";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { EncounterClip, EncounterLook, EncounterPlate, EncounterStage } from "./encounters";
 import type { LineStage } from "./overheadLines";
@@ -23,8 +23,6 @@ import type { LineStage } from "./overheadLines";
 type Sprite = Phaser.GameObjects.Sprite;
 type Text = Phaser.GameObjects.Text;
 
-/** An ally's overhead bar: FS-CH21F's teammate bar, `gap` px over the marker base. */
-export const ALLY_BAR = { width: 38, height: 4, gap: 2 } as const;
 /** Screen px from the marker base (or the bar's top) to the name's foot. */
 const NAME_GAP = 5;
 /** Screen px from the name's top to an over-head line's foot. */
@@ -94,8 +92,7 @@ export class EncounterBodies implements EncounterStage<Sprite>, LineStage<Text> 
     const parts = this.parts.get(body);
     if (!parts) return;
     parts.clip = { clip, facing };
-    const name = parts.look.variant ? `${clip}_${parts.look.variant}` : clip;
-    const key = this.art().animationKey(parts.look.sheet, name, directionIndex(facing));
+    const key = this.art().animationKey(parts.look.sheet, variantClip(clip, parts.look.variant), directionIndex(facing));
     if (key && body.anims?.currentAnim?.key !== key) body.play(key);
   }
 
@@ -107,15 +104,7 @@ export class EncounterBodies implements EncounterStage<Sprite>, LineStage<Text> 
     // the bar drawn once at its own origin, moved with the body (as a monster's is)
     const { bar } = parts;
     bar.clear();
-    if (plate?.bar !== null && plate?.bar !== undefined) {
-      const { width, height } = ALLY_BAR;
-      bar.fillStyle(MARKER_BAR.backing, 0.9);
-      bar.fillRect(-1, -1, width + 2, height + 2);
-      bar.lineStyle(1, MARKER_BAR.rim, 0.9);
-      bar.strokeRect(-1, -1, width + 2, height + 2);
-      bar.fillStyle(MARKER_BAR.hp, 1);
-      bar.fillRect(0, 0, Math.round(width * plate.bar), height);
-    }
+    if (plate?.bar !== null && plate?.bar !== undefined) paintTeammateBar(bar, plate.bar);
     this.mark(body);
   }
 
@@ -166,14 +155,11 @@ export class EncounterBodies implements EncounterStage<Sprite>, LineStage<Text> 
     if (plate) {
       const base = this.base(body, parts);
       name.setPosition(body.x, nameFoot(base, plate));
-      bar.setPosition(Math.round(body.x - ALLY_BAR.width / 2), barTop(base));
+      bar.setPosition(Math.round(body.x - TEAMMATE_BAR.width / 2), teammateBarTop(base));
     }
     this.show(body);
   }
 }
 
-/** An ally bar's top over marker base `base`. */
-const barTop = (base: number) => Math.round(base - ALLY_BAR.gap - ALLY_BAR.height);
-
 /** The plate's name's foot over marker base `base`: over an ally's bar, or at the head. */
-const nameFoot = (base: number, plate: EncounterPlate) => (plate.bar !== null ? barTop(base) - 3 : base - NAME_GAP);
+const nameFoot = (base: number, plate: EncounterPlate) => (plate.bar !== null ? teammateBarTop(base) - 3 : base - NAME_GAP);

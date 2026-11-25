@@ -200,14 +200,14 @@ export function minimapProjection(
 }
 
 /**
- * A fixture the minimap marks once found (§E.22): where it stands, and where it is judged seen from
- * when that is not its own spot: a revealed secret door (FS-4EC7Z §G R35) stands in a wall cell, in
- * no region, and shows once the ground beside it is seen.
+ * A fixture the minimap marks once found (§E.22): where it stands, and whether the party was told
+ * of it: a revealed secret door (FS-4EC7Z §G R35, §D R14) is marked wherever it stands, explored or
+ * not, as the Cutthroats' tip says where to look.
  */
 export interface MinimapFixture {
   kind: "switch" | "escape-door" | "stairs" | "secret-door";
   at: Point;
-  seenAt?: readonly Point[];
+  told?: boolean;
 }
 
 /**
@@ -269,12 +269,11 @@ export function minimapContent(
     const s = state(r.id);
     if (s !== "unexplored") regions.push({ id: r.id, state: s, cells: r.cells });
   }
-  const found = fixtures.filter((f) =>
-    (f.seenAt ?? [f.at]).some((p) => {
-      const id = regionAt(grid, p);
-      return id !== 0 && state(id) !== "unexplored";
-    }),
-  );
+  const found = fixtures.filter((f) => {
+    if (f.told) return true;
+    const id = regionAt(grid, f.at);
+    return id !== 0 && state(id) !== "unexplored";
+  });
   return { regions, fixtures: found };
 }
 

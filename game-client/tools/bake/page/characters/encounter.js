@@ -588,7 +588,9 @@ export function debtorKnight() {
  * The encounter cast as manifest sheets (FS-4EC7Z §H R36), on group `encounter`, which a run fetches
  * the first time its state carries an encounter NPC or a `cutthroat` or `contract_mark` monster
  * (ADR-0071; src/render/art/sceneArt.ts `ENCOUNTER_ART`). `letters` are the variants each sheet
- * carries: the first is the plain clips, the rest `<anim>_<letter>`.
+ * carries: the first is the plain clips, the rest `<anim>_<letter>`. Each frame is trimmed to its
+ * pixels (lib/trim.mjs, ADR-0058, ADR-0076) as the classes' are, to keep the group's decoded pages in
+ * the memory budget (ADR-0071 Consequences).
  */
 export const ENCOUNTER = [
   { sheet: "npc_pilgrim", fn: "pilgrim", build: pilgrim, animations: PILGRIM_ANIMATIONS, letters: ["a", "b", "c"] },
@@ -596,4 +598,4 @@ export const ENCOUNTER = [
   { sheet: "npc_cutthroat", fn: "cutthroat", build: cutthroat, animations: ENCOUNTER_ANIMATIONS, letters: ["a", "b"] },
   { sheet: "npc_hooded_duelist", fn: "hoodedDuelist", build: hoodedDuelist, animations: ENCOUNTER_ANIMATIONS, letters: ["a"] },
   { sheet: "npc_debtor_knight", fn: "debtorKnight", build: debtorKnight, animations: ENCOUNTER_ANIMATIONS, letters: ["a"] },
-].map((c) => ({ ...c, group: "encounter" }));
+].map((c) => ({ ...c, group: "encounter", trim: true }));

@@ -74,10 +74,16 @@ interface Seen {
   cage_key_carried?: boolean;
 }
 
+/**
+ * A pilgrim as the watch last knew it: alive or dead in the state, or unknown, having left the state
+ * alive (out of the party's interest: it may live or die unseen).
+ */
+type PilgrimFate = "alive" | "dead" | "unknown";
+
 /** The floor's pilgrims as the watch has followed them. */
 interface Pilgrims {
-  /** Each pilgrim seen and not since gone alive, by entity id: whether it was last seen alive. */
-  alive: Map<string, boolean>;
+  /** Each pilgrim seen on the floor, by entity id: its fate as last known. */
+  fates: Map<string, PilgrimFate>;
   /** A pilgrim gave their thanks: the wave was survived (§B R8). */
   thanked: boolean;
   /** The loss has been said. */
@@ -85,17 +91,18 @@ interface Pilgrims {
 }
 
 const isPilgrim = (n: EncounterNPCState) => n.kind === "pilgrim";
-const anyAlive = (alive: Map<string, boolean>) => [...alive.values()].some(Boolean);
+/** Whether any pilgrim may still live: one alive, or one unknown. */
+const mayLive = (fates: Map<string, PilgrimFate>) => [...fates.values()].some((f) => f !== "dead");
 
 /**
  * The encounters' events, read off each broadcast against the one before: the cage key taken
  * (§G R31, `cage_key_carried` turning true) and the pilgrims lost (R33: the last living pilgrim dead
  * with no `pilgrim_thanks` said). A pilgrim that leaves the state alive (the party walked out of its
- * interest) is forgotten rather than counted lost; one whose corpse has gone stays dead.
+ * interest) is unknown, and the loss is not said while any is; one whose corpse has gone stays dead.
  */
 export class EncounterWatch {
   private last?: { floor?: number; keyCarried: boolean };
-  private pilgrims: Pilgrims = { alive: new Map(), thanked: false, lost: false };
+  private pilgrims: Pilgrims = { fates: new Map(), thanked: false, lost: false };
 
   /** This broadcast's lines, in order. */
   see(state: Seen): SealNotice[] {
@@ -103,7 +110,7 @@ export class EncounterWatch {
     const keyCarried = state.cage_key_carried === true;
     this.last = { floor: state.floor, keyCarried };
     const first = !before || before.floor !== state.floor;
-    if (first) this.pilgrims = { alive: new Map(), thanked: false, lost: false };
+    if (first) this.pilgrims = { fates: new Map(), thanked: false, lost: false };
     const lostNow = this.followPilgrims(state.encounter_npcs ?? []);
     if (first) return [];
 
@@ -121,16 +128,16 @@ export class EncounterWatch {
   /** Follows the pilgrims through this broadcast; whether they were lost on it. */
   private followPilgrims(npcs: readonly EncounterNPCState[]): boolean {
     const p = this.pilgrims;
-    const livedBefore = anyAlive(p.alive);
+    const livedBefore = mayLive(p.fates);
     const listed = npcs.filter(isPilgrim);
     const ids = new Set(listed.map((n) => n.entity_id));
-    // gone alive: out of interest, not lost; gone dead: a corpse removed
-    for (const [id, alive] of p.alive) if (!ids.has(id) && alive) p.alive.delete(id);
+    // gone alive: out of interest, unknown; gone dead: a corpse removed, still dead
+    for (const [id, fate] of p.fates) if (!ids.has(id) && fate === "alive") p.fates.set(id, "unknown");
     for (const n of listed) {
-      p.alive.set(n.entity_id, n.action !== "dead");
+      p.fates.set(n.entity_id, n.action === "dead" ? "dead" : "alive");
       if (n.line === "pilgrim_thanks") p.thanked = true;
     }
-    const lost = livedBefore && p.alive.size > 0 && !anyAlive(p.alive) && !p.thanked && !p.lost;
+    const lost = livedBefore && p.fates.size > 0 && !mayLive(p.fates) && !p.thanked && !p.lost;
     if (lost) p.lost = true;
     return lost;
   }

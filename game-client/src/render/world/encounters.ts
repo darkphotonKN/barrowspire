@@ -13,6 +13,7 @@
  * is tested without a canvas, as `MerchantSet` is; the scene's stage makes each body with its plate.
  */
 
+import { variantClip } from "@/render/art/character";
 import { ENCOUNTER_ART, encounterLook } from "@/render/art/sceneArt";
 import { facingFrom, type Facing8 } from "@/render/iso/facing";
 import type { Point } from "@/render/iso/projection";
@@ -231,8 +232,7 @@ export class EncounterSet<S extends { destroy(): void }> {
 
   /** Whether a look's sheet carries `clip` under its variant. */
   private carries(look: EncounterLook, clip: EncounterClip): boolean {
-    const name = look.variant ? `${clip}_${look.variant}` : clip;
-    return this.art()?.carries?.(look.sheet, name) ?? true;
+    return this.art()?.carries?.(look.sheet, variantClip(clip, look.variant)) ?? true;
   }
 
   /** Asks for the group when a newly listed NPC's sheet is not in; the fetch itself is once a scene. */

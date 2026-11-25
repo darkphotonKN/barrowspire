@@ -214,26 +214,12 @@ export class SealSet<S extends { destroy(): void }> {
 
   /**
    * Each shut secret door the Cutthroats' tip revealed (FS-4EC7Z §F R28, §G R35), for the minimap's
-   * door glyph: at its first cell's centre, a wall cell in no region, so seen from the ground beside
-   * its cells. None before the floor's grid stands.
+   * door glyph: at its first cell's centre. None before the floor's grid stands.
    */
-  revealedDoors(): { at: Point; seenAt: Point[] }[] {
+  revealedDoors(): { at: Point }[] {
     const grid = this.laidOver;
     if (!grid) return [];
-    return this.revealedShut
-      .filter((cells) => cells.length > 0)
-      .map((cells) => {
-        const own = new Set(cells.map(cellKey));
-        const beside = cells.flatMap((c) =>
-          [
-            { x: c.x - 1, y: c.y },
-            { x: c.x + 1, y: c.y },
-            { x: c.x, y: c.y - 1 },
-            { x: c.x, y: c.y + 1 },
-          ].filter((n) => !own.has(cellKey(n)) && grid.walkable(n.x, n.y)),
-        );
-        return { at: cellCentre(cells[0], grid.cell), seenAt: beside.map((n) => cellCentre(n, grid.cell)) };
-      });
+    return this.revealedShut.filter((cells) => cells.length > 0).map((cells) => ({ at: cellCentre(cells[0], grid.cell) }));
   }
 
   /** Every shut gate's run, for the minimap's wall stroke (R56). */

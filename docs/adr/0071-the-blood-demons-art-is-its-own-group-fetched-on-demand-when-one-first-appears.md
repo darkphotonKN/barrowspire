@@ -2,6 +2,7 @@
 
 Status: accepted
 Amended by: ADR-0081 — Decision 2 (a Spire variant group is also fetched when a floor map's pool names it) and Decision 4 (a Spire variant group is evicted by a floor map whose pool does not name it); the blood demon's group is unchanged.
+Amended by: [ADR-0097](0097-run-npc-art-is-its-own-on-demand-group-fetched-when-the-run-state-carries-its-key.md) — Decisions 2 and 6 (the merchant's and the encounter cast's groups are also fetched when the run state carries their key)
 Amended by: [ADR-0088](0088-a-specialization-looks-art-is-its-own-on-demand-group-fetched-when-the-world-state-carries-it.md) — Decision 2 (a spec-look group is also fetched when the world state carries a player with that specialization)
 Date: 2026-11-08
 Scope: `game-client` only: which atlas group the blood demon's sheet is packed in

@@ -15,7 +15,7 @@
  */
 
 import type { NPCState } from "@/types/gameState";
-import type { CharacterLook } from "./character";
+import { variantClip, type CharacterLook } from "./character";
 
 /** The fallback: an ordinary villager in the trousers build's first palette. */
 export const DEFAULT_RESIDENT_SHEET = "folk_resident_trousers";
@@ -48,7 +48,7 @@ export interface FolkSheets {
 
 /** A clip's manifest animation name under a palette variant: `walk` → `walk_slate`. */
 export function folkClip(clip: string, variant: string | undefined): string {
-  return variant ? `${clip}_${variant}` : clip;
+  return variantClip(clip, variant);
 }
 
 /** The sheet and variant an NPC is drawn from. */
