@@ -137,6 +137,12 @@ type ClientGameState struct {
 	// monsters are; absent in the hub, a field and on a floor without one.
 	// FS-4EC7Z §F R22.
 	EncounterNPCs []*EncounterNPCState `json:"encounter_npcs,omitempty"`
+	// Cages are a run floor's Captives' cage, EncounterKeys its cage key while
+	// it lies, both sent whole; CageKeyCarried is set while the party carries
+	// the key. All absent where there are none. FS-4EC7Z §F R23.
+	Cages          []*CageState         `json:"cages,omitempty"`
+	EncounterKeys  []*EncounterKeyState `json:"encounter_keys,omitempty"`
+	CageKeyCarried bool                 `json:"cage_key_carried,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -251,6 +257,11 @@ type BackendGameState struct {
 	Merchant *MerchantState
 	// EncounterNPCs are the floor's encounter NPCs (FS-4EC7Z §F R22)
 	EncounterNPCs []*EncounterNPCState
+	// Cages, EncounterKeys and CageKeyCarried are the floor's Captives' cage
+	// and key (FS-4EC7Z §F R23)
+	Cages          []*CageState
+	EncounterKeys  []*EncounterKeyState
+	CageKeyCarried bool
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.

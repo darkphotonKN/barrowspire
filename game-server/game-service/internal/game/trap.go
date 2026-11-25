@@ -38,8 +38,10 @@ func trapCount(depth int) int {
 
 // springTraps runs the floor's traps for the tick, after the walk, and applies
 // what fired: a spike plate's, dart wall's or fire jet's hit, queued for this
-// tick's combat; a tripwire's ambush, woken on the delver who tripped it; a gas
-// vent's poison on each delver in its cloud (FS-5FZ4J §D R25-R29).
+// tick's combat; a tripwire's ambush, woken on the body who tripped it; a gas
+// vent's poison on each body in its cloud (FS-5FZ4J §D R25-R29). A hired ally
+// fires a trap as a delver does, though its hit passes the ally by as every
+// trap's passes an encounter NPC (FS-4EC7Z §A R3, §C R9).
 func (s *Session) springTraps(dt float64, entities []*ecs.Entity) {
 	traps := systems.TrapSystem{
 		CellSize:    s.dungeonCellSize(),

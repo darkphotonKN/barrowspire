@@ -45,6 +45,10 @@ const (
 	// its wind-up, aimed at the intent's TargetX, TargetY. Only the
 	// MonsterAISystem records it; no client message maps to it. FS-B4SG9 §A R8.
 	AttackMonsterShot AttackKind = "monster_shot"
+	// AttackAllyStrike is a hired ally's melee swing at a monster, its sheet's
+	// hit. Only the AllyAISystem records it, measuring its reach and pacing
+	// it; no client message maps to it. FS-4EC7Z §C R9.
+	AttackAllyStrike AttackKind = "ally_strike"
 	// AttackMonsterAbility is a monster ability landing at the end of its
 	// wind-up: its area, cone or shots, as the monster's Ability gives them.
 	// Only the MonsterAISystem records it. FS-C8VM7 §B R14.
@@ -85,6 +89,10 @@ type AttackSnapshot struct {
 	// PiercesAll marks a Shadow Ranger's Shadow Shot: a projectile that never
 	// stops at a target, whatever its Pierce. FS-E1ZDG §H R29.
 	PiercesAll bool
+	// AllyOf is the member id of the hirer when a hired ally made the hit,
+	// uuid.Nil for any other: it lands only on a monster, and a kill it makes
+	// is the hirer's for loot alone. FS-4EC7Z §C R9, R11.
+	AllyOf uuid.UUID
 }
 
 // AttackIntent is a request a handler validated and the CombatSystem has yet to

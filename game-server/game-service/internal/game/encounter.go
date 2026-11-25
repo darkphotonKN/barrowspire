@@ -29,11 +29,13 @@ import (
 **/
 
 // encounterPlan is a floor's encounter as planned with its layout: its kind,
-// its room and where its NPCs stand, held before anything is laid.
+// its room and where its NPCs stand (the Captives' one spot, their cage's),
+// and for the Captives where their key goes, held before anything is laid.
 type encounterPlan struct {
 	kind  components.EncounterKind
 	room  int
 	spots []point
+	key   cageKeyPlan
 }
 
 // encounterFor is whether the floor at depth holds an encounter, and of what
@@ -53,13 +55,17 @@ func encounterFor(rng populationRand, depth int, top bool, tuning floorTuning) (
 	return EncounterKinds[rng.IntN(len(EncounterKinds))], true
 }
 
-// encounterSize is how many NPCs an encounter of kind stands.
-func encounterSize(kind components.EncounterKind) int {
+// encounterFootprint is how many spots an encounter of kind holds in its
+// room, and each one's half-size: a pilgrim's body each, or the Captives'
+// one cage. 0 for a kind not built.
+func encounterFootprint(kind components.EncounterKind) (int, float64) {
 	switch kind {
 	case components.EncounterLostPilgrims:
-		return PilgrimCount
+		return PilgrimCount, constants.PlayerRadius
+	case components.EncounterCaptives:
+		return 1, CageHalfSize
 	default:
-		return 0
+		return 0, 0
 	}
 }
 
@@ -69,11 +75,12 @@ func encounterSize(kind components.EncounterKind) int {
 * the start, stairs, switch, escape door, a treasure room, a seal piece's, a
 * hidden room or a respite's), drawn first from those at or past the median
 * walk distance from the start, then from the rest; a room with too few free
-* spots is passed over. Run while the floor is planned, after its respites.
-* False, loudly, when no room fits: the floor then holds none. FS-4EC7Z §A R2.
+* spots is passed over. The Captives' key is planned with them (§D R13). Run
+* while the floor is planned, after its respites. False, loudly, when no room
+* fits: the floor then holds none. FS-4EC7Z §A R2.
 **/
 func (s *Session) planEncounter(d *dungeonFloor, kind components.EncounterKind) bool {
-	n := encounterSize(kind)
+	n, half := encounterFootprint(kind)
 	if n == 0 {
 		slog.Warn("Encounter skipped: its kind is not built", "sessionID", s.ID, "kind", kind)
 		return false
@@ -94,10 +101,19 @@ func (s *Session) planEncounter(d *dungeonFloor, kind components.EncounterKind) 
 	shuffle(s.spawnRand, far)
 	shuffle(s.spawnRand, near)
 	for _, room := range append(far, near...) {
-		if spots, ok := s.encounterSpots(d, room, n); ok {
-			d.encounter = &encounterPlan{kind: kind, room: room, spots: spots}
-			return true
+		spots, ok := s.encounterSpots(d, room, n, half)
+		if !ok {
+			continue
 		}
+		plan := &encounterPlan{kind: kind, room: room, spots: spots}
+		if kind == components.EncounterCaptives {
+			if plan.key, ok = s.planCageKey(d, room); !ok {
+				slog.Warn("Encounter skipped: no room holds the cage key", "sessionID", s.ID, "kind", kind)
+				return false
+			}
+		}
+		d.encounter = plan
+		return true
 	}
 	slog.Warn("Encounter skipped: no open room has free spots", "sessionID", s.ID, "kind", kind)
 	return false
@@ -121,13 +137,13 @@ func (d *dungeonFloor) medianRoomDistance() float64 {
 	return float64(distances[n/2-1]+distances[n/2]) / 2
 }
 
-// encounterSpots finds n spots for bodies in room, each as a fixture's is
-// found and held; none is held when the room has fewer.
-func (s *Session) encounterSpots(d *dungeonFloor, room, n int) ([]point, bool) {
+// encounterSpots finds n spots of half-size half in room, each as a
+// fixture's is found and held; none is held when the room has fewer.
+func (s *Session) encounterSpots(d *dungeonFloor, room, n int, half float64) ([]point, bool) {
 	mark := len(s.objectOccupiedPlaceAreas)
 	spots := make([]point, 0, n)
 	for range n {
-		at, ok := s.placeFixture(d, room, constants.PlayerRadius, constants.PlayerRadius)
+		at, ok := s.placeFixture(d, room, half, half)
 		if !ok {
 			s.objectOccupiedPlaceAreas = s.objectOccupiedPlaceAreas[:mark]
 			return nil, false
@@ -153,6 +169,8 @@ func (s *Session) layEncounter(d *dungeonFloor) {
 	switch plan.kind {
 	case components.EncounterLostPilgrims:
 		s.layPilgrims(encounter, ec, plan.spots)
+	case components.EncounterCaptives:
+		s.layCaptives(encounter, ec, plan)
 	}
 	slog.Debug("Encounter laid", "sessionID", s.ID, "kind", plan.kind, "room", plan.room, "npcs", len(ec.NPCs))
 }
@@ -199,6 +217,9 @@ func (s *Session) advanceEncounters(dt float64, entities []*ecs.Entity) {
 		}
 		if wc, isPilgrims := e.GetComponent(ecs.ComponentTypePilgrimWave); isPilgrims {
 			s.advancePilgrims(dt, ec.(*components.EncounterComponent), wc.(*components.PilgrimWaveComponent))
+		}
+		if cc, isCaptives := e.GetComponent(ecs.ComponentTypeCaptives); isCaptives {
+			s.advanceCaptives(e, cc.(*components.CaptivesComponent))
 		}
 	}
 }
@@ -247,7 +268,9 @@ func faceTowards(npc *components.EncounterNPCComponent, at *components.Transform
 * talkToEncounterNPC answers a delver's interact on an encounter NPC: a dead
 * one is passed over quietly, one out of reach is refused as any interact
 * is; else it is a talk, answered by the NPC's line on the state and what
-* its kind's talk starts. The NPC turns to the talker. FS-4EC7Z §A R4.
+* its kind's talk starts. A caged captive answers with its plea and an ally
+* with its acknowledgement, and they start nothing. The NPC turns to the
+* talker. FS-4EC7Z §A R4.
 **/
 func (s *Session) talkToEncounterNPC(playerID uuid.UUID, body *components.TransformComponent, target *ecs.Entity) error {
 	if !alive(target) {
@@ -260,6 +283,14 @@ func (s *Session) talkToEncounterNPC(playerID uuid.UUID, body *components.Transf
 	npc := nc.(*components.EncounterNPCComponent)
 	tc, _ := target.GetComponent(ecs.ComponentTypeTransform)
 	faceTowards(npc, tc.(*components.TransformComponent), body.X, body.Y)
+	switch npc.Stance {
+	case components.StanceCaged:
+		systems.Say(npc, components.LineCaptivePlea)
+		return nil
+	case components.StanceAlly:
+		systems.Say(npc, components.LineAllyAck)
+		return nil
+	}
 
 	encounter, ok := s.EntityManager.GetEntity(npc.Encounter)
 	if !ok {

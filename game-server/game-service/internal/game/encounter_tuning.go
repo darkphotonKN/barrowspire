@@ -20,9 +20,9 @@ const EncounterFloorChance = 0.4
 const ForcedEncounterKind components.EncounterKind = ""
 
 // EncounterKinds are the kinds an encounter is drawn from, uniformly
-// (FS-4EC7Z §A R1). Only the Lost Pilgrims are built (I-4EC7Z-1); the Captives
-// and the Cutthroats join with their slices.
-var EncounterKinds = []components.EncounterKind{components.EncounterLostPilgrims}
+// (FS-4EC7Z §A R1). The Lost Pilgrims and the Captives are built
+// (I-4EC7Z-1, I-4EC7Z-2); the Cutthroats join with their slice.
+var EncounterKinds = []components.EncounterKind{components.EncounterLostPilgrims, components.EncounterCaptives}
 
 // The Lost Pilgrims: PilgrimCount pilgrims, each of PilgrimHealthFactor times
 // a standard fodder monster's health at the floor's monster level, in the
@@ -51,3 +51,55 @@ const (
 // EncounterCorpseLifetime is how long a killed encounter NPC lies before it
 // is removed, a monster's corpse's time. FS-4EC7Z §A R3.
 const EncounterCorpseLifetime = MonsterCorpseLifetime
+
+// Hired allies (FS-4EC7Z §C R9-R10): at most AllyCap a party; each keeps
+// AllyFollowNearCells to AllyFollowFarCells cells from its leader and engages
+// a monster within AllyEngageCells cells of itself.
+const (
+	AllyCap             = 3
+	AllyFollowNearCells = 2.0
+	AllyFollowFarCells  = 4.0
+	AllyEngageCells     = 6.0
+)
+
+/*
+allySheet is an encounter NPC's fighting sheet once it is a hired ally
+(FS-4EC7Z §C R9), measured against a standard fodder monster at the floor's
+monster level as a pilgrim's health is: HealthFactor times its health,
+DamageFactor its hit and DefenseFactor its defense. AttackInterval is its
+cadence in seconds, AttackRange its melee reach and MoveSpeed its pace, both
+in px; a delver walks at 200, so an ally keeps up.
+*/
+type allySheet struct {
+	HealthFactor   float64
+	DamageFactor   float64
+	DefenseFactor  float64
+	AttackInterval float64
+	AttackRange    float64
+	MoveSpeed      float64
+}
+
+// AllySheets are the sheets of the kinds that become allies: a freed captive
+// and a hired cutthroat (FS-4EC7Z §C R9, §D R13, R15). A pilgrim never does.
+var AllySheets = map[components.EncounterNPCKind]allySheet{
+	components.EncounterNPCCaptive: {
+		HealthFactor: 3.0, DamageFactor: 1.5, DefenseFactor: 1.0,
+		AttackInterval: 1.1, AttackRange: 50, MoveSpeed: 190,
+	},
+	components.EncounterNPCCutthroat: {
+		HealthFactor: 3.0, DamageFactor: 1.8, DefenseFactor: 1.0,
+		AttackInterval: 1.0, AttackRange: 50, MoveSpeed: 190,
+	},
+}
+
+// The Captives (FS-4EC7Z §D R13): CaptiveCount captives in the looks of
+// CaptiveLooks by turn, in a cage of CageHalfSize px a side's half; their
+// key lies in another room or, at CageKeyOnEliteShare, rides on an elite.
+const (
+	CaptiveCount        = 2
+	CageHalfSize        = 40.0
+	CageKeyOnEliteShare = 0.5
+)
+
+// CaptiveLooks are the captives' art variants, one a captive in turn.
+var CaptiveLooks = []string{"captive_a", "captive_b"}

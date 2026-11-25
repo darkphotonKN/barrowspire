@@ -103,3 +103,57 @@ func TestFormatStateToClientState_EncounterNPCsCutByInterestAbsentElsewhere(t *t
 	assert.NotContains(t, tomeWire(t, bare, types.WorldTypeRun, me), "encounter_npcs", "a floor without an encounter")
 	assert.NotContains(t, tomeWire(t, bare, types.WorldTypeHub, me), "encounter_npcs", "the hub")
 }
+
+// FS-4EC7Z §F R23: the cage is sent whole on cages with its place and
+// whether it is open; the cage key, while it lies, on encounter_keys; the
+// key carried, cage_key_carried. All are absent on a floor without them.
+func TestFormatStateToClientState_CagesAndTheCageKey(t *testing.T) {
+	em := ecs.NewEntityManager()
+	onTomeRunFloor(em, 2)
+	me := uuid.New()
+	addDelver(em, me, 0, 0, 100)
+
+	encounter := em.CreateEntity()
+	captives := &components.CaptivesComponent{}
+	encounter.AddComponent(&components.EncounterComponent{Kind: components.EncounterCaptives})
+	encounter.AddComponent(captives)
+	cage := em.CreateEntity()
+	cage.AddComponent(&components.CageComponent{Encounter: encounter.ID})
+	cage.AddComponent(components.NewTransformComponent(4000, 40))
+	key := em.CreateEntity()
+	key.AddComponent(&components.CageKeyComponent{Encounter: encounter.ID})
+	key.AddComponent(components.NewTransformComponent(4200, 80))
+
+	sent := tomeWire(t, em, types.WorldTypeRun, me)
+	require.Contains(t, sent, "cages", "sent whole, however far")
+	cages := sent["cages"].([]any)
+	require.Len(t, cages, 1)
+	assert.Equal(t, map[string]any{
+		"entity_id": cage.ID.String(),
+		"position":  map[string]any{"x": 4000.0, "y": 40.0},
+		"open":      false,
+	}, cages[0])
+	require.Contains(t, sent, "encounter_keys")
+	assert.Equal(t, []any{map[string]any{
+		"entity_id": key.ID.String(),
+		"position":  map[string]any{"x": 4200.0, "y": 80.0},
+	}}, sent["encounter_keys"])
+	assert.NotContains(t, sent, "cage_key_carried", "lying, not carried")
+
+	em.RemoveEntity(key.ID)
+	captives.KeyCarried = true
+	cc, _ := cage.GetComponent(ecs.ComponentTypeCage)
+	sent = tomeWire(t, em, types.WorldTypeRun, me)
+	assert.NotContains(t, sent, "encounter_keys")
+	assert.Equal(t, true, sent["cage_key_carried"])
+
+	cc.(*components.CageComponent).Open = true
+	assert.Equal(t, true, tomeWire(t, em, types.WorldTypeRun, me)["cages"].([]any)[0].(map[string]any)["open"])
+
+	bare := ecs.NewEntityManager()
+	onTomeRunFloor(bare, 2)
+	addDelver(bare, me, 0, 0, 100)
+	for _, k := range []string{"cages", "encounter_keys", "cage_key_carried"} {
+		assert.NotContains(t, tomeWire(t, bare, types.WorldTypeRun, me), k)
+	}
+}

@@ -156,6 +156,34 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			continue
 		}
 
+		// --- The Captives' cage, its key and whether the party carries it
+		// (FS-4EC7Z §F R23) ---
+		if cc, isCaptives := entity.GetComponent(ecs.ComponentTypeCaptives); isCaptives {
+			backendState.CageKeyCarried = backendState.CageKeyCarried || cc.(*components.CaptivesComponent).KeyCarried
+			continue
+		}
+		if cc, isCage := entity.GetComponent(ecs.ComponentTypeCage); isCage {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				at := tc.(*components.TransformComponent)
+				backendState.Cages = append(backendState.Cages, &types.CageState{
+					EntityID: entity.ID,
+					Position: types.Position{X: at.X, Y: at.Y},
+					Open:     cc.(*components.CageComponent).Open,
+				})
+			}
+			continue
+		}
+		if entity.HasComponent(ecs.ComponentTypeCageKey) {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				at := tc.(*components.TransformComponent)
+				backendState.EncounterKeys = append(backendState.EncounterKeys, &types.EncounterKeyState{
+					EntityID: entity.ID,
+					Position: types.Position{X: at.X, Y: at.Y},
+				})
+			}
+			continue
+		}
+
 		// --- A floor's encounter NPCs (FS-4EC7Z §F R22) ---
 		if nc, isNPC := entity.GetComponent(ecs.ComponentTypeEncounterNPC); isNPC {
 			backendState.EncounterNPCs = append(backendState.EncounterNPCs, encounterNPCState(entity, nc.(*components.EncounterNPCComponent)))
@@ -798,6 +826,10 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Merchant: backendState.Merchant,
 		// the floor's encounter NPCs, cut below as monsters are (FS-4EC7Z §F R22)
 		EncounterNPCs: backendState.EncounterNPCs,
+		// the Captives' cage and key, sent whole (FS-4EC7Z §F R23)
+		Cages:          backendState.Cages,
+		EncounterKeys:  backendState.EncounterKeys,
+		CageKeyCarried: backendState.CageKeyCarried,
 	}
 
 	// on a dungeon floor each recipient is sent only what lies near it
@@ -897,6 +929,9 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.HallowedAltar = nil
 	state.Merchant = nil
 	state.EncounterNPCs = fresh(state.EncounterNPCs)
+	state.Cages = fresh(state.Cages)
+	state.EncounterKeys = fresh(state.EncounterKeys)
+	state.CageKeyCarried = false
 }
 
 // fresh is an empty list on new memory as large as the old, or nil if it was

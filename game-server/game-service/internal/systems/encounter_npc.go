@@ -57,3 +57,16 @@ func (s *EncounterNPCSystem) Update(dt float64, entities []*ecs.Entity) {
 func Say(npc *components.EncounterNPCComponent, line components.EncounterLine) {
 	npc.Line, npc.LineAt = line, npc.Age
 }
+
+// hirerOf is the member id of entity's hirer when it is a hired ally,
+// uuid.Nil for anything else (FS-4EC7Z §C R9).
+func hirerOf(entity *ecs.Entity) uuid.UUID {
+	nc, ok := entity.GetComponent(ecs.ComponentTypeEncounterNPC)
+	if !ok {
+		return uuid.Nil
+	}
+	if npc := nc.(*components.EncounterNPCComponent); npc.Stance == components.StanceAlly {
+		return npc.HirerID
+	}
+	return uuid.Nil
+}

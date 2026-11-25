@@ -133,3 +133,70 @@ type PilgrimWaveComponent struct {
 func (p *PilgrimWaveComponent) Type() ecs.ComponentType {
 	return ecs.ComponentTypePilgrimWave
 }
+
+/*
+AllyComponent is a hired ally's fighting and following (FS-4EC7Z §C R9),
+beside its EncounterNPCComponent once its stance is ally: its sheet's reach,
+cadence and pace, the monster it is after and its path. Its hirer is the
+NPC's HirerID.
+
+Following is whether it is walking back to its leader: set once it is past
+the far edge of its keeping distance, cleared once it is within the near
+edge, so it keeps between them without stepping back and forth.
+*/
+type AllyComponent struct {
+	// AttackRange is how near, in px, it strikes from; AttackInterval its
+	// cadence in seconds
+	AttackRange    float64
+	AttackInterval float64
+	AttackCooldown float64
+	// Target is the monster it is after, uuid.Nil with none
+	Target    uuid.UUID
+	Following bool
+	Route     Route
+}
+
+func (a *AllyComponent) Type() ecs.ComponentType {
+	return ecs.ComponentTypeAlly
+}
+
+/*
+CaptivesComponent is the Captives' cage and its key (FS-4EC7Z §D R13), beside
+their EncounterComponent. Cage is the cage's entity id. The key lies as a
+fixture (Key, its entity id, while it lies), or rides on an elite (Carrier, its
+entity id, until it dies and drops it where it fell); KeyCarried once the
+party has taken it, party state on the floor as the stair key's is. Open once
+the cage is opened, by the key or the open-cage entry point.
+*/
+type CaptivesComponent struct {
+	Cage       uuid.UUID
+	Key        uuid.UUID
+	Carrier    uuid.UUID
+	KeyCarried bool
+	Open       bool
+}
+
+func (c *CaptivesComponent) Type() ecs.ComponentType {
+	return ecs.ComponentTypeCaptives
+}
+
+// CageComponent is the Captives' cage fixture (FS-4EC7Z §D R13): locked until
+// opened, naming its encounter.
+type CageComponent struct {
+	Encounter uuid.UUID
+	Open      bool
+}
+
+func (c *CageComponent) Type() ecs.ComponentType {
+	return ecs.ComponentTypeCage
+}
+
+// CageKeyComponent is the cage key lying on the floor (FS-4EC7Z §D R13),
+// naming its encounter: an interact takes it.
+type CageKeyComponent struct {
+	Encounter uuid.UUID
+}
+
+func (c *CageKeyComponent) Type() ecs.ComponentType {
+	return ecs.ComponentTypeCageKey
+}

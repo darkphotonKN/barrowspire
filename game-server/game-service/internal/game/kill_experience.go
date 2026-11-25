@@ -26,9 +26,10 @@ func NewKillExperience(em *ecs.EntityManager, tally *RunExperience) *KillExperie
 
 // ConsumeKill gives every delver still in play, alive and un-escaped, the kill's
 // experience in full. The killer gets no extra share; a death with no player
-// killer awards nothing. FS-BDA7X §Requirements 9, 12.
+// killer awards nothing, nor does a hired ally's kill (FS-4EC7Z §C R11).
+// FS-BDA7X §Requirements 9, 12.
 func (k *KillExperience) ConsumeKill(record systems.KillRecord) {
-	if record.KillerMemberID == uuid.Nil {
+	if record.KillerMemberID == uuid.Nil || record.ByAlly {
 		return
 	}
 	amount := killExperience(record)

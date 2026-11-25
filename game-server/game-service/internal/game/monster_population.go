@@ -387,14 +387,20 @@ func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 			continue
 		}
 
+		// the Captives' cage, its own size (FS-4EC7Z §D R13)
+		if entity.HasComponent(ecs.ComponentTypeCage) {
+			keepOut = append(keepOut, centredArea(at.X, at.Y, CageHalfSize, CageHalfSize))
+			continue
+		}
+
 		if entity.HasComponent(ecs.ComponentTypeStairs) {
 			keepOut = append(keepOut, centredArea(at.X, at.Y, constants.StairsWidthRadius, constants.StairsHeightRadius))
 			continue
 		}
 
 		// containers, switches, escape doors, the tome, both altars, the
-		// fountain, the merchant, seal pieces and lore pieces stand centred on
-		// their position, a container's size
+		// fountain, the merchant, seal pieces, lore pieces and the cage key
+		// stand centred on their position, a container's size
 		if entity.HasComponent(ecs.ComponentTypeContainer) ||
 			entity.HasComponent(ecs.ComponentTypeSwitch) ||
 			entity.HasComponent(ecs.ComponentTypeEscapeDoor) ||
@@ -404,7 +410,8 @@ func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 			entity.HasComponent(ecs.ComponentTypeFountain) ||
 			entity.HasComponent(ecs.ComponentTypeMerchant) ||
 			entity.HasComponent(ecs.ComponentTypeSealPiece) ||
-			entity.HasComponent(ecs.ComponentTypeLorePiece) {
+			entity.HasComponent(ecs.ComponentTypeLorePiece) ||
+			entity.HasComponent(ecs.ComponentTypeCageKey) {
 			keepOut = append(keepOut, PlaceArea{
 				X: at.X - constants.ContainerWidthRadius,
 				Y: at.Y - constants.ContainerHeightRadius,

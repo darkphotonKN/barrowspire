@@ -906,6 +906,14 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.monsterAISystem.Update(deltaTime, entities)
 	}
 
+	// a run floor's hired allies follow and fight, steered as the monsters
+	// are, before anything moves (FS-4EC7Z §C R9)
+	if s.worldType == types.WorldTypeRun {
+		if allies, ok := s.allyAI(); ok {
+			allies.Update(deltaTime, entities)
+		}
+	}
+
 	// movement, by the world's own rules, fixed as it was built, bounded to
 	// the floor the world stands on now (FS-KE075 §B R11)
 	s.mu.RLock()
@@ -2093,8 +2101,11 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	isLorePiece := targetEntity.HasComponent(ecs.ComponentTypeLorePiece)
 	// an encounter NPC, talked to (FS-4EC7Z §A R4)
 	isEncounterNPC := targetEntity.HasComponent(ecs.ComponentTypeEncounterNPC)
+	// the Captives' cage and its key (FS-4EC7Z §D R13)
+	isCage := targetEntity.HasComponent(ecs.ComponentTypeCage)
+	isCageKey := targetEntity.HasComponent(ecs.ComponentTypeCageKey)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isBarrier && !isSealPiece && !isLorePiece && !isEncounterNPC {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isBarrier && !isSealPiece && !isLorePiece && !isEncounterNPC && !isCage && !isCageKey {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -2164,6 +2175,15 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 
 	if isEncounterNPC {
 		return s.talkToEncounterNPC(playerID, playerTransform, targetEntity)
+	}
+
+	// --- the Captives' cage and its key (FS-4EC7Z §D R13) ---
+
+	if isCageKey {
+		return s.takeCageKey(playerID, playerTransform, targetEntity)
+	}
+	if isCage {
+		return s.reachCage(playerID, playerTransform, targetEntity)
 	}
 
 	// --- door entity ---
@@ -3540,6 +3560,9 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	// FS-K2HKP R18: monsters are levelled to the whole matched party, the
 	// expected included, not only who is seated now
 	s.populateMonsters(depth, s.isTopFloor(depth), expected)
+	// the Captives' key, when an elite carries it, goes to one once they
+	// stand (FS-4EC7Z §D R13)
+	s.handCageKey()
 
 	// the floor's layout stands: its map is what anyone entering is sent
 	s.publishFloorMap(depth)

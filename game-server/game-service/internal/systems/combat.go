@@ -58,8 +58,12 @@ type KillRecord struct {
 	// Champion is a top floor's champion boss (FS-C8VM7 §D R31)
 	Champion bool
 	// KillerMemberID is the delver whose hit took it to 0, credited even when
-	// that delver died, escaped or left before a projectile of theirs landed.
+	// that delver died, escaped or left before a projectile of theirs landed;
+	// for a hired ally's hit, its hirer (FS-4EC7Z §C R11).
 	KillerMemberID uuid.UUID
+	// ByAlly marks a kill a hired ally made: it is its hirer's for loot alone,
+	// and gives no experience to anyone (FS-4EC7Z §C R11).
+	ByAlly bool
 	// X, Y is where it died: where its corpse lies and its drops land.
 	X, Y float64
 	// Floor is the depth it died on; 1 where the world keeps no floors.
@@ -269,6 +273,13 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackMonsterStrike: {
 		delivery: deliverTargeted, damageType: components.DamagePhysical, scaling: scaleNone,
 		coefficient: 1, reach: math.Inf(1), parriable: true,
+	},
+	// a hired ally's swing is its sheet's hit, as is, at a monster: the
+	// AllyAISystem paces it and measures its reach, as the monster AI does a
+	// strike (FS-4EC7Z §C R9)
+	components.AttackAllyStrike: {
+		delivery: deliverTargeted, damageType: components.DamagePhysical, scaling: scaleNone,
+		coefficient: 1, reach: math.Inf(1),
 	},
 	// a ranged monster's shot is its damage at level too, delivered as one
 	// projectile. The row has no projectile of its own: the type, speed, radius
@@ -1324,6 +1335,9 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 		KillerMemberID:  attack.AttackerMemberID,
 		Floor:           s.floor,
 	}
+	if attack.AllyOf != uuid.Nil {
+		record.KillerMemberID, record.ByAlly = attack.AllyOf, true
+	}
 	if tc, ok := target.GetComponent(ecs.ComponentTypeTransform); ok {
 		transform := tc.(*components.TransformComponent)
 		record.X, record.Y = transform.X, transform.Y
@@ -1385,6 +1399,7 @@ func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapsh
 	if pc, ok := attacker.GetComponent(ecs.ComponentTypePlayer); ok {
 		attack.AttackerMemberID = pc.(*components.PlayerComponent).MemberID
 	}
+	attack.AllyOf = hirerOf(attacker)
 	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCombat); ok {
 		attack.Power = float64(cc.(*components.CombatComponent).Attack)
 	}
@@ -1458,9 +1473,13 @@ func alive(entity *ecs.Entity) bool {
 // Monsters never damage monsters, and with player damage off a delver never
 // damages a delver (FS-77AB6 §Requirements 12, 14, 17). A projectile passes
 // through whatever this refuses. Only a monster's hit lands on an encounter
-// NPC: a delver's, its reflect, and a trap's pass it by (FS-4EC7Z §A R3).
+// NPC: a delver's, its reflect, and a trap's pass it by (FS-4EC7Z §A R3). A
+// hired ally's lands on a monster and nothing else (§C R9).
 func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage PlayerDamage) bool {
 	if !alive(target) {
+		return false
+	}
+	if attack.AllyOf != uuid.Nil && !target.HasComponent(ecs.ComponentTypeEnemy) {
 		return false
 	}
 	if !attack.FromMonster && target.HasComponent(ecs.ComponentTypeEncounterNPC) {

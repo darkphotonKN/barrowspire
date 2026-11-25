@@ -442,6 +442,19 @@ path used up it holds on its own cell's centre. A search that finds nothing
 leaves it steering straight at (x, y) until its next search (R27).
 */
 func (s *MonsterAISystem) towards(monster *components.MonsterComponent, at *components.TransformComponent, x, y float64) (float64, float64) {
+	return router{s.grid}.towards(&monster.Route, at, x, y)
+}
+
+// router walks a body along a route over a floor's grid: a monster's, and a
+// hired ally's the same way (FS-4EC7Z §C R9). With no grid it steers
+// straight.
+type router struct {
+	grid NavGrid
+}
+
+// towards is the point a body at at steers for this tick to reach (x, y)
+// along route, as MonsterAISystem.towards tells.
+func (s router) towards(route *components.Route, at *components.TransformComponent, x, y float64) (float64, float64) {
 	if s.grid == nil {
 		return x, y
 	}
@@ -451,7 +464,6 @@ func (s *MonsterAISystem) towards(monster *components.MonsterComponent, at *comp
 		return x, y
 	}
 
-	route := &monster.Route
 	if (route.Goal != goal || route.Next >= len(route.Cells)) && route.SearchIn <= 0 {
 		s.search(route, from, goal)
 	}
@@ -468,7 +480,7 @@ func (s *MonsterAISystem) towards(monster *components.MonsterComponent, at *comp
 
 // search finds a new path from cell from to goal, and starts the repath
 // interval whether or not it finds one.
-func (s *MonsterAISystem) search(route *components.Route, from, goal int) {
+func (s router) search(route *components.Route, from, goal int) {
 	route.SearchIn = repathInterval
 	route.Goal = goal
 	route.Next = 0
@@ -494,7 +506,7 @@ it was pushed off its route; standing in the route's last cell, it has
 reached it. Either way the route is used up and follow reports false, as it
 does with no route.
 */
-func (s *MonsterAISystem) follow(route *components.Route, from int, at *components.TransformComponent) (float64, float64, bool) {
+func (s router) follow(route *components.Route, from int, at *components.TransformComponent) (float64, float64, bool) {
 	last := len(route.Cells) - 1
 	// a corner cut can land it in any cell ahead, the farthest included,
 	// without its standing in those between

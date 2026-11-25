@@ -14,9 +14,10 @@ TrapSystem springs a floor's traps (FS-5FZ4J §D R25-R28, R30). A spike plate,
 dart wall, fire jet or tripwire fires at a body whose kind FiresTraps on the
 tick its centre enters the trap's cell, while the trap is armed: it disarms,
 re-arming RearmAfter seconds later, or, a tripwire, is spent for good. A gas
-vent puffs on the tick such a body first comes within CloudRadius of its
-centre, then every PuffEvery seconds while any stays, at every one in its
-cloud. A trap that fires is detected from that tick.
+vent puffs on the tick a body whose kind Breathes first comes within
+CloudRadius of its centre, then every PuffEvery seconds while any stays, at
+every one in its cloud: a peaceful encounter NPC among them (FS-4EC7Z Edge
+States). A trap that fires is detected from that tick.
 
 The system only says what fired at whom: what a spring does, a hit, an ambush
 or a poisoning, is the floor's (game's) to apply. Monsters fire nothing.
@@ -42,14 +43,21 @@ func (s *TrapSystem) Update(dt float64, entities []*ecs.Entity) []TrapSpring {
 	if s.CellSize <= 0 {
 		return nil
 	}
-	var traps, bodies []*ecs.Entity
+	var traps, bodies, breathers []*ecs.Entity
 	for _, e := range entities {
 		if e.HasComponent(ecs.ComponentTypeTrap) {
 			traps = append(traps, e)
 			continue
 		}
-		if BodyKindOf(e).FiresTraps() && e.HasComponent(ecs.ComponentTypeTransform) {
+		if !e.HasComponent(ecs.ComponentTypeTransform) {
+			continue
+		}
+		kind := BodyKindOf(e)
+		if kind.FiresTraps() {
 			bodies = append(bodies, e)
+		}
+		if kind.Breathes() {
+			breathers = append(breathers, e)
 		}
 	}
 
@@ -59,7 +67,7 @@ func (s *TrapSystem) Update(dt float64, entities []*ecs.Entity) []TrapSpring {
 		trap := tc.(*components.TrapComponent)
 		trap.Age += dt
 		if trap.Kind == components.TrapGasVent {
-			springs = append(springs, s.cloud(dt, e, trap, bodies)...)
+			springs = append(springs, s.cloud(dt, e, trap, breathers)...)
 			continue
 		}
 		s.rearm(dt, trap)

@@ -476,6 +476,21 @@ type EncounterNPCState struct {
 	HirerID   *uuid.UUID `json:"hirer_id,omitempty"`
 }
 
+// CageState is the Captives' cage on the wire, sent whole: where it stands
+// and whether it is open. FS-4EC7Z §F R23.
+type CageState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position Position  `json:"position"`
+	Open     bool      `json:"open"`
+}
+
+// EncounterKeyState is the cage key lying on the floor, sent whole while it
+// lies. FS-4EC7Z §F R23.
+type EncounterKeyState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position Position  `json:"position"`
+}
+
 // MerchantState is the wandering merchant on his floor and his wares, sent
 // whole; absent in the hub, a field and on a floor without him. FS-9JV5K §A R4.
 type MerchantState struct {

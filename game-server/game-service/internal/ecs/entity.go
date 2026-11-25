@@ -128,6 +128,12 @@ const (
 	ComponentTypeEncounter    ComponentType = "Encounter"
 	ComponentTypeEncounterNPC ComponentType = "EncounterNPC"
 	ComponentTypePilgrimWave  ComponentType = "PilgrimWave"
+	// a hired ally's fighting and following, and the Captives' cage and key
+	// (FS-4EC7Z §C-§D)
+	ComponentTypeAlly     ComponentType = "Ally"
+	ComponentTypeCaptives ComponentType = "Captives"
+	ComponentTypeCage     ComponentType = "Cage"
+	ComponentTypeCageKey  ComponentType = "CageKey"
 )
 
 type Entity struct {
