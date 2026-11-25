@@ -28,6 +28,8 @@ const FOOT_H = 32;
 export function controlRows(className: string, specialization?: string): [string, string][] {
   return [
     ["WASD", "Move"],
+    // the roll, its key read from the mapping (FS-7P736 R17)
+    [RUN_ACTIONS.roll.label, "Roll"],
     ["E", "Interact"],
     ["F", "Take Item"],
     ["I / B", "Inventory"],

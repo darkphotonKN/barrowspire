@@ -43,6 +43,7 @@ function onHud() {
     window: piece("window"),
     statusMarks: piece("statusMarks"),
     contract: piece("contract"),
+    roll: piece("roll"),
   };
   const slot = new UiHudSlot(bridge, build);
   const report = (world: World): WorldReport => {
@@ -92,7 +93,7 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     expect(RESOURCE_HUD_AT.run).toEqual(RESOURCE_HUD_AT.field);
     // FS-5FZ4J §J R53: a sealed floor's Braziers window counts down in a run alone
     // FS-5FZ4J §J R55: the status marks beside the run's own health bar, a run's alone
-    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, statusMarks: STATUS_MARKS_AT, contract: true });
+    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, statusMarks: STATUS_MARKS_AT, contract: true, roll: true });
   });
 
   it.each([
@@ -181,6 +182,26 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     field.report("field");
     field.slot.hear({ world: "field", kind: "contract", line: "Mark: last seen to the east" });
     expect(field.built).toEqual([]);
+  });
+
+  // FS-7P736 R16 (I-7P736-2): the roll pip beside the ability bar, a run's alone
+  it("should build the roll pip in a run on its first pip, hand it each one after, and never in a field or the hub", () => {
+    const { slot, built, report } = onHud();
+    report("run");
+    slot.hear({ world: "run", kind: "roll", roll: null });
+    expect(built).toEqual([]);
+    const ready = { label: "Space", ready: true, cooldown: null };
+    const cooling = { label: "Space", ready: false, cooldown: { remaining: 2, total: 3 } };
+    slot.hear({ world: "run", kind: "roll", roll: ready });
+    slot.hear({ world: "run", kind: "roll", roll: cooling });
+    expect(built).toHaveLength(1);
+    expect(built[0]).toMatchObject({ kind: "roll", shown: [ready, cooling] });
+    for (const world of ["field", "hub"] as const) {
+      const other = onHud();
+      other.report(world);
+      other.slot.hear({ world, kind: "roll", roll: ready });
+      expect(other.built).toEqual([]);
+    }
   });
 
   it("should draw nothing with no world reported", () => {

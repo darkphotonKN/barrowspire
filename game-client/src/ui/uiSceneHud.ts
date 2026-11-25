@@ -15,6 +15,7 @@ import type { AbilityBarView } from "./abilityBarView";
 import type { Progress } from "./progress";
 import { RESOURCE_HUD_AT } from "./ResourceHud";
 import type { HudBar } from "./resources";
+import type { RollPipView } from "./rollPipView";
 import type { SealWindowView } from "./sealWindow";
 import { STATUS_MARKS_AT, type StatusMark } from "./statusMarks";
 import type { UiBridge, World, WorldReport } from "./uiBridge";
@@ -35,6 +36,8 @@ export type HudMessage = { readonly world: World } & (
   | { readonly kind: "statusMarks"; readonly marks: StatusMark[] }
   // the contract's heading under the notices while it is active, none otherwise (FS-4EC7Z §G R34)
   | { readonly kind: "contract"; readonly line: string | null }
+  // the roll cooldown pip beside the ability bar, in a run alone; none before the first state (FS-7P736 R16)
+  | { readonly kind: "roll"; readonly roll: RollPipView | null }
 );
 
 export type HudKind = HudMessage["kind"];
@@ -77,6 +80,8 @@ export interface HudBuild {
   statusMarks(at: HudPoint): HudPiece<StatusMark[]>;
   /** The contract's heading line places itself, under the notices at the top centre (FS-4EC7Z §G R34, `contractLineAt`). */
   contract(): HudPiece<string | null>;
+  /** The roll pip places itself, one gap right of the ability bar (FS-7P736 R16, `rollPipFrame`). */
+  roll(): HudPiece<RollPipView | null>;
 }
 
 interface HudPlaces {
@@ -91,6 +96,8 @@ interface HudPlaces {
   readonly statusMarks?: HudPoint;
   /** A contract's heading line stands in this world: a run's alone, where contracts are taken. */
   readonly contract?: true;
+  /** The roll pip stands beside the ability bar in this world: a run's alone, where the roll is (FS-7P736 R13). */
+  readonly roll?: true;
 }
 
 /**
@@ -102,7 +109,7 @@ interface HudPlaces {
 export const HUD_PLACES: Readonly<Record<World, HudPlaces>> = {
   hub: { progress: true },
   field: { progress: true, bars: RESOURCE_HUD_AT.field, bar: true },
-  run: { progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, statusMarks: STATUS_MARKS_AT, contract: true },
+  run: { progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, statusMarks: STATUS_MARKS_AT, contract: true, roll: true },
 };
 
 interface HudStanding {
@@ -112,6 +119,7 @@ interface HudStanding {
   window?: HudPiece<SealWindowView | null>;
   statusMarks?: HudPiece<StatusMark[]>;
   contract?: HudPiece<string | null>;
+  roll?: HudPiece<RollPipView | null>;
 }
 
 /**
@@ -189,6 +197,11 @@ export class UiHudSlot {
         // built on the first line, never for none
         if (!places.contract || (!pieces.contract && message.line === null)) return;
         (pieces.contract ??= this.build.contract()).show(message.line);
+        return;
+      case "roll":
+        // built on the first pip, never for none
+        if (!places.roll || (!pieces.roll && !message.roll)) return;
+        (pieces.roll ??= this.build.roll()).show(message.roll);
         return;
     }
   }

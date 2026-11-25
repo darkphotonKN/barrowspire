@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { facingFrom, nearestScreenFacing, type Facing8 } from "./facing";
+import { facingFrom, facingVector, nearestScreenFacing, type Facing8 } from "./facing";
 
 describe("facingFrom", () => {
   it.each<[number, number, Facing8]>([
@@ -40,5 +40,26 @@ describe("nearestScreenFacing", () => {
     ["w", "left"],
   ])("should show %s with the %s texture", (facing, want) => {
     expect(nearestScreenFacing(facing)).toBe(want);
+  });
+});
+
+// FS-7P736 R13: a roll with no keys held goes the way the delver faces
+describe("facingVector", () => {
+  it.each<[Facing8, number, number]>([
+    ["e", 1, 0],
+    ["n", 0, -1],
+    ["se", Math.SQRT1_2, Math.SQRT1_2],
+    ["nw", -Math.SQRT1_2, -Math.SQRT1_2],
+  ])("should point %s along (%f, %f), a unit vector", (facing, x, y) => {
+    const v = facingVector(facing);
+    expect(v.x).toBeCloseTo(x);
+    expect(v.y).toBeCloseTo(y);
+  });
+
+  it("should turn back into the facing it came from, every way", () => {
+    for (const f of ["n", "ne", "e", "se", "s", "sw", "w", "nw"] as Facing8[]) {
+      const v = facingVector(f);
+      expect(facingFrom(v.x, v.y, "n")).toBe(f);
+    }
   });
 });

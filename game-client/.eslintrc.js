@@ -127,6 +127,7 @@ const UI_SCENE_PIECES = [
   ["@/ui/uiSceneBook", "The class book is the UI scene's: no world builds it or binds K (FS-X2CMM §G)."],
   ["@/ui/ResourceHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
   ["@/ui/ProgressHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
+  ["@/ui/RollPip", "The roll pip is the UI scene's: the run hands its view as data (FS-7P736 R16)."],
   ["@/ui/HudCorner", "The corner row is the UI scene's (FS-TQZ5J R13, R15)."],
   ["@/ui/menuPanel", "The ESC menu is the UI scene's (FS-TQZ5J R16)."],
   ["@/ui/optionsPanel", "OPTIONS is the UI scene's (FS-TQZ5J R16)."],

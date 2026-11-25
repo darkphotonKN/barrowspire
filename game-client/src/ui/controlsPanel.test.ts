@@ -89,6 +89,16 @@ describe("the run's controls panel (FS-TQZ5J § Change: Phase 3, R50)", () => {
     expect(words).toContain("Drink potion");
   });
 
+  // FS-7P736 R17 (I-7P736-2): the roll and its key, read from the mapping, after Move
+  it("should list the roll with its key, Space, after Move", () => {
+    const { scene, words } = stage();
+    drawControlsPanel(scene, { x: 400, y: 300 }, "warrior");
+    expect(words).toEqual(expect.arrayContaining([RUN_ACTIONS.roll.label, "Roll"]));
+    const keys = controlRows("warrior").map(([key]) => key);
+    expect(new Map(controlRows("warrior")).get("Space")).toBe("Roll");
+    expect(keys.indexOf("Space")).toBe(keys.indexOf("WASD") + 1);
+  });
+
   it("should list I / B for the inventory and C for the character panel (FS-HRH2J R11; § Change C15)", () => {
     const { scene, words } = stage();
     drawControlsPanel(scene, { x: 400, y: 300 }, "warrior");

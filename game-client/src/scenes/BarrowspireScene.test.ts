@@ -6611,6 +6611,129 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
 
 });
 
+// FS-7P736 §B R13, R14, R16 (I-7P736-2): Space sends the roll and starts it on the own body at once; the HUD's
+// pip hears the wire's roll cooldown through the run HUD message
+describe("BarrowspireScene Space, the roll (FS-7P736 §B R13, R14, R16)", () => {
+  interface Rolling {
+    bindRunInput(): void;
+    update(time: number, delta: number): void;
+    playerPos?: { x: number; y: number };
+    targetPosition?: { x: number; y: number };
+    watchedPlayerId?: string;
+    time: { now: number; delayedCall: unknown };
+    ui: { hud: (message: unknown) => void };
+  }
+  type Me = ReturnType<typeof player> & { roll_cooldown?: { remaining: number; total: number }; roll?: { dir_x: number; dir_y: number } };
+
+  /** A run in play, its keys bound, the clock at 1000 ms and `held` the movement keys down. */
+  function rollOnStage(me: Me = player("me", "Aldric", 130), held: Partial<Record<"left" | "right" | "up" | "down", boolean>> = {}) {
+    const stage = onStage();
+    const run = stage.run as unknown as Rolling;
+    const keyHandlers: Record<string, (event?: { repeat?: boolean }) => void> = {};
+    Object.assign(stage.run, {
+      input: {
+        setDefaultCursor: vi.fn(),
+        keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
+        on: vi.fn(),
+      },
+    });
+    stage.run.handleGameStateUpdate(partyState(me));
+    run.bindRunInput();
+    // one frame's pieces that would draw on a stage that has none of them
+    const keys = Object.fromEntries((["left", "right", "up", "down"] as const).map((k) => [k, { isDown: held[k] === true }]));
+    Object.assign(run, {
+      cursors: keys,
+      wasd: keys,
+      updateLighting: vi.fn(),
+      updateOtherPlayersSmooth: vi.fn(),
+      checkBuildingStatus: vi.fn(),
+      sendMovementIntent: vi.fn(),
+    });
+    vi.spyOn((run as unknown as { kit: { follow(): void } }).kit, "follow").mockImplementation(() => {});
+    run.time = { delayedCall: vi.fn(), now: 1000 };
+    const press = (event: { repeat?: boolean } = {}) => keyHandlers[`keydown-${RUN_ACTIONS.roll.key}`]?.(event);
+    const rolls = () => stage.sent.mock.calls.filter(([a]) => a === ActionType.Roll);
+    return { ...stage, run, keyHandlers, press, rolls };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should bind the roll to the keydown event the mapping names, Space", () => {
+    const { keyHandlers } = rollOnStage();
+    expect(keyHandlers["keydown-SPACE"]).toBeTypeOf("function");
+  });
+
+  it("should send one roll the held keys' way, as move sends them, whatever the key repeats", () => {
+    const { press, rolls } = rollOnStage(undefined, { right: true, up: true });
+    press();
+    press({ repeat: true });
+    expect(rolls()).toEqual([[ActionType.Roll, { dir_x: 1, dir_y: -1 }]]);
+  });
+
+  it("should send the facing with no key held", () => {
+    const { press, rolls } = rollOnStage();
+    press();
+    const [[, dir]] = rolls() as [string, { dir_x: number; dir_y: number }][];
+    // the placeholder body faces se until it moves
+    expect(dir.dir_x).toBeCloseTo(Math.SQRT1_2);
+    expect(dir.dir_y).toBeCloseTo(Math.SQRT1_2);
+  });
+
+  it.each<[string, Me]>([
+    ["the roll cooldown runs on the wire", { ...player("me", "Aldric", 130), roll_cooldown: { remaining: 1, total: 3 } }],
+    ["the server says the player is rolling", { ...player("me", "Aldric", 130), roll: { dir_x: 1, dir_y: 0 } }],
+    ["the player is dead", player("me", "Aldric", 130, { current_health: 0 })],
+  ])("should send nothing on Space when %s", (_name, me) => {
+    const { press, rolls } = rollOnStage(me);
+    press();
+    expect(rolls()).toHaveLength(0);
+  });
+
+  it("should send nothing while spectating", () => {
+    const { run, press, rolls } = rollOnStage();
+    run.watchedPlayerId = "ally";
+    press();
+    expect(rolls()).toHaveLength(0);
+  });
+
+  it("should send nothing for a second press while the predicted roll is still in flight", () => {
+    const { press, rolls } = rollOnStage(undefined, { right: true });
+    press();
+    press();
+    expect(rolls()).toHaveLength(1);
+  });
+
+  it("should start the roll on the own body at once, 500 px/s along it, and hand it back to the server after a refusal", () => {
+    const { run, press } = rollOnStage(undefined, { right: true });
+    run.update(0, 16);
+    const start = { ...run.playerPos! };
+    press();
+    run.time.now = 1200;
+    run.update(0, 16);
+    expect(run.playerPos!.x).toBeCloseTo(start.x + 100);
+    expect(run.playerPos!.y).toBeCloseTo(start.y);
+    // the server never answered: past the roll and its grace the body eases back toward the server's position
+    run.time.now = 1400 + 300;
+    run.update(0, 16);
+    expect(run.playerPos!.x).toBeLessThan(start.x + 200);
+  });
+
+  it("should hand the UI scene the roll pip on each state, swept from the wire's roll cooldown", () => {
+    const { run } = rollOnStage();
+    const hud = vi.spyOn(run.ui, "hud");
+    (run as unknown as FloorRun).handleGameStateUpdate(
+      partyState({ ...player("me", "Aldric", 130), roll_cooldown: { remaining: 2, total: 3 } } as Me),
+    );
+    expect(hud).toHaveBeenCalledWith({
+      world: "run",
+      kind: "roll",
+      roll: { label: RUN_ACTIONS.roll.label, ready: false, cooldown: { remaining: 2, total: 3 } },
+    });
+  });
+});
+
 describe("BarrowspireScene key 3, the tree ability (FS-04EEA §G R35–R37)", () => {
   interface FakeKey {
     justDown: boolean;
