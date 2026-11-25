@@ -425,3 +425,5 @@ C15. **The controls help** (the run's H panel, and the web page's controls list)
 - Moving or resizing either panel by hand (parked, "draggable windows").
 
 ## Change: Passives on the character panel → FS-8RZ51
+
+## Change: Item links in chat → FS-KBA4Q

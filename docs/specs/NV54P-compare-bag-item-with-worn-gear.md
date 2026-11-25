@@ -207,3 +207,5 @@ holds)**.
 - Rebinding the compare key, a toggle mode, or a setting.
 - Adding Shift to the controls help (H).
 - Any server, WebSocket, proto, OpenAPI, generated-client or art change.
+
+## Change: Item links in chat → FS-KBA4Q

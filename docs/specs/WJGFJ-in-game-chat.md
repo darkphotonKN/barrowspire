@@ -393,3 +393,5 @@ the requirement named. Built as I-WJGFJ-6.
 - **Moving the ResourceHud** — rejected during promotion; the window stacks above it.
   *(Amended 2026-11-06, user, as R18: no longer out of scope. The ResourceHud has moved to the top left
   (FS-8AY7S R20) and the window no longer stacks above it. Was: rejected.)*
+
+## Change: Item links in chat → FS-KBA4Q
