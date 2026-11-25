@@ -8,6 +8,8 @@ import {
   rollReach,
   type RollGround,
 } from "./rollPrediction";
+import fixture from "./dungeon.fixture.json";
+import { RegionGrid, type DungeonMap } from "./dungeon";
 
 // FS-7P736 §B R14 (R3, R4 as the client's copy): the predicted roll on the local body, 200 px over 0.4 s at a
 // constant speed, swept against what the client knows stops a body, and handed back to the server's position
@@ -140,5 +142,52 @@ describe("RollPrediction (FS-7P736 R14)", () => {
     const p = started();
     p.clear();
     expect(p.at(1100)).toBeNull();
+  });
+});
+
+describe("rollReach on the rooms' shapes (FS-7P736 R4, FS-KE075 §Change: Room variety)", () => {
+  // the levelgen golden's own floor: a cut cell is in no region, so the grid holds it as rock
+  const grid = new RegionGrid(fixture as DungeonMap);
+  const centre = (c: number) => c * grid.cell + grid.cell / 2;
+
+  /** Every cut cell with open floor on all four sides: a pillar (or a notch's lone corner). */
+  function pillars(): { cx: number; cy: number }[] {
+    const found: { cx: number; cy: number }[] = [];
+    for (let cx = 2; cx < grid.cols - 2; cx++)
+      for (let cy = 1; cy < grid.rows - 1; cy++)
+        if (
+          !grid.walkable(cx, cy) &&
+          grid.walkable(cx - 1, cy) &&
+          grid.walkable(cx - 2, cy) &&
+          grid.walkable(cx + 1, cy) &&
+          grid.walkable(cx, cy - 1) &&
+          grid.walkable(cx, cy + 1)
+        )
+          found.push({ cx, cy });
+    return found;
+  }
+
+  it("should hold a pillared room's lone pillars as rock in the golden floor", () => {
+    expect(pillars().length).toBeGreaterThan(0);
+  });
+
+  it("should stop a roll at a one-cell pillar standing in open floor, its edge at the pillar's", () => {
+    for (const { cx, cy } of pillars()) {
+      const end = rollReach({ x: centre(cx - 2), y: centre(cy) }, EAST, grid, []);
+      const face = cx * grid.cell;
+      expect(end.y).toBe(centre(cy));
+      expect(end.x).toBeLessThanOrEqual(face - BODY_HALF);
+      expect(end.x).toBeGreaterThan(face - BODY_HALF - 3);
+    }
+  });
+
+  it("should stop a roll at an L's notch, the cut block of its rect", () => {
+    // an L: a 6 x 6 room whose north-east 2 x 2 is cut (levelgen's ShapeLNorthEast)
+    const room = floor(6, 6, (cx, cy) => cx >= 4 && cy <= 1);
+    const end = rollReach({ x: centre(1), y: centre(0) }, EAST, room, []);
+    expect(end.x).toBeLessThanOrEqual(4 * 80 - BODY_HALF);
+    expect(end.x).toBeGreaterThan(4 * 80 - BODY_HALF - 3);
+    // a row below the notch the floor runs on: the whole roll
+    expect(rollReach({ x: centre(1), y: centre(3) }, EAST, room, [])).toEqual({ x: centre(1) + ROLL_DISTANCE, y: centre(3) });
   });
 });
