@@ -109,13 +109,16 @@ func TestStep_WornRing_CountsOnTheNextTickAndComesOff(t *testing.T) {
 
 			assert.Equal(t, ownMax+6, health.MaxHealth)
 			assert.Equal(t, ownMax, health.CurrentHealth, "gaining maximum never heals")
-			assert.InDelta(t, constants.DefaultSpeed*1.1, velocity.Speed, 1e-9)
+			// the world's walk: the paced default, and the hub's town bonus on
+			// top of the ring's (FS-TAGWA R17)
+			walk := constants.DefaultSpeed * (1 + float64(s.worldMoveBonus())/100)
+			assert.InDelta(t, walk*1.1, velocity.Speed, 1e-9)
 
 			require.NoError(t, s.handleEquip(constants.ActionUnequip, playerEntityID, band))
 			s.step(1.0/60, s.EntityManager.GetAllEntities())
 
 			assert.Equal(t, ownMax, health.MaxHealth)
-			assert.InDelta(t, constants.DefaultSpeed, velocity.Speed, 1e-9)
+			assert.InDelta(t, walk, velocity.Speed, 1e-9)
 		})
 	}
 }

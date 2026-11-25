@@ -166,7 +166,7 @@ func TestBoneArcher_StrafingDodgesTheArrowRunningStraightAwayDoesNot(t *testing.
 // first tick of the draw is still hit: the draw's clock runs a tick over
 // 0.6 s, so at full pace they are 453 px away when the arrow leaves, and an
 // arrow of radius 8 closing at 220 px/s on a body of radius 20 reaches them
-// after 826 px of flight. FS-B4SG9 §A R2, R8, user story 6. At the pace's 0.5
+// after 826 px of flight. FS-B4SG9 §A R2, R8, user story 6. At a pace of 0.5
 // (FS-TAGWA) the draw does not shorten: they are 387 px away, the arrow
 // closes at 110 px/s and reaches them after about 685 px, inside its 850.
 func TestBoneArcher_RunningStraightAwayFromTheStartOfTheDrawDoesNotDodge(t *testing.T) {

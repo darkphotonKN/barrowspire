@@ -23,7 +23,8 @@ export interface ViewGame {
   scene: {
     getScenes(isActive: boolean): {
       sys: { settings: { status: number } };
-      cameras?: { main?: ViewCamera };
+      /** Its cameras: the main one, and every one it has (a world's HUD camera among them). */
+      cameras?: { main?: ViewCamera; cameras?: readonly ViewCamera[] };
       /** The scene's display list: its top-level objects, containers among them. */
       children?: { list: readonly object[] };
     }[];
@@ -32,7 +33,8 @@ export interface ViewGame {
 
 /**
  * Keeps `game` drawn at the viewport's render scale: on each change the backing store is resized,
- * shown at the view's CSS size (zoom cssScale/rs), and every started scene's camera re-fitted.
+ * shown at the view's CSS size (zoom cssScale/rs), and every started scene's cameras re-fitted
+ * (a world's two: its world camera and its HUD's).
  * When the render scale itself changed (fullscreen, another monitor), the text of every scene
  * started and not stopped is rasterised again at it (R5, US9): text that no re-layout moves would
  * otherwise stay at the old scale and read soft. A sleeping or paused scene's text included (the UI
@@ -50,8 +52,9 @@ export function fitGame(
     // after the resize: in Phaser's NONE scale mode only setZoom rewrites the canvas's CSS size
     game.scale.setZoom(view.cssScale / view.renderScale);
     for (const scene of game.scene.getScenes(false)) {
-      const cam = scene.cameras?.main;
-      if (cam) fitCamera(cam, view);
+      const main = scene.cameras?.main;
+      for (const cam of scene.cameras?.cameras ?? (main ? [main] : []))
+        fitCamera(cam, view);
     }
     if (view.renderScale === renderScale) return;
     renderScale = view.renderScale;

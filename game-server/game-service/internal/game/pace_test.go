@@ -9,6 +9,7 @@ import (
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 )
 
 /*
@@ -55,9 +56,8 @@ const (
 	fullPaceAllyWalk     = 190.0
 )
 
-func TestPace_TheScaleIsTheKnobAtHalf(t *testing.T) {
-	assert.Equal(t, 0.5, commonconstants.PaceScale)
-}
+// The knob's value is the owner's to turn: no test pins it, so a tweak is one
+// constant and the golden's -update (ADR-0099); every pin below holds at any value.
 
 func TestPace_WalksAndTheStepGainArePaced(t *testing.T) {
 	assert.Equal(t, fullPaceDelverWalk*commonconstants.PaceScale, commonconstants.DefaultSpeed, "a delver's walk")
@@ -115,4 +115,37 @@ func TestPace_TravelBudgetsStretchWithThePace(t *testing.T) {
 // for tests that walk a body a set distance whatever the pace.
 func ticksToWalk(px float64) int {
 	return int(math.Ceil(px / (commonconstants.DefaultSpeed / float64(commonconstants.GameFrameRate))))
+}
+
+/*
+The town bonus (FS-TAGWA R16): a delver walks HubMoveSpeedBonusPercent faster
+in the hub, on top of the paced walk and worn move speed alike, and nowhere
+else; the hub's residents keep their amble.
+*/
+func TestPace_TheTownBonusIsTheHubsAlone(t *testing.T) {
+	worlds := []struct {
+		name   string
+		bounds WorldBounds
+		want   float64
+	}{
+		{"the hub", HubBounds(), commonconstants.DefaultSpeed * (1 + commonconstants.HubMoveSpeedBonusPercent/100.0)},
+		{"a run", RunBounds(), commonconstants.DefaultSpeed},
+		{"a field", FieldBounds(GentleMeadows()), commonconstants.DefaultSpeed},
+	}
+	for _, w := range worlds {
+		t.Run(w.name, func(t *testing.T) {
+			s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, w.bounds)
+			_, delver := placeDelver(t, s, "warrior", 500, 500)
+			resident := CreateResidentEntity(s.EntityManager, hubResidents[0])
+
+			s.step(1.0/float64(commonconstants.GameFrameRate), s.EntityManager.GetAllEntities())
+
+			assert.InDelta(t, w.want, velocityOf(delver).Speed, 1e-9, "a delver's walk")
+			assert.Equal(t, commonconstants.NPCWanderSpeed, velocityOf(resident).Speed, "a resident's amble")
+		})
+	}
+}
+
+func TestPace_TheTownBonusIsItsOwnTen(t *testing.T) {
+	assert.Equal(t, 10, commonconstants.HubMoveSpeedBonusPercent)
 }

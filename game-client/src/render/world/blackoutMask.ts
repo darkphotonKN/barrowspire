@@ -236,7 +236,8 @@ export interface BlackoutMaskStage {
     rectangle(x: number, y: number, width: number, height: number, fillColor?: number, fillAlpha?: number): DarkRect;
   };
   make: { graphics(config: object, addToScene?: boolean): FloorShape };
-  cameras: { main: { roundPixels: boolean } & MaskCamera };
+  /** `zoomX`: the world's backing px per world unit, the render scale times a world's closer zoom. */
+  cameras: { main: { roundPixels: boolean; readonly zoomX?: number } & MaskCamera };
 }
 
 export class BlackoutMask {
@@ -295,7 +296,7 @@ export class BlackoutMask {
       if (d.width !== width || d.height !== height) d.setSize(width, height);
       d.setVisible(true);
     }
-    const key = `${viewport.renderScale}|${maskKey(look)}`;
+    const key = `${this.scale()}|${maskKey(look)}`;
     if (key === this.drawn) return;
     this.drawn = key;
     this.redraw(look);
@@ -307,6 +308,14 @@ export class BlackoutMask {
     this.under.destroy();
     this.texture?.destroy();
     this.floor.destroy();
+  }
+
+  /**
+   * The world's backing px per world unit: the camera's zoom, which a world stands closer than the
+   * render scale (FS-ZAJMH § Change: Closer world camera); the render scale for a camera that has none.
+   */
+  private scale(): number {
+    return this.camera.zoomX ?? viewport.renderScale;
   }
 
   /** The texture, `width` × `height`: the one there is, or a fresh one masking the dark. */
@@ -325,7 +334,7 @@ export class BlackoutMask {
 
   /** Draws the floor, then every stamp shown where it stands, into the texture over the building. */
   private redraw(look: MaskLook): void {
-    const rs = viewport.renderScale;
+    const rs = this.scale();
     const b = maskPlacement(maskBounds(look.house, look.wallTop), rs);
     const texture = this.fitted(b.width, b.height);
     // backing px, drawn back at 1/rs over the building's world rect: sharp, and on the screen's px

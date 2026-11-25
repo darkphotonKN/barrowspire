@@ -466,7 +466,8 @@ type monsterShot struct {
 // The Bone Archer's arrow: a hostile one, drawn apart from a party archer's.
 // Its max flight catches a delver at the base speed who runs straight away
 // from shooting range from the first tick of the draw (826 px of flight at
-// full pace; about 725 at the pace's 0.5, the wind-up not scaling).
+// full pace; under 850 at any slower pace, the wind-up not scaling: about
+// 725 at 0.5).
 // FS-B4SG9 §A R2. Starting values.
 var boneArrowShot = monsterShot{
 	ProjectileType: "bone_arrow",

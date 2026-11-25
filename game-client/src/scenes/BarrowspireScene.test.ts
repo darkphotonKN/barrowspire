@@ -17,6 +17,8 @@ interface Emitter {
 vi.mock("@/render/viewport", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/render/viewport")>()),
   boundCamera: () => {},
+  // the world's closer camera and its HUD's are worldView.test.ts's; the stub has one camera
+  zoomWorldView: () => {},
   followWith: (cam: { startFollow(target: unknown): void }, target: unknown) => cam.startFollow(target),
   // the stub camera keeps who hears its frames; a test sets a frame up by calling them
   afterFrameSetUp: (cam: { frames?: Set<(scroll: { x: number; y: number }) => void> }, listener: (scroll: { x: number; y: number }) => void) => {

@@ -173,3 +173,64 @@ reach stay as they are.
 - Any change to timings, damage, reach, aggro or leash.
 - A walk/run switch for slow paces, or a new clip cadence.
 - Any wire field: the snapshot already carries every speed the client needs.
+
+## Change: The owner's play-test tweak and the town bonus
+Status: work-order
+Date: 2026-11-25
+
+The owner played the build at 0.5: a touch too slow, and the town felt big. Two changes, both his.
+
+### Requirements
+
+16. **The pace is 0.525**, 5 % more than 0.5 on every travel speed and travel budget alike
+    (`PaceScale`). The pace golden is regenerated; the client follows with no edit (R9). No test
+    pins the knob's value: every pin holds at any value, so the next tweak is one constant and the
+    golden's `-update` (ADR-0099).
+17. **The town bonus.** A delver walks `HubMoveSpeedBonusPercent` (10) faster in the hub only, its
+    own named constant beside the hub's in `common/constants/game.go`, never folded into
+    `PaceScale` or a base speed. It multiplies on top of everything else and past worn move speed's
+    cap: hub walk = `DefaultSpeed` × (1 + worn move speed %, capped) × 1.10. It is the hub's world
+    bonus on the gear pass (`GearSystem.WithWorldMoveBonus`), so worn move speed never counts it.
+    Not in a run or a field; the hub's residents keep their amble (`NPCWanderSpeed`).
+18. **The client needs nothing for the bonus.** It never predicts a body's walk: it eases toward
+    the broadcast position and plays the walk at the speed drawn (R11, R14), so the hub's faster
+    walk shows with no rubber-banding and no client copy. The class card's Speed stays the base walk.
+
+### The timing table at 0.525
+
+Walk 105 px/s (115.5 in the hub), 80 px cells:
+
+| Measure | Full pace | At 0.5 | At 0.525 |
+|---|---|---|---|
+| Cross a 4-square room (320 px) | 1.6 s | 3.2 s | 3.05 s |
+| Cross an 8-square room (640 px) | 3.2 s | 6.4 s | 6.10 s |
+| Cross a 10-square room (800 px) | 4.0 s | 8.0 s | 7.62 s |
+| Walk a 12-square corridor (960 px) | 4.8 s | 9.6 s | 9.14 s |
+| Cross 10 squares of the hub (800 px, with the town bonus) | 4.0 s | 8.0 s | 6.93 s |
+| A 190 px/s mover's gain on a delver | −10 px/s | −5 px/s | −5.25 px/s |
+| A delver's arrow over 6 squares (480 px at 252 px/s) | 1.0 s | 2.0 s | 1.90 s |
+| A bone arrow over 6 squares (at 220.5 px/s) | 1.14 s | 2.29 s | 2.18 s |
+| A stone block's push, then its slide, over one cell | 0.8 + 0.8 s | 1.6 + 1.6 s | 1.52 + 1.52 s |
+| The brazier windows, party and solo; the mark's longest flight | 60, 90, 60 s | 120, 180, 120 s | 114, 171, 114 s |
+
+The bone arrow still catches a delver running straight away from the first tick of the draw:
+(320 + 105 × 20/30) / (220.5 − 105) × 220.5 ≈ 691 px of flight, under 850. The walk plays at about
+1.42x, the run at about 0.54x, the hound's gallop at about 0.53x (over its 0.5x floor). The class
+cards say 105 (the archer 116).
+
+### Acceptance Criteria
+
+- [ ] `PaceScale` is 0.525 and the pace golden says so; no test pins its value.
+- [ ] A delver in the hub walks `DefaultSpeed` × (1 + capped worn %) × 1.10; in a run and a field, without the 1.10.
+- [ ] Worn move speed's percent never counts the bonus; the hub's residents amble at `NPCWanderSpeed`.
+- [ ] game-service `make test`, and the client's vitest, lint, lint:fence and tsc pass.
+
+### Edge States
+
+- **A delver walking into the hub from a run or a field** walks at the hub's pace from the hub's first
+  gear pass, its first tick there; leaving, at the next world's.
+- **Gear past its cap in town:** the cap holds first, then the bonus: 30 % worn walks 1.3 × 1.1.
+
+### Out of Scope
+
+- A bonus for any other world; any change to residents, monsters or projectiles in the hub.

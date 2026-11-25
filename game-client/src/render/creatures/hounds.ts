@@ -83,7 +83,8 @@ export const HOUND_BITE_MS = 1000;
 /**
  * World px per second its gallop covers at 1x: the clip's stride, keyed at 14 fps for the archer's full-pace
  * base speed (R28). A fact of the art, not a speed: faster or slower, the stride follows the pace drawn.
- * At the paced base walk (100 px/s at the pace's 0.5, FS-TAGWA R11) the gallop plays at its 0.5x floor.
+ * At the paced base walk (105 px/s at the pace's 0.525, FS-TAGWA R11) the gallop plays at about 0.53x, over
+ * its 0.5x floor.
  */
 export const HOUND_PACE = 200;
 /** The ring under it, world px: a little wider than its body. */

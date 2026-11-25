@@ -65,7 +65,7 @@ func assertFarthestMonstersReach(t *testing.T, s *Session, delver uuid.UUID, see
 	}
 
 	dt := 1.0 / float64(constants.GameFrameRate)
-	for range int(180/constants.PaceScale) * constants.GameFrameRate {
+	for range int(math.Ceil(180/constants.PaceScale)) * constants.GameFrameRate {
 		keepStanding(s.EntityManager)
 		for _, m := range chasers {
 			// the leash never lets a monster this far off keep a target,

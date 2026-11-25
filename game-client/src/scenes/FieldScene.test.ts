@@ -35,6 +35,11 @@ vi.mock("@/ui/partyInviteField", () => ({
 // The vignette paints into a real <canvas>: no DOM here either, and the atmosphere has its own
 // suite (utils/atmosphere.test.ts).
 vi.mock("@/utils/atmosphere", () => ({ createAtmosphere: () => undefined }));
+// the world's closer camera and its HUD's are worldView.test.ts's; the stub has one camera
+vi.mock("@/render/viewport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/render/viewport")>()),
+  zoomWorldView: () => {},
+}));
 
 // A Phaser stand-in: the scene base class on Phaser's event emitter, its key poll, math and geometry.
 vi.mock("phaser", async () => (await import("./phaser.standin")).phaserStandIn());

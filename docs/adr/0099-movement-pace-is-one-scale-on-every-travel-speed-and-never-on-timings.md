@@ -53,3 +53,6 @@ walk would slow combat, which the charter does not want.
   are not paced. Playback follows the drawn speed, so feet stay planted at any pace.
 - A golden in production code means a server change can break the client build. That is the point:
   the two cannot drift.
+- A world may add its own bonus on top of the paced walk without touching the scale: the hub's
+  town bonus (`HubMoveSpeedBonusPercent`, FS-TAGWA §Change: The owner's play-test tweak and the
+  town bonus) multiplies past worn move speed's cap and is no travel speed of its own.
