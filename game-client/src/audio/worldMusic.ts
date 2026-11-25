@@ -179,6 +179,25 @@ export class WorldMusic {
     else this.retune();
   }
 
+  /**
+   * The world was entered, but the player stands where another track plays (§ Change: The chapel's
+   * and the Inn's music, M3): the sound is added silent and not started, so leaving the world
+   * frees it all the same (R13).
+   */
+  wait(): void {
+    this.current = readMusicLevel(this.store);
+    this.hold();
+  }
+
+  /**
+   * The player left this track's place inside its running world (§ Change: The chapel's and the
+   * Inn's music, M2): it fades out and is kept stopped, its world still busy (R3, R13), to start
+   * from the top on the next {@link enter} (R5).
+   */
+  quiet(): void {
+    this.fall();
+  }
+
   /** The world was left (its scene end). */
   leave(end: SceneEnd): void {
     if (end === "destroy") return this.letGo();
