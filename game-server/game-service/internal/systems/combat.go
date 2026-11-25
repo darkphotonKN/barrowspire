@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -253,7 +254,8 @@ const (
 )
 
 // attackTable is FS-77AB6 §Requirements 6. Starting values. Projectile speed,
-// range, radius and spread are what they were before the CombatSystem existed.
+// range, radius and spread are what they were before the CombatSystem existed,
+// the speed paced since (its full-pace figure × PaceScale, FS-TAGWA R2).
 //
 // Slash's coefficient is 1.5, not the table's 1.0: the FS tunes coefficients so a
 // level-1 unequipped delver deals roughly today's numbers, and a warrior slash at
@@ -312,13 +314,13 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackArrow: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
 		coefficient: 1.4, cooldown: 0.25,
-		projectile: projectileSpec{kind: "arrow", speed: 480, maxDistance: 550, radius: 8, spread: []float64{0}},
+		projectile: projectileSpec{kind: "arrow", speed: 480 * constants.PaceScale, maxDistance: 550, radius: 8, spread: []float64{0}},
 		pins:       true,
 	},
 	components.AttackFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
 		coefficient: 1.1, cooldown: 0.25,
-		projectile: projectileSpec{kind: "fireball", speed: 350, maxDistance: 500, radius: 12, spread: []float64{0}},
+		projectile: projectileSpec{kind: "fireball", speed: 350 * constants.PaceScale, maxDistance: 500, radius: 12, spread: []float64{0}},
 		pins:       true,
 	},
 	// the archer's ability: one slow, heavy bolt, paid in stamina. 90 of the
@@ -327,13 +329,13 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackShadowShot: {
 		delivery: deliverProjectile, damageType: components.DamagePhysical, scaling: scaleAgility,
 		coefficient: 3.2, cost: 90, cooldown: 1.2,
-		projectile: projectileSpec{kind: "shadow_shot", speed: 260, maxDistance: 650, radius: 10, spread: []float64{0}},
+		projectile: projectileSpec{kind: "shadow_shot", speed: 260 * constants.PaceScale, maxDistance: 650, radius: 10, spread: []float64{0}},
 		pins:       true,
 	},
 	components.AttackTripleFireball: {
 		delivery: deliverProjectile, damageType: components.DamageMagic, scaling: scaleIntelligence,
 		coefficient: 0.9, cost: 15, cooldown: 0.4,
-		projectile: projectileSpec{kind: "fireball", speed: 360, maxDistance: 500, radius: 12, spread: []float64{-0.26, 0, 0.26}},
+		projectile: projectileSpec{kind: "fireball", speed: 360 * constants.PaceScale, maxDistance: 500, radius: 12, spread: []float64{-0.26, 0, 0.26}},
 		pins:       true,
 	},
 	// the charge is movement, not an attack: it never pins (FS-JS7C8 §Change:

@@ -1,6 +1,6 @@
 # FS-TAGWA: Exploration pace
 
-> Status: work-order · SPECIFICATION.md: none of its own: a change FS spanning several capabilities. It changes "Continuous-velocity movement" (`game-server/game-service/SPECIFICATION.md`, FS-none, its line kept as is) and the stated speeds of [FS-77AB6](77AB6-monsters-and-combat.md), [FS-B4SG9](B4SG9-ranged-monsters-and-the-bone-archer.md), [FS-C8VM7](C8VM7-tiered-enemy-roster-and-floor-pools.md), [FS-4EC7Z](4EC7Z-dungeon-encounters.md), [FS-JTNPR](JTNPR-shadow-shot.md) and [FS-JS7C8](JS7C8-class-run-attack-walk-pointer-facing.md); each carries `## Change: Exploration pace → FS-TAGWA` · Charter: item A of the old-school-crawl charter (2026-11-25; B, smaller rooms, and C, the dodge roll and economy, land after it) · Related ADRs: [ADR-0099](../adr/0099-movement-pace-is-one-scale-on-every-travel-speed-and-never-on-timings.md) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Pace scale"
+> Status: work-order · SPECIFICATION.md: none of its own: a change FS spanning several capabilities. It changes "Continuous-velocity movement" (`game-server/game-service/SPECIFICATION.md`, FS-none, its line kept as is) and the stated speeds of [FS-77AB6](77AB6-monsters-and-combat.md), [FS-B4SG9](B4SG9-ranged-monsters-and-the-bone-archer.md), [FS-C8VM7](C8VM7-tiered-enemy-roster-and-floor-pools.md), [FS-4EC7Z](4EC7Z-dungeon-encounters.md), [FS-JTNPR](JTNPR-shadow-shot.md), [FS-5FZ4J](5FZ4J-sealed-floors.md) (its brazier windows, R15) and [FS-JS7C8](JS7C8-class-run-attack-walk-pointer-facing.md); each carries `## Change: Exploration pace → FS-TAGWA` · Charter: item A of the old-school-crawl charter (2026-11-25; B, smaller rooms, and C, the dodge roll and economy, land after it) · Related ADRs: [ADR-0099](../adr/0099-movement-pace-is-one-scale-on-every-travel-speed-and-never-on-timings.md) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Pace scale"
 
 > Promoted `--from-thread` on 2026-11-25 from the scope-it notes. The owner approved the charter's
 > decisions P1–P5 as given; everything else the notes left open is marked **(charter default)** with
@@ -41,7 +41,7 @@ reach stay as they are.
 4. **Percentages stay on top.** Worn move speed and its 30 % cap, the passive tree's move and
    projectile speed, the attack pin's walk factor (FS-JS7C8) and the variant gains all apply to the
    paced base as before. Faster monsters stay faster relative to the rest, by the same ratio.
-5. **Timings and reach never scale.** Wind-ups, attack intervals, cooldowns, the attack pin's
+5. **Timings and reach never scale** (but for the travel budgets of R15). Wind-ups, attack intervals, cooldowns, the attack pin's
    0.6 s, ranges, aggro and leash radii, max flights, poison and regen are untouched. So are two
    moves that carry a body over a fixed distance in a fixed time, which are attack timing and reach
    and not travel **(charter default: P4)**: the warrior's charge (180 px in 0.4 s, `dashSpeed`)
@@ -49,6 +49,19 @@ reach stay as they are.
 6. **The hub slows too.** `DefaultSpeed` is every delver's walk in every world, so the hub's walk and
    its residents' amble halve with the run's **(charter default: "one slower baseline for all
    movement"; the hub keeps one walk with the run)**.
+
+### Travel budgets
+
+15. **A timer that is a walk's allowance stretches with the pace.** A travel budget is a window
+    sized to the ground it lets a body cover, not a fight's rhythm, so it is its full-pace length
+    over `PaceScale`: the brazier windows (60 s, 90 s solo, `seal_tuning.go`; FS-5FZ4J R34) and the
+    mark's longest flight (60 s, `MarkFleeMaxSeconds`; FS-4EC7Z §E), 120 s, 180 s and 120 s at
+    0.5 **(charter default: found in the build. At the halved walk with the window kept, eight
+    floor-6 seeds of the 1 000-seed sweep had braziers one delver could no longer walk inside the
+    solo window, breaking "solvable by one" (ADR-0092). P4 names attack timings only; these are
+    not.)** A pin test holds each to its full-pace length over the scale. Every other timer
+    (respawns, loot windows, traps, poison, casts, searches, prayers, the block's drift delay)
+    stays.
 
 ### Proof without play
 
@@ -127,6 +140,7 @@ reach stay as they are.
 - [ ] A delver with worn move speed walks at the paced base × (1 + percent), capped as before.
 - [ ] The hound moves at the paced base and a block push and slide take a cell over half the paced base.
 - [ ] No wind-up, interval, cooldown, range, radius, max flight, the charge's distance or time, or the leap's time changes.
+- [ ] The brazier windows and the mark's longest flight are their full-pace lengths over `PaceScale`, pinned by a test.
 - [ ] `pace.golden.json` is written by a Go test that fails while it is stale.
 - [ ] The client's block slide, its class cards' Speed and its playback tests read the pace from the golden; the client keeps no literal of the base speed.
 - [ ] `GAME_CONFIG.PLAYER_SPEED` and `BULLET_SPEED` are gone.

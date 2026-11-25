@@ -31,13 +31,16 @@ walk would slow combat, which the charter does not want.
    a shot in flight is the same at any pace.
 4. **Timings and reach never scale.** Wind-ups, intervals, cooldowns, pins, ranges, radii and max
    flights stay. A move that carries a body a fixed distance in a fixed time (the warrior's charge,
-   a monster's pounce) is an attack's timing and reach, not travel, and stays too.
-5. **A pin test holds the rule.** One server test lists every class of speed with its full-pace
+   a monster's pounce) is an attack's timing and reach, not travel, and stays too. The one kind of
+   timer that does follow the pace is a **travel budget**, a window sized to the ground it lets a
+   body cover (the brazier windows, the mark's longest flight): it is its full-pace length over
+   the scale, so the walk it allows never shrinks and a seal stays solvable by one (ADR-0092).
+5. **Pin tests hold the rule.** A server test in each package that defines speeds lists every class with its full-pace
    figure, and every monster archetype, ally kind and projectile row must appear in it.
 6. **The client reads the pace from a server-written golden.** A Go test writes
    `game-client/src/data/pace.golden.json` (`paceScale`, `defaultSpeed`, `blockPushSpeedShare`) and
-   fails while it is stale. The client imports it and keeps no literal of a server speed. This is the
-   first golden the client reads outside its tests; the hub town golden stays test-only.
+   fails while it is stale. The client imports it and keeps no literal of a server speed, as it
+   already imports the passive tree's golden (`src/data/passiveTree.golden.json`).
 
 ## Consequences
 

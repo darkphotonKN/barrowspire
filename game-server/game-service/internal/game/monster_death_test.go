@@ -181,7 +181,7 @@ func TestRun_CorpseDoesNotBlockMovement(t *testing.T) {
 	require.True(t, lies, "the corpse still lies")
 
 	require.NoError(t, s.handleMove(delver, 1, 0))
-	tickFor(s, 0.5)
+	tickFor(s, 0.5/constants.PaceScale)
 
 	tc, _ := entity.GetComponent(ecs.ComponentTypeTransform)
 	assert.Greater(t, tc.(*components.TransformComponent).X, 560.0, "walked past where the corpse lies")
@@ -210,7 +210,7 @@ func TestRun_KillCreditGoesToAProjectileOwnerWhoDiedFirst(t *testing.T) {
 			tick(s) // fired
 			s.EntityManager.RemoveEntity(delverEntity.ID)
 
-			tickFor(s, 1)
+			tickFor(s, 1/constants.PaceScale)
 			require.Len(t, spy.records, 1)
 			assert.Equal(t, g.ID, spy.records[0].MonsterEntityID)
 			assert.Equal(t, killer, spy.records[0].KillerMemberID)

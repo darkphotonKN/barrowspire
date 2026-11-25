@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -485,7 +486,7 @@ func TestCombatSystem_ShadowShot_LoosesOneSlowHeavyBolt(t *testing.T) {
 	pc, _ := bolts[0].GetComponent(ecs.ComponentTypeProjectile)
 	bolt := pc.(*components.ProjectileComponent)
 	assert.Equal(t, "shadow_shot", bolt.ProjectileType)
-	assert.Equal(t, 260.0, bolt.Speed)
+	assert.Equal(t, 260*constants.PaceScale, bolt.Speed)
 	assert.Equal(t, 650.0, bolt.MaxDistance)
 	assert.Equal(t, 10.0, bolt.Radius)
 	assert.Equal(t, components.DamagePhysical, bolt.Attack.DamageType)
@@ -495,7 +496,7 @@ func TestCombatSystem_ShadowShot_LoosesOneSlowHeavyBolt(t *testing.T) {
 	vc, _ := bolts[0].GetComponent(ecs.ComponentTypeVelocity)
 	v := vc.(*components.VelocityComponent)
 	assert.InDelta(t, 0, v.VX, 1e-9, "flies straight at the aim")
-	assert.InDelta(t, 260, v.VY, 1e-9)
+	assert.InDelta(t, 260*constants.PaceScale, v.VY, 1e-9)
 }
 
 func TestCombatSystem_ImpactsResolveEvenAfterTheOwnerIsGone(t *testing.T) {

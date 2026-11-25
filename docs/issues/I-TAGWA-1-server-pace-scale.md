@@ -1,12 +1,12 @@
 ---
 id: I-TAGWA-1
-status: open
+status: done
 implements: FS-TAGWA
 blocked_by: []
 labels: [ready-for-agent]
 title: FS-TAGWA slice 1: one pace scale on every server travel speed, pinned, and the pace golden
 ---
-Implements FS-TAGWA §Requirements R1–R9
+Implements FS-TAGWA §Requirements R1–R9, R15
 
 ## What to Build
 `PaceScale` (0.5) in `game-service/common/constants/game.go`, commented as the knob. Every travel speed
@@ -24,6 +24,7 @@ paced one.
 - [ ] Pin test fails for an archetype, ally kind or projectile row with no row in it
 - [ ] Worn move speed applies to the paced base, capped as before; the hound and block push follow
 - [ ] No timing, range, radius, max flight, charge or leap value changes
+- [ ] The travel budgets (brazier windows, the mark's longest flight) stretch over `PaceScale`, pinned (R15, added in the build)
 - [ ] `pace.golden.json` written by a Go test that fails while stale
 - [ ] `make test`, vet, gofmt, lint pass
 

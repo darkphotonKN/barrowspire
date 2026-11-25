@@ -1,6 +1,9 @@
 package game
 
-import "github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+import (
+	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+)
 
 /*
 	Dungeon encounters' tunables, in one place beside the other spawn rates
@@ -69,7 +72,8 @@ allySheet is an encounter NPC's fighting sheet once it is a hired ally
 monster level as a pilgrim's health is: HealthFactor times its health,
 DamageFactor its hit and DefenseFactor its defense. AttackInterval is its
 cadence in seconds, AttackRange its melee reach and MoveSpeed its pace, both
-in px; a delver walks at 200, so an ally keeps up.
+in px; MoveSpeed is paced, its full-pace 190 against a delver's 200, so
+an ally keeps up (FS-TAGWA R2).
 */
 type allySheet struct {
 	HealthFactor   float64
@@ -85,11 +89,11 @@ type allySheet struct {
 var AllySheets = map[components.EncounterNPCKind]allySheet{
 	components.EncounterNPCCaptive: {
 		HealthFactor: 3.0, DamageFactor: 1.5, DefenseFactor: 1.0,
-		AttackInterval: 1.1, AttackRange: 50, MoveSpeed: 190,
+		AttackInterval: 1.1, AttackRange: 50, MoveSpeed: 190 * commonconstants.PaceScale,
 	},
 	components.EncounterNPCCutthroat: {
 		HealthFactor: 3.0, DamageFactor: 1.8, DefenseFactor: 1.0,
-		AttackInterval: 1.0, AttackRange: 50, MoveSpeed: 190,
+		AttackInterval: 1.0, AttackRange: 50, MoveSpeed: 190 * commonconstants.PaceScale,
 	},
 }
 
@@ -133,7 +137,8 @@ const (
 	MarkCallCount            = 3
 	MarkFleeAt               = 0.25
 	MarkFleeHeal             = 0.2
-	MarkFleeMaxSeconds       = 60.0
+	// a travel budget: 60 s at full pace, over PaceScale (FS-TAGWA R15)
+	MarkFleeMaxSeconds = 60 / commonconstants.PaceScale
 )
 
 // MarkLooks are the mark's art variants, one drawn a contract; MarkNames

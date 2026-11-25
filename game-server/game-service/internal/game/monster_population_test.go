@@ -412,7 +412,7 @@ func TestCreateMonsterEntity_CarriesItsLevelsStats(t *testing.T) {
 
 	vc, _ := m.GetComponent(ecs.ComponentTypeVelocity)
 	velocity := vc.(*components.VelocityComponent)
-	assert.Equal(t, 90.0, velocity.Speed)
+	assert.Equal(t, 90*constants.PaceScale, velocity.Speed)
 	assert.Zero(t, velocity.VX)
 	assert.Zero(t, velocity.VY)
 

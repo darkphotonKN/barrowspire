@@ -251,7 +251,9 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 
 - **Pace scale** — the one knob every travel speed is multiplied by (`PaceScale`, 0.5): walks,
   ambles, monster and ally pace, the variant step gain and every projectile. Never a timing or a
-  reach. A speed's **full-pace figure** is its number before the scale (the delver's 200).
+  reach. A speed's **full-pace figure** is its number before the scale (the delver's 200). A
+  **travel budget** is a timer sized to a walk (the brazier windows, the mark's longest flight):
+  its full-pace length over the scale.
 
 ### Dungeon floors and the floor map (FS-KE075, ADR-0060, ADR-0061, ADR-0062)
 
