@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLASS_LORE } from "@/data/classLore";
+import { BASE_MOVE_SPEED, paced } from "@/data/pace";
 import { palette } from "@/utils/canvasPalette";
 import {
   CLASS_CARD_COLUMN,
@@ -84,7 +85,7 @@ describe("loreStatRows (FS-8AY7S: each class names its own resource; FS-MAMHR §
     expect(mana.fill).toBeCloseTo(150 / 200);
   });
 
-  it("should keep the Mercenary's stats card: HP 130, ATK 12, DEF 7, range 1, speed 200", () => {
+  it("should keep the Mercenary's stats card: HP 130, ATK 12, DEF 7, range 1, the paced walk (FS-TAGWA R12)", () => {
     const rows = loreStatRows(CLASS_LORE.mercenary.stats);
     expect(rows.map((r) => [r.label, r.value])).toEqual([
       ["HP", 130],
@@ -92,8 +93,14 @@ describe("loreStatRows (FS-8AY7S: each class names its own resource; FS-MAMHR §
       ["ATK", 12],
       ["DEF", 7],
       ["RNG", 1],
-      ["SPD", 200],
+      ["SPD", Math.round(BASE_MOVE_SPEED)],
     ]);
+  });
+
+  it("should fill the SPD bar against the paced full mark, so it reads as before the pace (FS-TAGWA R12)", () => {
+    const spd = loreStatRows(CLASS_LORE.warrior.stats).find((r) => r.label === "SPD")!;
+    expect(spd.fill).toBeCloseTo(BASE_MOVE_SPEED / paced(250));
+    expect(spd.fill).toBeCloseTo(200 / 250);
   });
 
   it("should clamp every fill to 0..1", () => {

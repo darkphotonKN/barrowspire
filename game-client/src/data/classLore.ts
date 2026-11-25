@@ -1,4 +1,5 @@
 import type { ResourceKind } from "@/types/gameState";
+import { paced } from "./pace";
 
 export type ClassKey = "warrior" | "mage" | "archer" | "mercenary";
 
@@ -17,7 +18,16 @@ export interface ClassStats {
   atk: number;
   def: number;
   range: number;
+  /**
+   * What the class walks at, world px/s: the server's paced walk (FS-TAGWA R12). The archer's card
+   * says a touch more, its full-pace 220 at the pace: lore only, the server walks every class alike.
+   */
   speed: number;
+}
+
+/** A card's Speed: a full-pace figure at the pace, whole, as a card shows it (FS-TAGWA R12). */
+function cardSpeed(fullPace: number): number {
+  return Math.round(paced(fullPace));
 }
 
 export interface ClassLoreData {
@@ -48,7 +58,7 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
       atk: 12,
       def: 10,
       range: 1,
-      speed: 200,
+      speed: cardSpeed(200),
     },
     randomNames: [
       "Valerius",
@@ -74,7 +84,7 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
       atk: 15,
       def: 3,
       range: 6,
-      speed: 200,
+      speed: cardSpeed(200),
     },
     randomNames: ["Ignis", "Cyrus", "Maelis", "Arcana", "Valence", "Zephyrus"],
   },
@@ -93,7 +103,7 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
       atk: 10,
       def: 5,
       range: 8,
-      speed: 220,
+      speed: cardSpeed(220),
     },
     randomNames: ["Sylvan", "Fallon", "Astra", "Kaelen", "Orion", "Lothar"],
   },
@@ -112,7 +122,7 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
       atk: 12,
       def: 7,
       range: 1,
-      speed: 200,
+      speed: cardSpeed(200),
     },
     randomNames: ["Corvane", "Hask", "Ulric", "Brannoch", "Vesh", "Mordaunt"],
   },

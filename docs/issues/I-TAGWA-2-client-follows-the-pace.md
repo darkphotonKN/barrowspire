@@ -1,6 +1,6 @@
 ---
 id: I-TAGWA-2
-status: open
+status: done
 implements: FS-TAGWA
 blocked_by: [I-TAGWA-1]
 labels: [ready-for-agent]
