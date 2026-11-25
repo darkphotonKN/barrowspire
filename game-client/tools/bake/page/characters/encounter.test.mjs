@@ -41,6 +41,15 @@ describe("the encounter cast (FS-4EC7Z §H R36)", () => {
     for (const c of ENCOUNTER) expect(c.group, c.sheet).toBe("encounter");
   });
 
+  // ADR-0071 Consequences (the memory budget): each frame cut to its pixels, as the classes' are
+  // (ADR-0058, ADR-0076), at 1x, so its trim grid is the screen px
+  it("trims every sheet's frames at 1x", () => {
+    for (const c of ENCOUNTER) {
+      expect(c.trim, c.sheet).toBe(true);
+      expect(c.scale, c.sheet).toBeUndefined();
+    }
+  });
+
   it("gives every sheet idle, walk, attack and death, the pilgrim cower and the captive bound", () => {
     for (const c of ENCOUNTER) expect(Object.keys(c.animations).slice(0, 4), c.sheet).toEqual(["idle", "walk", "attack", "death"]);
     expect(Object.keys(row("npc_pilgrim").animations)).toEqual(["idle", "walk", "attack", "death", "cower"]);

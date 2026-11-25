@@ -2933,15 +2933,29 @@ describe("the hostile humans: cutthroats and the contract's mark (FS-4EC7Z §G R
     return art;
   };
 
-  it("should draw each from its look's sheet, a variant on its own clips, at a player's height and never boss size", () => {
+  it("should draw each from its look's sheet, a variant on its own clips, a cutthroat at a player's height", () => {
     const art = inArt();
-    expect(drawnLook("cutthroat", art, false, "cutthroat_b")).toMatchObject({ sheet: "npc_cutthroat", variant: "b" });
+    const cut = drawnLook("cutthroat", art, false, "cutthroat_b");
+    expect(cut).toMatchObject({ sheet: "npc_cutthroat", variant: "b", tier: "fodder" });
     expect(drawnLook("cutthroat", art, false, "cutthroat_a")).toMatchObject({ sheet: "npc_cutthroat" });
     expect(drawnLook("cutthroat", art, false, "cutthroat_a").variant).toBeUndefined();
-    const knight = drawnLook("contract_mark", art, true, "debtor_knight");
-    expect(knight).toMatchObject({ sheet: "npc_debtor_knight", tier: "fodder" });
+    expect(drawnLook("contract_mark", art, true, "debtor_knight").sheet).toBe("npc_debtor_knight");
     expect(drawnLook("contract_mark", art, true, "hooded_duelist").sheet).toBe("npc_hooded_duelist");
-    expect(monsterScale(knight, art)).toBe(1);
+    expect(monsterScale(cut, art)).toBe(1);
+  });
+
+  // guideline "Size is a threat tier": a boss is at least 1.8x a player; `boss: true` lifts a human
+  // look to the boss tier as it does a champion's, so the mark reads at boss size, stand-in or not
+  it("should draw the mark, a boss, at the boss tier's aim, its stand-in too, and a cutthroat never", () => {
+    const art = inArt();
+    const knight = drawnLook("contract_mark", art, true, "debtor_knight");
+    expect(knight).toMatchObject({ sheet: "npc_debtor_knight", tier: "boss", human: true });
+    expect(monsterScale(knight, art)).toBe(SIZE_TIERS.boss.aim);
+    expect(footprintRadius(knight)).toBe(footprintRadius(drawnLook("demon", art)));
+    const standIn = drawnLook("contract_mark", runArt(), true, "debtor_knight");
+    expect(standIn.tier).toBe("boss");
+    expect(monsterScale(standIn, runArt())).toBe(SIZE_TIERS.boss.aim);
+    expect(monsterScale(drawnLook("cutthroat", art, false, "cutthroat_a"), art)).toBe(1);
   });
 
   it("should draw a look it does not know as its archetype's first: a Cutthroat, the hooded duelist", () => {
@@ -2968,7 +2982,7 @@ describe("the hostile humans: cutthroats and the contract's mark (FS-4EC7Z §G R
     expect(asked).toEqual(["encounter"]);
     for (const s of sprites) {
       expect(s.anims.currentAnim?.key).toMatch(/^char_mercenary_base\/idle\//);
-      expect(s.tint).toBe(palette.merchantStandIn);
+      expect(s.tint).toBe(palette.encounterStandIn);
     }
     art.admit(ENCOUNTER_PAGES);
     land();

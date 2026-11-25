@@ -214,7 +214,7 @@ export const ENCOUNTER_ART: EncounterArtGroup = {
     hooded_duelist: { sheet: "npc_hooded_duelist", suffix: "" },
     debtor_knight: { sheet: "npc_debtor_knight", suffix: "" },
   },
-  standIn: { sheet: "char_mercenary_base", tint: palette.merchantStandIn },
+  standIn: { sheet: "char_mercenary_base", tint: palette.encounterStandIn },
 };
 
 /**

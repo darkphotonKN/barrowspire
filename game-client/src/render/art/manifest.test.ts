@@ -670,6 +670,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
   });
 
   describe("the encounter cast (FS-4EC7Z §H R36)", () => {
+    /** The decoded px bytes the group's pages may hold (RGBA): the trimmed bake's 63.0 MB, with headroom. */
+    const ENCOUNTER_DECODED_BUDGET = 70e6;
     const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
     /** Each sheet, its variants' letters after the first, and its own clip. */
     const CAST: [string, string[], string | null][] = [
@@ -711,6 +713,15 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         .map(([n]) => n)
         .sort();
       expect(onGroup).toEqual(CAST.map(([n]) => n).sort());
+    });
+
+    // ADR-0071 Consequences: an on-demand group's decoded pages are memory a run holds; untrimmed,
+    // the cast's frames held 202 MB of mostly empty px
+    it("trims every frame to its pixels, so the group's decoded pages stay in budget", () => {
+      for (const [name] of CAST) expect(baked.sheets[name].trimmed, name).toBe(true);
+      const pages = Object.entries(baked.atlases as Record<string, { width: number; height: number }>).filter(([k]) => atlasGroup(k) === "encounter");
+      const decoded = pages.reduce((sum, [, a]) => sum + a.width * a.height * 4, 0);
+      expect(decoded).toBeLessThanOrEqual(ENCOUNTER_DECODED_BUDGET);
     });
 
     it("measures each one's crown, where its plate and bar sit, at a townsman's height, no staff or blade over it", () => {
@@ -1785,12 +1796,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       }
     });
 
-    it("trims the four classes' frames, and only theirs (FS-HF0WW, FS-3V7GC)", () => {
+    // and the encounter cast's, for its on-demand group's memory (FS-4EC7Z §H R36, ADR-0071 Consequences)
+    it("trims the four classes' frames, their spec looks' and the encounter cast's, and only theirs (FS-HF0WW, FS-3V7GC)", () => {
       const trimmed = Object.entries(baked.sheets as Record<string, { trimmed?: boolean }>)
         .filter(([, sheet]) => sheet.trimmed)
         .map(([name]) => name);
+      const encounterCast = ["npc_pilgrim", "npc_captive", "npc_cutthroat", "npc_hooded_duelist", "npc_debtor_knight"];
       expect(trimmed.sort()).toEqual(
-        ["char_archer_base", "char_knight_base", "char_mercenary_base", "char_wizard_base", ...specLooks()].sort(),
+        ["char_archer_base", "char_knight_base", "char_mercenary_base", "char_wizard_base", ...specLooks(), ...encounterCast].sort(),
       );
     });
 

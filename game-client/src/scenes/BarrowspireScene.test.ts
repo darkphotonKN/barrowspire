@@ -12925,7 +12925,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       const { stage } = encounterStage(undefined, { without: "npc_" });
       const [body] = dressed(stage.made, "char_mercenary_base/");
       expect(body).toBeDefined();
-      expect(body.tint).toBe(palette.merchantStandIn);
+      expect(body.tint).toBe(palette.encounterStandIn);
     });
 
     it("should plate an ally in the ally ink over its health bar (R29)", () => {
@@ -13023,13 +13023,14 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(told).not.toHaveBeenCalled();
     });
 
-    it("should hand the minimap a revealed shut secret door as its door glyph (R35)", () => {
+    it("should hand the minimap a revealed shut secret door as its door glyph, told of, explored or not (R35)", () => {
       const door = (open = false) => ({ entity_id: "door-1", kind: "secret_door", cells: [{ x: 0, y: 0 }], open, revealed: true });
       const { run, next } = encounterStage({ barriers: [door()] } as Partial<GameState>);
       const show = vi.spyOn(run.dungeon.minimap!, "show");
       next({ barriers: [door()] });
       const fixtures = show.mock.calls.at(-1)![1] as { kind: string }[];
-      expect(fixtures.filter((f) => f.kind === "secret-door")).toHaveLength(1);
+      // told of: marked whether or not the ground by it is explored (R35, §D R14)
+      expect(fixtures.filter((f) => f.kind === "secret-door")).toEqual([expect.objectContaining({ told: true })]);
       next({ barriers: [door(true)] });
       expect((show.mock.calls.at(-1)![1] as { kind: string }[]).filter((f) => f.kind === "secret-door")).toHaveLength(0);
     });

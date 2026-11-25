@@ -169,7 +169,7 @@ import { playArrowRelease } from "@/render/effects/arrow";
 import { playArcherShotRelease } from "@/render/effects/heavyShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
 import { StunTells } from "@/render/effects/stun";
-import { MARKER_BAR, MARKER_DEPTH, NameplateTitle, markerBase } from "@/render/markers";
+import { MARKER_DEPTH, NameplateTitle, TEAMMATE_BAR, markerBase, paintTeammateBar, teammateBarTop } from "@/render/markers";
 import {
   MonsterRoster,
   phaserMonsterStage,
@@ -363,11 +363,10 @@ interface MerchantParts {
   at?: Point;
 }
 /**
- * A teammate's overhead health bar (FS-8AY7S req 27): the monsters' bar, health only, sat
- * `gap` px over the marker base. Their name lifts clear of it. Drawn only while the scene's
- * `showTeammateBars` switch is on, which it is not for now (FS-CH21F R14).
+ * A teammate's overhead health bar (FS-8AY7S req 27, `paintTeammateBar`): their name lifts clear of
+ * it by this many px. Drawn only while the scene's `showTeammateBars` switch is on, which it is not
+ * for now (FS-CH21F R14).
  */
-const TEAMMATE_BAR = { width: 38, height: 4, gap: 2 } as const;
 const NAME_OVER_BAR_GAP = 2;
 
 /** A teammate's overhead health bar, and how full it is (null: none drawn). */
@@ -4623,8 +4622,8 @@ export class BarrowspireScene extends Phaser.Scene {
       ...[...this.switches.values()].map(({ pos }) => ({ kind: "switch" as const, at: pos })),
       ...[...this.escapeDoors.values()].map(({ pos }) => ({ kind: "escape-door" as const, at: pos })),
       ...[...this.stairs.placed()].map(({ pos }) => ({ kind: "stairs" as const, at: pos })),
-      // a secret door the Cutthroats' tip revealed, while it is shut (FS-4EC7Z §G R35)
-      ...this.seal.revealedDoors().map(({ at, seenAt }) => ({ kind: "secret-door" as const, at, seenAt })),
+      // a secret door the Cutthroats' tip revealed, while it is shut, explored or not (FS-4EC7Z §G R35)
+      ...this.seal.revealedDoors().map(({ at }) => ({ kind: "secret-door" as const, at, told: true })),
     ];
     // a shut gate draws as a wall stroke (FS-5FZ4J §J R56)
     minimap.show((id) => dungeon.seen.state(id), fixtures, this.seal.shutGates());
@@ -5450,7 +5449,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * A floor's encounters from this broadcast (FS-4EC7Z §G): its encounter NPCs and their over-head
    * lines, the cage and its key, their events as HUD notices (the cage key taken, the pilgrims lost);
    * and the player's own contract (R34): its end said as a notice, its heading line and Contract
-   * Settled's mark handed to the UI scene (the mark rides `statusMarks`). A taker who died still hears
+   * Settled's status mark handed to the UI scene (it rides `statusMarks`). A taker who died still hears
    * it lost; while they watch a teammate nothing of it is said.
    */
   private showEncounters(state: ClientGameState): void {
@@ -6837,24 +6836,15 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * One teammate's health bar over `base` (their marker base), in the monsters' overhead style:
-   * a pitch backing with a barrow rim, and the health fill. Returns the bar's top, or null when
-   * none is drawn.
+   * One teammate's health bar over `base` (their marker base), the one overhead bar teammates and
+   * allies share (`paintTeammateBar`). Returns the bar's top, or null when none is drawn.
    */
   private drawTeammateBar(bar: TeammateBar, x: number, base: number | null): number | null {
     const g = bar.graphics;
     g.clear();
     if (base === null || bar.fill === null) return null;
-
-    const { width, height, gap } = TEAMMATE_BAR;
-    const top = Math.round(base - gap - height);
-    const left = Math.round(x - width / 2);
-    g.fillStyle(MARKER_BAR.backing, 0.9);
-    g.fillRect(left - 1, top - 1, width + 2, height + 2);
-    g.lineStyle(1, MARKER_BAR.rim, 0.9);
-    g.strokeRect(left - 1, top - 1, width + 2, height + 2);
-    g.fillStyle(bar.poisoned ? palette.poisoned : MARKER_BAR.hp, 1);
-    g.fillRect(left, top, Math.round(width * bar.fill), height);
+    const top = teammateBarTop(base);
+    paintTeammateBar(g, bar.fill, { poisoned: bar.poisoned, at: { x: Math.round(x - TEAMMATE_BAR.width / 2), y: top } });
     return top;
   }
 

@@ -493,8 +493,9 @@ function merchantSheets() {
 /**
  * The dungeon encounters' cast (FS-4EC7Z §H R36): the pilgrim, the captive and the cutthroat, each
  * with its variants as `<anim>_<letter>` clips, and the contract mark's two looks, on the shared rig
- * in eight facings, packed on group `encounter`, which the run fetches on demand the first time a
- * state carries one of them (ADR-0071 Decision 6; src/render/art/sceneArt.ts `ENCOUNTER_ART`).
+ * in eight facings, each frame trimmed to its pixels, packed on group `encounter`, which the run
+ * fetches on demand the first time a state carries one of them (ADR-0071 Decision 6;
+ * src/render/art/sceneArt.ts `ENCOUNTER_ART`).
  */
 function encounterSheets() {
   return ENCOUNTER.map((c) => ({
@@ -503,6 +504,7 @@ function encounterSheets() {
     kind: "character",
     build: c.build,
     animations: c.animations,
+    ...(c.trim ? { trim: true } : {}),
     source: `authored: tools/bake/page/characters/encounter.js#${c.fn}`,
   }));
 }

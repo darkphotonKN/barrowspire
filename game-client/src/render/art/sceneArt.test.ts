@@ -262,7 +262,7 @@ describe("the dungeon encounters' group (FS-4EC7Z §H R36, ADR-0071 Decision 6)"
     expect(ENCOUNTER_ART.group).toBe("encounter");
     expect(ENCOUNTER_ART.stateKey).toBe("encounter_npcs");
     expect(ENCOUNTER_ART.archetypes).toEqual(["cutthroat", "contract_mark"]);
-    expect(ENCOUNTER_ART.standIn).toEqual({ sheet: "char_mercenary_base", tint: palette.merchantStandIn });
+    expect(ENCOUNTER_ART.standIn).toEqual({ sheet: "char_mercenary_base", tint: palette.encounterStandIn });
   });
 
   it("should draw each look the server sends from its sheet and its variant's clips", () => {

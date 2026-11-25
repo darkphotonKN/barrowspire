@@ -15,7 +15,7 @@
  * so it is tested without a canvas.
  */
 
-import { CharacterAnimator, type AnimatedSprite } from "@/render/art/character";
+import { CharacterAnimator, variantClip, type AnimatedSprite } from "@/render/art/character";
 import {
   MAX_WALK_SCALE,
   MOVING_SPEED,
@@ -87,8 +87,9 @@ export interface MonsterLook {
    */
   variant?: string;
   /**
-   * A human body (FS-4EC7Z §G R32): drawn at a player's own size, as the town's cast and the
-   * encounter NPCs are, and never lifted to the boss tier by `boss: true`.
+   * A human body (FS-4EC7Z §G R32), baked at a player's own height as the town's cast and the
+   * encounter NPCs are: drawn at its aim, a player's size, or the boss tier's when `boss: true`
+   * lifts it (guideline "Size is a threat tier"), as the contract's mark is.
    */
   human?: true;
 }
@@ -197,14 +198,16 @@ const isHuman = (archetype: string): boolean => ENCOUNTER_ART.archetypes.include
 /**
  * A hostile human's own look (FS-4EC7Z §G R32): its `look`'s sheet and variant on the `encounter`
  * group (`encounterLook`), its archetype's first look for one the bake does not carry, at a player's
- * height (fodder, aimed at 1). Undefined for any other archetype.
+ * height (fodder, aimed at 1), or at the boss tier's aim when it is a boss (the mark). Undefined for
+ * any other archetype.
  */
-function humanLook(archetype: string, look?: string): MonsterLook | undefined {
+function humanLook(archetype: string, look?: string, boss = false): MonsterLook | undefined {
   if (!isHuman(archetype)) return undefined;
   const own = (look !== undefined ? encounterLook(look) : undefined) ?? encounterLook(HUMAN_DEFAULT_LOOKS[archetype]);
   const sheet = own?.sheet ?? ENCOUNTER_ART.standIn.sheet;
   const variant = own?.suffix ? own.suffix.slice(1) : undefined;
-  return { sheet, tier: "fodder", aim: 1, human: true, ...(variant ? { variant } : {}) };
+  const size: Pick<MonsterLook, "tier" | "aim"> = boss ? { tier: "boss" } : { tier: "fodder", aim: 1 };
+  return { sheet, ...size, human: true, ...(variant ? { variant } : {}) };
 }
 
 /** The sheet and size tier an archetype is drawn with. */
@@ -216,10 +219,11 @@ export function monsterLook(archetype: string): MonsterLook {
 
 /**
  * The look a monster wears once its art is in: its archetype's, or a champion's (`boss: true` on a
- * look not boss tier, FS-C8VM7 §F R35): the same sheet, scaled to the boss tier's aim.
+ * look not boss tier, FS-C8VM7 §F R35, and on a hostile human's): the same sheet, scaled to the boss
+ * tier's aim.
  */
 function ownLook(archetype: string, boss = false, wire?: string): MonsterLook {
-  const human = humanLook(archetype, wire);
+  const human = humanLook(archetype, wire, boss);
   if (human) return human;
   const look = monsterLook(archetype);
   if (!boss || look.tier === "boss") return look;
@@ -242,7 +246,13 @@ export function drawnLook(
   if (look.human) {
     if (art.has(look.sheet)) return look;
     const { sheet, tint } = ENCOUNTER_ART.standIn;
-    return { sheet, tier: look.tier, aim: look.aim, human: true, ...(tint === undefined ? {} : { tint }) };
+    return {
+      sheet,
+      tier: look.tier,
+      ...(look.aim === undefined ? {} : { aim: look.aim }),
+      human: true,
+      ...(tint === undefined ? {} : { tint }),
+    };
   }
   const standIn = onDemandFor(archetype)?.standIn;
   if (!standIn || art.has(look.sheet)) return look;
@@ -292,11 +302,12 @@ const HEIGHT_PER_LENGTH_PX = Math.cos(Math.PI / 6);
  * The sprite scale that stands a look at its tier: the tier's aim times a player's head height,
  * over the creature's own measure, both taken by the bake: its `crown`, or a quadruped's body
  * `length` in the same height px. Without both the art is not there to measure, and the tier's
- * aim is the best guess. A human is drawn at a player's own size (FS-4EC7Z §G R32).
+ * aim is the best guess. A human, baked at a player's own height, is drawn at its aim as it stands
+ * (FS-4EC7Z §G R32): a player's size, or the boss tier's for the mark.
  */
 export function monsterScale(look: MonsterLook, art: SheetHeights): number {
-  if (look.human) return 1;
   const aim = lookAim(look);
+  if (look.human) return aim;
   const player = art.sheet(PLAYER_REFERENCE_SHEET)?.crown;
   const own = art.sheet(look.sheet);
   const creature =
@@ -624,9 +635,6 @@ interface MonsterView {
 }
 
 const alive = (monster: MonsterState) => monster.action !== "dead";
-
-/** A clip's name on a sheet under a palette variant (`death_b`), as `CharacterAnimator` plays it. */
-const variantClip = (clip: string, variant?: string) => (variant ? `${clip}_${variant}` : clip);
 
 /** The on-demand group an archetype's art is on: its table row's, the encounters' for a human, or none. */
 const groupOf = (archetype: string): string | undefined =>

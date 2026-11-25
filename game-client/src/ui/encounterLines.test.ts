@@ -107,6 +107,25 @@ describe("EncounterWatch: the encounters' events off the state (FS-4EC7Z §G R31
     expect(watch.see({ floor: 2 })).toEqual([]);
   });
 
+  // R33: a pilgrim that left the state alive is unknown, not lost; the line waits until none is
+  it("should not say they are lost while a pilgrim that left the state alive is unknown", () => {
+    const watch = new EncounterWatch();
+    watch.see({ floor: 2, encounter_npcs: [npc("a"), npc("b")] });
+    // a walks out of the party's interest alive; b dies in sight
+    expect(watch.see({ floor: 2, encounter_npcs: [npc("b")] })).toEqual([]);
+    expect(watch.see({ floor: 2, encounter_npcs: [dead("b")] })).toEqual([]);
+    // a seen again alive: still not lost
+    expect(watch.see({ floor: 2, encounter_npcs: [npc("a"), dead("b")] })).toEqual([]);
+  });
+
+  it("should say they are lost once an unknown pilgrim is seen again dead, and the rest are dead", () => {
+    const watch = new EncounterWatch();
+    watch.see({ floor: 2, encounter_npcs: [npc("a"), npc("b")] });
+    watch.see({ floor: 2, encounter_npcs: [npc("b")] });
+    watch.see({ floor: 2, encounter_npcs: [dead("b")] });
+    expect(watch.see({ floor: 2, encounter_npcs: [dead("a"), dead("b")] })).toEqual([{ text: "The pilgrims are lost.", tone: "refused" }]);
+  });
+
   it("should say nothing on a first broadcast that finds them dead, nor count captives or cutthroats", () => {
     const watch = new EncounterWatch();
     expect(watch.see({ floor: 2, encounter_npcs: [dead("a")] })).toEqual([]);

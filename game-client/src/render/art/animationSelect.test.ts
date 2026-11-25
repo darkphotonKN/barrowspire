@@ -546,11 +546,14 @@ describe("the shipped character sheets", () => {
     },
   );
 
-  it("should bake the four classes and their spec looks alone at 2x and trimmed (FS-3V7GC)", () => {
+  // the encounter cast is trimmed too, at 1x, for its on-demand group's memory (FS-4EC7Z §H R36,
+  // ADR-0071 Consequences)
+  it("should bake the four classes and their spec looks alone at 2x, and trim only them and the encounter cast (FS-3V7GC)", () => {
+    const encounterCast = ["npc_pilgrim", "npc_captive", "npc_cutthroat", "npc_hooded_duelist", "npc_debtor_knight"];
     for (const [name, sheet] of Object.entries(manifest.sheets))
       if (!CLASS_OR_LOOK.includes(name)) {
         expect(sheet.scale, name).toBeUndefined();
-        expect(sheet.trimmed, name).toBeUndefined();
+        expect(sheet.trimmed, name).toBe(encounterCast.includes(name) ? true : undefined);
       }
   });
 

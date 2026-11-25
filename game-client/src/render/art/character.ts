@@ -25,6 +25,12 @@ import {
 } from "./animationSelect";
 
 /**
+ * A clip's manifest animation name under a palette variant (`death_b`): the plain clip with none.
+ * One sheet carries several looks this way (the town's folk, the encounter cast, FS-4EC7Z §H R36).
+ */
+export const variantClip = (clip: string, variant?: string): string => (variant ? `${clip}_${variant}` : clip);
+
+/**
  * How quickly the measured speed follows the drawn motion, in ms. Positions ease toward server
  * ticks that land every other frame, so the raw per-frame speed stutters; smoothed over about
  * six frames it reads as the pace the body is actually covering.
@@ -374,7 +380,7 @@ export class CharacterAnimator {
 
   /** The manifest animation a clip plays under this look's palette variant. */
   private clip(animation: CharacterAnimation): string {
-    return this.variant ? `${animation}_${this.variant}` : animation;
+    return variantClip(animation, this.variant);
   }
 }
 

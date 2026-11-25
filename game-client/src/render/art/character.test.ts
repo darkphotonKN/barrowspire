@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CharacterAnimator, CharacterMotion, type AnimatedSprite } from "./character";
+import { CharacterAnimator, CharacterMotion, variantClip, type AnimatedSprite } from "./character";
 import { ArtLibrary, PLACEHOLDER_TEXTURE } from "./library";
 import { CHARGE_MS } from "@/render/effects/charge";
 import type { ArtAnimation, ArtManifest } from "./manifest";
@@ -969,5 +969,14 @@ describe("CharacterAnimator: the Berserker's alternate hands (FS-1J1CB §D)", ()
       `${BERSERKER}/attack/0`,
       `${BERSERKER}/attack_offhand/0`,
     ]);
+  });
+});
+
+// FS-4EC7Z §G R29, R32: one name for a clip under a palette variant, for every reader of a sheet's clips
+describe("variantClip", () => {
+  it("should name a variant's clip `<clip>_<variant>`, and the plain clip with none", () => {
+    expect(variantClip("death", "b")).toBe("death_b");
+    expect(variantClip("idle", undefined)).toBe("idle");
+    expect(variantClip("idle", "")).toBe("idle");
   });
 });

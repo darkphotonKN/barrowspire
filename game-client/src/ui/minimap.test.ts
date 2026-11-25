@@ -269,11 +269,11 @@ describe("minimapContent (§E.22)", () => {
     expect(minimapContent(grid, states([stairs], [lever, door]), FIXTURES).fixtures).toEqual(FIXTURES);
   });
 
-  // FS-4EC7Z §G R35 (I-4EC7Z-6): a revealed secret door stands in a wall cell, in no region; it is
-  // judged by the ground beside it
-  it("should hold a fixture in no region once a region it is seen from is explored", () => {
-    const door: MinimapFixture = { kind: "secret-door", at: at(-500, -500), seenAt: [at(-400, -400), IN_ROOM] };
-    expect(minimapContent(grid, () => "unexplored", [door]).fixtures).toEqual([]);
+  // FS-4EC7Z §G R35, §D R14 (I-4EC7Z-6): the Cutthroats' tip tells the party where the door is; its
+  // glyph stands whether or not the ground by it is explored, though its wall cell is in no region
+  it("should hold a fixture the party was told of wherever it stands, explored or not", () => {
+    const door: MinimapFixture = { kind: "secret-door", at: at(-500, -500), told: true };
+    expect(minimapContent(grid, () => "unexplored", [door]).fixtures).toEqual([door]);
     expect(minimapContent(grid, states([ROOM]), [door]).fixtures).toEqual([door]);
   });
 
