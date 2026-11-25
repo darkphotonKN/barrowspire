@@ -721,3 +721,58 @@ themselves (this FS only avoids adding to them).
 ## Change: Tiered enemy roster and floor pools → FS-C8VM7
 
 ## Change: Sealed floors → FS-5FZ4J
+
+## Change: Room variety
+Status: draft
+Date: 2026-11-25
+
+### Scoping notes (raw)
+
+Scoped under the owner's charter of 2026-11-25 (charter child B, "Rooms"): runs should play like the
+old first-person dungeon crawlers (Dungeon Master, Eye of the Beholder, Grimrock), deliberate, room
+by room, few but meaningful fights, keys, puzzles and companions, with our angled overhead camera
+and free movement kept. The charter's approval covers this lock. Every value below is a **charter
+default**.
+
+Locked:
+
+- **M1. Smaller rooms and grid.** Rooms 4–8 × 4–7 (from 4–10 × 4–8). Grid 60×40 (from 72×48).
+  `SegmentMax` 12 (from 16). Reason: shorter walks at the slower pace (charter child A). Recheck
+  `HallMinWidth`/`HallMinHeight` so halls still occur (7×6). The start room's minimum (5×5) stays
+  valid.
+- **M2. Shapes.** Rectangle, L, cross, pillared hall and cut corners. A shape is a cell mask inside
+  the room's rect. Corridors, doors, seals, traps, chests and encounters still find valid cells.
+  The 1,000-seed property test is the gate, extended to every shape.
+- **M3. Room contents.** Each ordinary room rolls: 30% quiet (dressed with existing props and light
+  only, no new sound system), 40% one or two monsters, 30% a decision drawn from existing kinds
+  (trap, chest or sack, lever or plate, encounter, secret door). No new interactable kind. Start,
+  treasure, stairs, switch and merchant rooms keep their roles.
+- **M4. Fewer large packs.** A hall pack is a brute plus 0–1 fodder (from 1–3). Corridors hold 1–3
+  monsters in all (from 3–5). The room top-up cap goes from 3 to 2. A treasure room gets one elite,
+  or two at 25% (from 50% for 2–3).
+- The client renders any new shape: wall and floor art follow the cell mask. Art never blocks.
+
+Guarantees kept (FS-5FZ4J, FS-4EC7Z on top of the generator): the escape door and its switch, the
+stairs room and every hidden room a dead end behind its barrier, no trap in an encounter room.
+
+Found while scoping (measured, the reason for the defaults that follow):
+
+- 18–28 rooms do not fit 60×40 at 4–8 × 4–7: seed 10 exhausts its 32 retries ("placed 18 of 27
+  rooms"). 16–22 fits every one of the 1,000 seeds on all seven sealed-floor parameter sets, the
+  hardest (four hidden rooms) at a worst attempt of 12 of 32. Room count 16–22.
+- At a 7×6 hall threshold, about 20% of rooms are halls (widths 7–8 of 4–8, heights 6–7 of 4–7),
+  against about 26% at 8×6 before.
+- The seals, the Chasm, the secret doors and the party's start formation read their rooms as
+  rects (`plateFooting`, `chasmFrameOf`, the barrier search, `gatherParty`): those rooms stay
+  rectangles. The weighted plates' push search walks the rect, so a Weighted Plates seal takes a
+  rectangle room only.
+- Lever or plate, encounter and secret door already have their own per-floor draws
+  (FS-5FZ4J §B, §F; FS-4EC7Z §A): a room they claim counts as a decision room and rolls nothing.
+  The two decisions an ordinary room can draw for itself are a trap and a chest or sack.
+- Containers today come to `clamp(round(rooms / 2), 10, 14)`; traps go anywhere off the start;
+  monster totals are held to 15–25 (FS-5FZ4J §D R21). Each moves under M3.
+- Quiet rooms need the client to know them to dress them: an added `quiet_rooms` field on the
+  floor map (added field only, ADR-0060 unchanged). Not a role: roles stay server-only.
+
+Open, settled at promotion: shape weights; the decision draw's split; the trap count across trap
+rooms and corridors; the floor's held monster total.
