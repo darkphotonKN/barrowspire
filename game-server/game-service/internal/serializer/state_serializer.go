@@ -156,6 +156,12 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			continue
 		}
 
+		// --- A floor's encounter NPCs (FS-4EC7Z §F R22) ---
+		if nc, isNPC := entity.GetComponent(ecs.ComponentTypeEncounterNPC); isNPC {
+			backendState.EncounterNPCs = append(backendState.EncounterNPCs, encounterNPCState(entity, nc.(*components.EncounterNPCComponent)))
+			continue
+		}
+
 		// --- Player ---
 		pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
 
@@ -790,6 +796,8 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		HallowedAltar: backendState.HallowedAltar,
 		// the floor's merchant, sent whole (FS-9JV5K §A R4)
 		Merchant: backendState.Merchant,
+		// the floor's encounter NPCs, cut below as monsters are (FS-4EC7Z §F R22)
+		EncounterNPCs: backendState.EncounterNPCs,
 	}
 
 	// on a dungeon floor each recipient is sent only what lies near it
@@ -797,6 +805,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 	if backendState.WorldType == types.WorldTypeRun && backendState.CellSize > 0 {
 		if centres := interestCentres(backendState, playerID); len(centres) > 0 {
 			state.Monsters = nearAny(backendState.Monsters, centres, monsterAt)
+			state.EncounterNPCs = nearAny(backendState.EncounterNPCs, centres, encounterNPCAt)
 			state.Containers = nearAny(backendState.Containers, centres, containerAt)
 			// the tome is hidden: cut as a container is (FS-3103M §E R14)
 			if state.Tome != nil && !isNearAny(*state.Tome.Position, centres) {
@@ -887,6 +896,7 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Fountain = nil
 	state.HallowedAltar = nil
 	state.Merchant = nil
+	state.EncounterNPCs = fresh(state.EncounterNPCs)
 }
 
 // fresh is an empty list on new memory as large as the old, or nil if it was
@@ -940,6 +950,8 @@ func isNearAny(p types.Position, centres []types.Position) bool {
 }
 
 func monsterAt(m *types.MonsterState) types.Position { return m.Position }
+
+func encounterNPCAt(n *types.EncounterNPCState) types.Position { return n.Position }
 
 func containerAt(c *types.ContainerState) types.Position { return *c.Position }
 
@@ -1035,6 +1047,41 @@ func monsterState(entity *ecs.Entity, monster *components.MonsterComponent) *typ
 		}
 	}
 
+	return state
+}
+
+// encounterNPCState is one encounter NPC on the wire: dead once its health
+// is 0, its line and line_at once it has said one, its hirer for an ally.
+// FS-4EC7Z §F R22.
+func encounterNPCState(entity *ecs.Entity, npc *components.EncounterNPCComponent) *types.EncounterNPCState {
+	state := &types.EncounterNPCState{
+		EntityID: entity.ID,
+		Kind:     string(npc.Kind),
+		Look:     npc.Look,
+		Facing:   types.Position{X: npc.FacingX, Y: npc.FacingY},
+		Stance:   string(npc.Stance),
+		Action:   string(npc.Action),
+	}
+	if tc, ok := entity.GetComponent(ecs.ComponentTypeTransform); ok {
+		at := tc.(*components.TransformComponent)
+		state.Position = types.Position{X: at.X, Y: at.Y}
+	}
+	if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok {
+		health := hc.(*components.HealthComponent)
+		state.Health, state.MaxHealth = health.CurrentHealth, health.MaxHealth
+		if health.CurrentHealth <= 0 {
+			state.Action = string(components.EncounterActionDead)
+		}
+	}
+	if npc.Line != "" {
+		state.Line = string(npc.Line)
+		lineAt := npc.LineAt
+		state.LineAt = &lineAt
+	}
+	if npc.HirerID != uuid.Nil {
+		hirer := npc.HirerID
+		state.HirerID = &hirer
+	}
 	return state
 }
 

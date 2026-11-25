@@ -455,6 +455,27 @@ type HallowedAltarState struct {
 	Prayed   bool      `json:"prayed"`
 }
 
+// EncounterNPCState is one encounter NPC on the wire. Kind is pilgrim,
+// captive or cutthroat; Look its art variant; Stance peaceful, caged or ally;
+// Action idle, move, attack, cower or dead. Line is the key of the last line
+// it said and LineAt when, on its own clock; both absent until it says one.
+// HirerID is an ally's hirer's member id, absent for any other. FS-4EC7Z §F
+// R22, R26.
+type EncounterNPCState struct {
+	EntityID  uuid.UUID  `json:"entity_id"`
+	Kind      string     `json:"kind"`
+	Look      string     `json:"look"`
+	Position  Position   `json:"position"`
+	Facing    Position   `json:"facing"`
+	Health    int        `json:"health"`
+	MaxHealth int        `json:"max_health"`
+	Stance    string     `json:"stance"`
+	Action    string     `json:"action"`
+	Line      string     `json:"line,omitempty"`
+	LineAt    *float64   `json:"line_at,omitempty"`
+	HirerID   *uuid.UUID `json:"hirer_id,omitempty"`
+}
+
 // MerchantState is the wandering merchant on his floor and his wares, sent
 // whole; absent in the hub, a field and on a floor without him. FS-9JV5K §A R4.
 type MerchantState struct {

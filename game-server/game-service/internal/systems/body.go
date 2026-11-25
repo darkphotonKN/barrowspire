@@ -23,6 +23,13 @@ const (
 	BodyDelver
 	// BodyMonster is a live monster
 	BodyMonster
+	// BodyEncounterNPC is a live encounter NPC out of a cage (FS-4EC7Z §A
+	// R3): in a block's way, hunted by monsters, weighing and firing nothing.
+	// A hired ally (§C R9) becomes a kind of its own that weighs and fires.
+	BodyEncounterNPC
+	// BodyCaptive is a live encounter NPC in its cage: no monster hunts it
+	// (§A R3, §D R13)
+	BodyCaptive
 )
 
 // BodyKindOf is what entity counts as to the ground.
@@ -32,6 +39,15 @@ func BodyKindOf(entity *ecs.Entity) BodyKind {
 			return BodyDelver
 		}
 		return BodyNone
+	}
+	if nc, ok := entity.GetComponent(ecs.ComponentTypeEncounterNPC); ok {
+		if !alive(entity) {
+			return BodyNone
+		}
+		if nc.(*components.EncounterNPCComponent).Stance == components.StanceCaged {
+			return BodyCaptive
+		}
+		return BodyEncounterNPC
 	}
 	if entity.HasComponent(ecs.ComponentTypeEnemy) {
 		if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok && hc.(*components.HealthComponent).CurrentHealth > 0 {
@@ -57,3 +73,8 @@ func (k BodyKind) Detects() bool { return k == BodyDelver }
 // breathes a gas vent's cloud: a delver in play does, a monster never
 // (FS-5FZ4J §D R25, R28). A hired ally (FS-4EC7Z) will.
 func (k BodyKind) FiresTraps() bool { return k == BodyDelver }
+
+// Hunted is whether a monster's target choice counts a body of this kind:
+// a delver in play and an encounter NPC out of a cage, the nearest taken
+// (FS-77AB6 §Requirements 26, FS-4EC7Z §A R3).
+func (k BodyKind) Hunted() bool { return k == BodyDelver || k == BodyEncounterNPC }

@@ -1457,9 +1457,13 @@ func alive(entity *ecs.Entity) bool {
 // dead, or a delver out of play (escaped or left behind), takes nothing.
 // Monsters never damage monsters, and with player damage off a delver never
 // damages a delver (FS-77AB6 §Requirements 12, 14, 17). A projectile passes
-// through whatever this refuses.
+// through whatever this refuses. Only a monster's hit lands on an encounter
+// NPC: a delver's, its reflect, and a trap's pass it by (FS-4EC7Z §A R3).
 func CanHit(attack components.AttackSnapshot, target *ecs.Entity, playerDamage PlayerDamage) bool {
 	if !alive(target) {
+		return false
+	}
+	if !attack.FromMonster && target.HasComponent(ecs.ComponentTypeEncounterNPC) {
 		return false
 	}
 

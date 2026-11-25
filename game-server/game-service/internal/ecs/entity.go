@@ -123,6 +123,11 @@ const (
 	ComponentTypeBlessed           ComponentType = "Blessed"
 	// the wandering merchant and his wares (FS-9JV5K §A R1-R4)
 	ComponentTypeMerchant ComponentType = "Merchant"
+	// a floor's encounter, its humanoid NPCs and the Lost Pilgrims' plea and
+	// wave (FS-4EC7Z §A-§B)
+	ComponentTypeEncounter    ComponentType = "Encounter"
+	ComponentTypeEncounterNPC ComponentType = "EncounterNPC"
+	ComponentTypePilgrimWave  ComponentType = "PilgrimWave"
 )
 
 type Entity struct {

@@ -133,6 +133,10 @@ type ClientGameState struct {
 	// Merchant is the floor's wandering merchant and his wares, sent whole;
 	// absent where there is none. FS-9JV5K §A R4.
 	Merchant *MerchantState `json:"merchant,omitempty"`
+	// EncounterNPCs are a run floor's encounter NPCs, cut by interest as
+	// monsters are; absent in the hub, a field and on a floor without one.
+	// FS-4EC7Z §F R22.
+	EncounterNPCs []*EncounterNPCState `json:"encounter_npcs,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -245,6 +249,8 @@ type BackendGameState struct {
 	HallowedAltar *HallowedAltarState
 	// Merchant is the floor's wandering merchant (FS-9JV5K §A R4)
 	Merchant *MerchantState
+	// EncounterNPCs are the floor's encounter NPCs (FS-4EC7Z §F R22)
+	EncounterNPCs []*EncounterNPCState
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.

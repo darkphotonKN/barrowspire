@@ -961,6 +961,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	if s.worldType == types.WorldTypeRun {
 		systems.NewFountainSystem(FountainRadius, FountainPercentPerSecond).Update(deltaTime, entities)
 		systems.NewPoisonSystem(PoisonPercentPerSecond).Update(deltaTime, entities)
+		// a floor's encounter: its NPCs' clocks and dead, and its kind's
+		// plea, wave and reward, after the tick's hits (FS-4EC7Z §A-§B)
+		s.advanceEncounters(deltaTime, entities)
 	}
 
 	// monster death: the slain lie dead from this tick; the hub holds no monsters
@@ -2088,8 +2091,10 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	isSealPiece := targetEntity.HasComponent(ecs.ComponentTypeSealPiece)
 	// a mural or a lore shrine, read, part of no seal (FS-5FZ4J §C R15, §F R39)
 	isLorePiece := targetEntity.HasComponent(ecs.ComponentTypeLorePiece)
+	// an encounter NPC, talked to (FS-4EC7Z §A R4)
+	isEncounterNPC := targetEntity.HasComponent(ecs.ComponentTypeEncounterNPC)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isBarrier && !isSealPiece && !isLorePiece {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isBarrier && !isSealPiece && !isLorePiece && !isEncounterNPC {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -2153,6 +2158,12 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	}
 	if isLorePiece {
 		return s.readLore(playerID, playerTransform, targetEntity)
+	}
+
+	// --- an encounter NPC (FS-4EC7Z §A R4) ---
+
+	if isEncounterNPC {
+		return s.talkToEncounterNPC(playerID, playerTransform, targetEntity)
 	}
 
 	// --- door entity ---

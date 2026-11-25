@@ -69,7 +69,8 @@ func NewMonsterAISystem(roll func() float64, grid NavGrid) *MonsterAISystem {
 	return &MonsterAISystem{roll: roll, grid: grid}
 }
 
-// quarry is an in-play delver a monster may chase: what it is and where it stands.
+// quarry is a body a monster may chase, an in-play delver or an encounter NPC
+// out of a cage: what it is and where it stands.
 type quarry struct {
 	id uuid.UUID
 	at *components.TransformComponent
@@ -556,12 +557,14 @@ func distance(a, b *components.TransformComponent) float64 {
 	return math.Hypot(b.X-a.X, b.Y-a.Y)
 }
 
-// quarries is every delver in play: alive, not escaped, not left behind. Nobody
-// else can be acquired, and a target who drops out of this is dropped.
+// quarries is every body a monster hunts: a delver in play (alive, not
+// escaped, not left behind) and a live encounter NPC out of a cage (FS-4EC7Z
+// §A R3). Nobody else can be acquired, and a target who drops out of this is
+// dropped.
 func quarries(entities []*ecs.Entity) []quarry {
 	var out []quarry
 	for _, entity := range entities {
-		if !InPlay(entity) {
+		if !BodyKindOf(entity).Hunted() {
 			continue
 		}
 		tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)
