@@ -19,8 +19,8 @@ Witchlight detects hidden doors, switches and traps within 3 cells while it burn
 ## Against the Spire as built
 
 - Hidden switches do not exist: reveal finds secret doors and traps (tripwires are traps).
-- Reveal = `DetectableComponent.Detected` (the party's, FS-5FZ4J R30) plus `revealed: true` on the trap's wire entry (the hook FS-5FZ4J left).
-- The hound bays at secret doors now; ambush rooms wait for FS-4EC7Z (the second merge).
+- Reveal = `DetectableComponent.Detected` (the party's, FS-5FZ4J R30) and `DetectableComponent.Revealed` (FS-4EC7Z's flag), which the serializer sends as `revealed: true` on a trap's and a secret door's entry.
+- The hound bays at a shut secret door, and at a seal piece or tripwire whose ambush (`AmbushComponent`) has not woken, within 6 cells.
 - Seams: `/Users/kranti/Library/Application Support/Claude/side-session-notes/local_928fe7ae-6c9c-45f9-b619-b451ce11c57b/class-books-wave2-seams.md`.
 
 ## Acceptance Criteria

@@ -104,10 +104,14 @@ Where the build settled what this FS left loose. Each is [derived] and overridab
 follows the floor. Each is [derived] and overridable.
 
 - **Reveal finds secret doors and traps; there are no hidden switches** (R49). A tripwire is a
-  trap. A revealed trap is detected for the party (FS-5FZ4J R30) and goes out with
-  `revealed: true`, the hook FS-5FZ4J left on the trap wire; a secret door has no such flag,
-  detecting it is what puts it on the wire.
-- **The hound bays at secret doors now, and at ambush rooms once FS-4EC7Z's are built** (R49).
+  trap. What a page reveals is detected for the party (FS-5FZ4J R30, R38) and marked revealed
+  (`DetectableComponent.Revealed`), so it goes out with `revealed: true`: on its trap entry, the
+  hook FS-5FZ4J left, and on a secret door's barrier entry, which the minimap shows as the
+  Cutthroats' tip does (FS-4EC7Z §D R14, §G R35).
+- **An "ambush room" is an ambush still waiting** (R49): FS-5FZ4J's ambushes spawn when a seal
+  piece is first worked or a tripwire trips, so no room holds one beforehand. The hound bays at a
+  seal piece or tripwire within 6 cells whose ambush has not woken, as it bays at a shut secret
+  door.
 - **No fall rule exists** (R51): FS-5FZ4J's pits are rock and "a body is never inside one". An
   afloat delver whose state ends over a pit is set down on the nearest walkable cell, unhurt.
 - **No jammed portcullis exists** (R52): the gate opens only by its seals (ADR-0092), so Heave
@@ -116,7 +120,10 @@ follows the floor. Each is [derived] and overridable.
   standing on it holds it (R58).
 - **Hardened stops a poisoning from taking hold** (R53): a gas vent's puff does not poison a
   hardened warrior, and a trap's hit (a wrong lever's darts too) deals them nothing; a poison
-  already running runs on.
+  already running runs on. This holds for every poisoning, the contract mark's blades too.
+- **Pick the Lock opens the cage only** (R55): the sealed floors built no locked doors and no
+  locked chests. It calls FS-4EC7Z's open-cage entry point (`OpenCage`); Strike a Deal calls
+  `Hire` and Take a Contract calls `TakeContract`, and each page refuses as its entry point does.
 
 ## Requirements
 
