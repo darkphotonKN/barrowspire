@@ -26,7 +26,7 @@ import {
 import type { ArtLibrary } from "@/render/art/library";
 import { directionIndex } from "@/render/art/manifest";
 import { facingFrom, type Facing8 } from "@/render/iso/facing";
-import { worldToScreen, type Point } from "@/render/iso/projection";
+import { PLAYER_RADIUS, worldToScreen, type Point } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
 import {
   DamageChip,
@@ -319,7 +319,7 @@ export function monsterScale(look: MonsterLook, art: SheetHeights): number {
 }
 
 /** A monster's body on the server, in world px: the player's `PlayerRadius`, for every archetype. */
-const BODY_RADIUS = 20;
+const BODY_RADIUS = PLAYER_RADIUS;
 
 /**
  * The ground a click on a monster lands on, in world px (FS-2325V §C.6): its body, widened with

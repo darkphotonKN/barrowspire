@@ -8,7 +8,8 @@
  * While `roll_cooldown` runs a dark wedge sweeps the well, as the ability bar's squares are swept (FS-Q18Q3
  * R18–R20; `abilityCooldown`): stamped on the UI scene's clock when a changed cooldown is heard, run down by
  * the scene's own frames, and corrected by the next. The wedge lies on its own layer over the well and under
- * the rim and the pip, and it alone is redrawn each frame, only while it runs. Colours from `palette`.
+ * the rim and the pip, and it alone is redrawn each frame, only while it runs. The well, its rim and the
+ * wedge are the bar's own (`hudWell`). Colours from `palette`.
  */
 
 import type Phaser from "phaser";
@@ -16,20 +17,13 @@ import { crispen, viewport } from "@/render/viewport";
 import type { CooldownState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { cooldownSwept, sweepPolygon, type SweepGraphics } from "./abilityCooldown";
+import { drawWellGround, drawWellRim, SWEEP_ALPHA } from "./hudWell";
 import { rollPipFrame, type RollPipFrame, type RollPipView } from "./rollPipView";
 import type { HudPiece } from "./uiSceneHud";
 import type { XpBarView } from "./xpBarLayout";
 
 /** The corner row's band, with the ability bar (ADR-0086 Decision 4). */
 const PIP_DEPTH = 1000;
-/** The well's fill and carved line, and its rim, as the bar's squares wear them. */
-const WELL_ALPHA = 0.85;
-const CARVE_INSET = 2;
-const CARVE_ALPHA = 0.5;
-const RIM_ALPHA = 0.6;
-const LIT_RIM_W = 2;
-/** The sweep's wedge over a cooling pip, as over a cooling square. */
-const SWEEP_ALPHA = 0.55;
 /** The pip itself, a dot in the well's middle. */
 const DOT_R = 4;
 
@@ -101,16 +95,11 @@ export class RollPip implements HudPiece<RollPipView | null> {
     if (!view) return;
     this.build();
     const { well, label } = this.frame;
-    const wells = this.wells!.clear();
-    wells.fillStyle(palette.hudPanel, WELL_ALPHA);
-    wells.fillRect(well.x, well.y, well.width, well.height);
-    wells.lineStyle(1, palette.hudPanelDeep, CARVE_ALPHA);
-    wells.strokeRect(well.x + CARVE_INSET, well.y + CARVE_INSET, well.width - CARVE_INSET * 2, well.height - CARVE_INSET * 2);
+    // the well as the bar's squares wear it (`hudWell`)
+    drawWellGround(this.wells!.clear(), well);
 
     const face = this.face!.clear();
-    if (view.ready) face.lineStyle(LIT_RIM_W, palette.frameBright, 1);
-    else face.lineStyle(1, palette.frame, RIM_ALPHA);
-    face.strokeRect(well.x, well.y, well.width, well.height);
+    drawWellRim(face, well, view.ready);
     face.fillStyle(view.ready ? palette.frameBright : palette.hudFaint, 1);
     face.fillCircle(well.x + well.width / 2, well.y + well.height / 2, DOT_R);
 

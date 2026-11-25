@@ -139,14 +139,32 @@ describe("tumblePose: the in-code tumble from the walk sheet (FS-7P736 R15)", ()
   });
 });
 
-/** The slice of a sprite the tumble drives. */
-function fakeSprite(scale = 2 / 3) {
+/** A baked figure's frame: 96 px square, its feet (the origin) low in the middle. */
+const FRAME = 96;
+const FEET = { x: 0.5, y: 0.9 };
+/** Where the scene stood it, screen px. */
+const STOOD = { x: 100, y: 200 };
+
+/**
+ * The slice of a Phaser sprite the tumble drives, stood at {@link STOOD} on {@link FEET}: Phaser's origin
+ * a share of the frame, its display origin that share of the frame's own px.
+ */
+function fakeSprite(scale = 2 / 3, origin = FEET) {
   return {
-    x: 100,
-    y: 200,
+    ...STOOD,
     rotation: 0,
     scaleX: scale,
     scaleY: scale,
+    originX: origin.x,
+    originY: origin.y,
+    width: FRAME,
+    height: FRAME,
+    get displayOriginX(): number {
+      return this.originX * this.width;
+    },
+    get displayOriginY(): number {
+      return this.originY * this.height;
+    },
     setRotation(r: number) {
       this.rotation = r;
       return this;
@@ -156,40 +174,105 @@ function fakeSprite(scale = 2 / 3) {
       this.scaleY = y ?? x;
       return this;
     },
+    setOrigin(x: number, y?: number) {
+      this.originX = x;
+      this.originY = y ?? x;
+      return this;
+    },
   };
 }
+type FakeSprite = ReturnType<typeof fakeSprite>;
+
+/** Where the frame's point (`fx`, `fy`) is drawn on screen, as Phaser draws it: about the origin at x, y. */
+function drawnAt(s: FakeSprite, fx: number, fy: number) {
+  const [lx, ly] = [(fx - s.displayOriginX) * s.scaleX, (fy - s.displayOriginY) * s.scaleY];
+  const [c, n] = [Math.cos(s.rotation), Math.sin(s.rotation)];
+  return { x: s.x + lx * c - ly * n, y: s.y + lx * n + ly * c };
+}
+
+/** Where a sprite carried by the pose's (dx, dy) on its stood origin would draw it: the tumble's look. */
+function carriedAt(scale: number, t: number, middle: number, fx: number, fy: number) {
+  const p = tumblePose(t, 1, middle);
+  const carried = { ...fakeSprite(scale), x: STOOD.x + p.dx, y: STOOD.y + p.dy, rotation: p.rotation };
+  carried.scaleX = scale * p.scaleX;
+  carried.scaleY = scale * p.scaleY;
+  return drawnAt(carried, fx, fy);
+}
+
+const EAST = { x: 1, y: 0 };
+/** Moments through the turn itself, past the squash and short of the getting up. */
+const MID_ROLL = [0.2, 0.35, 0.5, 0.65, 0.8];
 
 describe("RollTumble: the tumble drawn over a sprite (FS-7P736 R15)", () => {
-  it("should draw the tumble on the sprite's own scale and give it back once the roll ends", () => {
+  it("should never move the sprite: mid-tumble its x and y are where it stands, so the camera following it holds still", () => {
     const tumble = new RollTumble();
     const sprite = fakeSprite();
-    tumble.apply(sprite, { dir: { x: 1, y: 0 }, t: 0.5 }, 40);
-    // the middle is screen px over the feet, whatever the sheet's scale
+    // the camera reads its follow target's x and y in preRender, after the frame's update drew the tumble
+    const camera = { follow: sprite as { x: number; y: number } };
+    for (const t of MID_ROLL) {
+      tumble.apply(sprite, { dir: EAST, t }, 40);
+      expect(sprite.rotation).not.toBe(0);
+      expect([sprite.x, sprite.y]).toEqual([STOOD.x, STOOD.y]);
+      expect([camera.follow.x, camera.follow.y]).toEqual([STOOD.x, STOOD.y]);
+    }
+  });
+
+  it("should still turn the drawing about the body's middle, every point where carrying the sprite would put it", () => {
+    const tumble = new RollTumble();
+    const sprite = fakeSprite();
+    // the middle: 40 screen px over the feet at the sheet's 2/3 scale, so 60 of the frame's px
+    const middle = { x: FEET.x * FRAME, y: FEET.y * FRAME - 40 / (2 / 3) };
+    const points = [[0, 0], [FRAME, 0], [0, FRAME], [FRAME, FRAME], [FEET.x * FRAME, FEET.y * FRAME], [middle.x, middle.y]];
+    for (const t of MID_ROLL) {
+      // the scene stands it again each frame before the tumble: its place, never its origin or scale
+      Object.assign(sprite, STOOD);
+      tumble.apply(sprite, { dir: EAST, t }, 40);
+      for (const [fx, fy] of points) {
+        const got = drawnAt(sprite, fx, fy);
+        const want = carriedAt(2 / 3, t, 40, fx, fy);
+        expect(got.x).toBeCloseTo(want.x, 6);
+        expect(got.y).toBeCloseTo(want.y, 6);
+      }
+      // the middle holds still over the feet, as low as the squash takes it
+      const held = drawnAt(sprite, middle.x, middle.y);
+      expect(held.x).toBeCloseTo(STOOD.x, 6);
+      expect(held.y).toBeCloseTo(STOOD.y - 40 * tumblePose(t, 1, 40).scaleY, 6);
+    }
+  });
+
+  it("should draw the tumble on the sprite's own scale and origin, and give both back once the roll ends", () => {
+    const tumble = new RollTumble();
+    const sprite = fakeSprite();
+    tumble.apply(sprite, { dir: EAST, t: 0.5 }, 40);
     const want = tumblePose(0.5, 1, 40);
     expect(sprite.rotation).toBeCloseTo(want.rotation);
     expect(sprite.scaleY).toBeCloseTo((2 / 3) * want.scaleY);
-    expect(sprite.x).toBeCloseTo(100 + want.dx);
-    // the next frame the scene stands the sprite again, then the tumble goes on from its own scale
-    sprite.x = 100;
-    tumble.apply(sprite, { dir: { x: 1, y: 0 }, t: 0.6 }, 40);
+    expect(sprite.originY).not.toBeCloseTo(FEET.y);
+    // the next frame goes on from its own scale and origin, not the ones the tumble last gave it
+    tumble.apply(sprite, { dir: EAST, t: 0.6 }, 40);
     expect(sprite.scaleY).toBeCloseTo((2 / 3) * tumblePose(0.6, 1, 40).scaleY);
+    expect(drawnAt(sprite, 0, 0).x).toBeCloseTo(carriedAt(2 / 3, 0.6, 40, 0, 0).x, 6);
     tumble.apply(sprite, null, 40);
-    expect([sprite.rotation, sprite.scaleX, sprite.scaleY]).toEqual([0, 2 / 3, 2 / 3]);
+    expect([sprite.rotation, sprite.scaleX, sprite.scaleY, sprite.originX, sprite.originY]).toEqual([0, 2 / 3, 2 / 3, FEET.x, FEET.y]);
+    expect([sprite.x, sprite.y]).toEqual([STOOD.x, STOOD.y]);
   });
 
-  it("should give what stands over a tumbling sprite its stood place and scale, so names and bars hold still", () => {
+  it("should only turn the placeholder, whose origin is its own middle", () => {
     const tumble = new RollTumble();
-    const sprite = { ...fakeSprite(), displayOriginY: 90 };
+    const sprite = fakeSprite(1, { x: 0.5, y: 0.5 });
+    tumble.apply(sprite, { dir: EAST, t: 0.5 }, 0);
+    expect(sprite.rotation).toBeCloseTo(Math.PI, 1);
+    expect([sprite.originX, sprite.originY]).toEqual([0.5, 0.5]);
+  });
+
+  it("should give what stands over a tumbling sprite its stood place, origin and scale, so names and bars hold still", () => {
+    const tumble = new RollTumble();
+    const sprite = fakeSprite();
     expect(tumble.standing(sprite)).toBe(sprite);
-    tumble.apply(sprite, { dir: { x: 1, y: 0 }, t: 0.5 }, 40);
-    expect(sprite.y).not.toBeCloseTo(200);
+    tumble.apply(sprite, { dir: EAST, t: 0.5 }, 40);
+    expect(sprite.displayOriginY).not.toBeCloseTo(FEET.y * FRAME);
     const stood = tumble.standing(sprite);
-    expect([stood.x, stood.y, stood.scaleY, stood.displayOriginY]).toEqual([
-      expect.closeTo(100),
-      expect.closeTo(200),
-      2 / 3,
-      90,
-    ]);
+    expect([stood.x, stood.y, stood.scaleY, stood.displayOriginY]).toEqual([STOOD.x, STOOD.y, 2 / 3, FEET.y * FRAME]);
     tumble.apply(sprite, null, 40);
     expect(tumble.standing(sprite)).toBe(sprite);
   });
@@ -199,6 +282,6 @@ describe("RollTumble: the tumble drawn over a sprite (FS-7P736 R15)", () => {
     const sprite = fakeSprite(1.5);
     sprite.rotation = 0.2;
     tumble.apply(sprite, null, 40);
-    expect([sprite.rotation, sprite.scaleX]).toEqual([0.2, 1.5]);
+    expect([sprite.rotation, sprite.scaleX, sprite.originY]).toEqual([0.2, 1.5, FEET.y]);
   });
 });

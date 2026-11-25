@@ -14,7 +14,7 @@
  * Pure, no Phaser: the scene asks it where its body stands each frame.
  */
 
-import type { Point } from "@/render/iso/projection";
+import { PLAYER_RADIUS, type Point } from "@/render/iso/projection";
 import type { PlayerState } from "@/types/gameState";
 
 /** The roll's length, world px (R3: 2.5 cells at 80 px). Not scaled by the pace. */
@@ -24,7 +24,7 @@ export const ROLL_DURATION_MS = 400;
 /** World px per ms, constant along the roll. */
 const ROLL_SPEED = ROLL_DISTANCE / ROLL_DURATION_MS;
 /** Half a delver's body side, world px: the server's `PlayerRadius`, its swept box. */
-export const BODY_HALF = 20;
+export const BODY_HALF = PLAYER_RADIUS;
 /** How far past its end a roll the server has not answered is held, ms, before it is taken as refused. */
 export const CONFIRM_GRACE_MS = 300;
 /** The sweep's step, world px: a body never stops more than this short of what stops it. */
@@ -117,7 +117,10 @@ export class RollPrediction {
 
   /**
    * Where the body stands at `now` (ms) while the roll is the client's to draw, or none: the server's
-   * position is the body's again (and the flight is over).
+   * position is the body's again.
+   *
+   * Not a pure read: the first call that finds the roll let go also forgets the flight, so from then on
+   * every call answers none, an earlier `now` included. Ask it with the clock running forward.
    */
   at(now: number): Point | null {
     const f = this.flight;
@@ -130,7 +133,10 @@ export class RollPrediction {
     return null;
   }
 
-  /** Whether a predicted roll still stands in for the server's position at `now`: Space waits it out (R14). */
+  /**
+   * Whether a predicted roll still stands in for the server's position at `now`: Space waits it out (R14).
+   * Read through {@link at}, so it forgets a flight it finds let go, as that does.
+   */
   inFlight(now: number): boolean {
     return this.at(now) !== null;
   }

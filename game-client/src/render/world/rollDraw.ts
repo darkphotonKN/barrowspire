@@ -66,7 +66,13 @@ export class RollBodies {
     return started;
   }
 
-  /** `id`'s roll being drawn at `now` (ms), or none. */
+  /**
+   * `id`'s roll being drawn at `now` (ms), or none.
+   *
+   * Not a pure read: a call that finds the roll's time run out (or `now` before its start) forgets it, so
+   * from then on every call for `id` answers none, an earlier `now` included, and a {@link start} is free
+   * to draw the next. Ask it with the clock running forward.
+   */
   at(id: string, now: number): DrawnRoll | null {
     const roll = this.rolls.get(id);
     if (!roll) return null;
@@ -97,21 +103,21 @@ const ease = (k: number) => {
   return c * c * (3 - 2 * c);
 };
 
-/** The in-code tumble at one moment: the sprite's turn and squash, and how far it is moved to turn about its middle. */
+/** The in-code tumble at one moment: the drawing's turn and squash, and how far it is carried to turn about its middle. */
 export interface TumblePose {
   /** Radians, clockwise on screen. */
   rotation: number;
   scaleX: number;
   scaleY: number;
-  /** Screen px added to the sprite's stood position. */
+  /** Screen px the drawing is carried off where it stands; never the sprite's own place ({@link RollTumble}). */
   dx: number;
   dy: number;
 }
 
 /**
  * The in-code tumble (R15) `t` (0 to 1) through a roll: a squash, low and wide, then one whole quick
- * turn the way `spin` says (1 clockwise), balled, then up again. The sprite stands on its feet, so it is
- * moved to turn about its middle, `middle` screen px over the feet (squashed with it).
+ * turn the way `spin` says (1 clockwise), balled, then up again. The sprite stands on its feet, so its
+ * drawing is carried to turn about its middle, `middle` screen px over the feet (squashed with it).
  */
 export function tumblePose(t: number, spin: 1 | -1, middle: number): TumblePose {
   const down = ease(t / SQUASH);
@@ -141,14 +147,19 @@ export function tumbleSpin(dir: Point): 1 | -1 {
   return worldToScreen(dir.x, dir.y).x < 0 ? -1 : 1;
 }
 
-/** The slice of a sprite the tumble drives. */
+/** The slice of a sprite the tumble drives: its turn, its scale and its origin, never its place. */
 export interface TumbledSprite {
-  x: number;
-  y: number;
   readonly scaleX: number;
   readonly scaleY: number;
+  /** The origin as a share of the frame (Phaser's), that origin in the frame's px, and the frame's size. */
+  readonly originX: number;
+  readonly originY: number;
+  readonly displayOriginY: number;
+  readonly width: number;
+  readonly height: number;
   setRotation(radians: number): unknown;
   setScale(x: number, y?: number): unknown;
+  setOrigin(x: number, y?: number): unknown;
 }
 
 /** A sprite as it stands, for what is placed over it (`markerBase`'s `StandingSprite`, and its x). */
@@ -159,13 +170,26 @@ export interface StoodSprite {
   scaleY: number;
 }
 
+/** A tumbling sprite as it stood: its own scale (a sheet's art scale), its origin, and that origin's px. */
+interface Stood {
+  scaleX: number;
+  scaleY: number;
+  originX: number;
+  originY: number;
+  displayOriginY: number;
+}
+
 /**
- * Draws the tumble over sprites, each frame after the scene stands them: on the sprite's own scale
- * (a sheet's art scale), which it gives back, unturned, once the roll ends.
+ * Draws the tumble over sprites, each frame after the scene stands them: on the sprite's own scale and
+ * origin, which it gives back, unturned, once the roll ends.
+ *
+ * It never moves the sprite. A sprite turns about its origin, which sits at its place, so to turn the
+ * drawing about its middle the tumble moves the origin within the drawing instead: by the pose's carry,
+ * turned back and unscaled into the frame's own px. The drawing lands where a carried sprite's would,
+ * and the sprite's x and y stay where it stands, for the camera that follows it and every other reader.
  */
 export class RollTumble {
-  /** Each tumbling sprite's own scale, and how far the tumble last moved it off where it stood. */
-  private readonly tumbling = new WeakMap<object, { x: number; y: number; dx: number; dy: number }>();
+  private readonly tumbling = new WeakMap<object, Stood>();
 
   /** `roll` being drawn on `sprite` this frame, or none; `middle` as {@link tumblePose}. */
   apply(sprite: TumbledSprite, roll: DrawnRoll | null, middle: number): void {
@@ -173,26 +197,41 @@ export class RollTumble {
     if (!roll) {
       if (!own) return;
       sprite.setRotation(0);
-      sprite.setScale(own.x, own.y);
+      sprite.setScale(own.scaleX, own.scaleY);
+      sprite.setOrigin(own.originX, own.originY);
       this.tumbling.delete(sprite);
       return;
     }
+    const stood: Stood = own ?? {
+      scaleX: sprite.scaleX,
+      scaleY: sprite.scaleY,
+      originX: sprite.originX,
+      originY: sprite.originY,
+      displayOriginY: sprite.displayOriginY,
+    };
+    this.tumbling.set(sprite, stood);
     const p = tumblePose(roll.t, tumbleSpin(roll.dir), middle);
-    const scale = { x: own?.x ?? sprite.scaleX, y: own?.y ?? sprite.scaleY, dx: p.dx, dy: p.dy };
-    this.tumbling.set(sprite, scale);
+    const [sx, sy] = [stood.scaleX * p.scaleX, stood.scaleY * p.scaleY];
     sprite.setRotation(p.rotation);
-    sprite.setScale(scale.x * p.scaleX, scale.y * p.scaleY);
-    sprite.x += p.dx;
-    sprite.y += p.dy;
+    sprite.setScale(sx, sy);
+    // the carry in the drawing's own frame: turned back, then unscaled to the frame's px
+    const [cos, sin] = [Math.cos(p.rotation), Math.sin(p.rotation)];
+    const across = (cos * p.dx + sin * p.dy) / sx;
+    const down = (cos * p.dy - sin * p.dx) / sy;
+    sprite.setOrigin(
+      sprite.width > 0 ? stood.originX - across / sprite.width : stood.originX,
+      sprite.height > 0 ? stood.originY - down / sprite.height : stood.originY,
+    );
   }
 
   /**
    * `sprite` as it stands, the tumble taken off: where its name and bars go, so they hold still over
-   * a tumbling body. The sprite itself when it is not tumbling.
+   * a tumbling body. Its own place, which the tumble never moves, with the origin and scale it stood on.
+   * The sprite itself when it is not tumbling.
    */
   standing<S extends StoodSprite>(sprite: S): StoodSprite {
     const t = this.tumbling.get(sprite);
     if (!t) return sprite;
-    return { x: sprite.x - t.dx, y: sprite.y - t.dy, displayOriginY: sprite.displayOriginY, scaleY: t.y };
+    return { x: sprite.x, y: sprite.y, displayOriginY: t.displayOriginY, scaleY: t.scaleY };
   }
 }
