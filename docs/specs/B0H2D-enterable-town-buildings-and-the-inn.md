@@ -358,3 +358,5 @@ nothing is bought or sold. Tests guarantee clear lanes from the spawn to every g
 ## Change: Wider doors → FS-MMA2H
 
 ## Change: The chapel and the graveyard → FS-R4MYX
+
+## Change: The chapel moves to the far left and gains a bell tower → FS-R4MYX

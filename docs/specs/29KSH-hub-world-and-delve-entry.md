@@ -502,3 +502,5 @@ still needs `player_id`. Roll out game-service on every pod first, then the clie
 - Any other outbound field.
 
 ## Change: The chapel and the graveyard → FS-R4MYX
+
+## Change: The chapel moves to the far left and gains a bell tower → FS-R4MYX

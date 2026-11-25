@@ -414,3 +414,5 @@ place; any server, proto, gateway, OpenAPI or database change.
 ## Change: Map name → FS-56CKV
 
 ## Change: The chapel and the graveyard → FS-R4MYX
+
+## Change: The chapel moves to the far left and gains a bell tower → FS-R4MYX
