@@ -64,7 +64,7 @@ const FALLBACK_STONE = mix(BARROW_HEX.slate, BARROW_HEX.barrowDeep, 0.3);
 
 /**
  * The class book's pigments, `palette.bookPigment` (below): one table, so the book's world effects
- * (`palette.bookEffect`) read their pigments through it and never from the tokens (ADR-0094).
+ * (`palette.bookEffect`) read their pigments through it and never from the tokens (ADR-0094, ADR-0098).
  */
 const BOOK_PIGMENT = {
   verdigris: BARROW_HEX.pigmentVerdigris,
@@ -306,8 +306,10 @@ export const palette = {
   /**
    * The class book's pigments (FS-X2CMM R45, ADR-0094, inked by ADR-0095): a page roundel's ground wears
    * one main pigment by what the page does (light and finding ochre, movement and air lapis, binding and
-   * blood madder, growth, beasts and cures verdigris), never by its class, and its picture is bone. Read by the page roundels (`src/ui/pageRoundel.ts`); the book's world effects read their own
-   * names in `bookEffect`, below.
+   * blood madder, growth, beasts and cures verdigris), never by its class, and its picture is bone.
+   * ADR-0098: two readers and nothing else. The page roundels (`src/ui/pageRoundel.ts`) read this table;
+   * the book's own world effects read their pigments only through `bookEffect`, below, each in the
+   * pigment of the page that made it. No other HUD element, creature, fixture or effect reads them.
    */
   bookPigment: BOOK_PIGMENT,
   /**
@@ -433,7 +435,9 @@ export const palette = {
   reticleInteractable: BARROW_HEX.amber,
   /**
    * The book's world effects and delver states (FS-X2CMM §I R47), drawn for every viewer, each look in its
-   * own file. The witchlight a warm globe of light-and-finding ochre lifted toward bone, its pool the same
+   * own file. The one door to the book pigments outside the page roundels (ADR-0098): an effect a page
+   * leaves in the world reads its page's pigment here, and one that is not a page's own colour (the
+   * draught, afloat, hardened, the long night) keeps the barrow ramp. The witchlight a warm globe of light-and-finding ochre lifted toward bone, its pool the same
    * warmth (never amber: nothing to act on); the rune binding madder; the draught a flask of the health
    * potion's oxblood, its pool the interactable channel's own amber; afloat's shadow pitch; hardened a dull
    * bronze; the long night a pitch ring edged in umbra; tracker's eye a faint ochre ring; the draught's
@@ -460,7 +464,7 @@ export const palette = {
      * frame, lifted toward vellum so it warms the trap rather than recolours it.
      */
     revealedTrap: tint(BOOK_PIGMENT.ochre, 0.4),
-    /** The hound's bay at what it bays at (R49): the hound's own verdigris. */
+    /** The hound's bay, rings at what the hound bays at (R49): the hound's own verdigris. */
     houndBay: BOOK_PIGMENT.verdigris,
   },
 

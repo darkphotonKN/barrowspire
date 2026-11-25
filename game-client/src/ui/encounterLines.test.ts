@@ -56,7 +56,7 @@ describe("encounterReplyNotice: the encounters' refusals (FS-4EC7Z §F R27, §G 
   it("should say why a Take a Contract was refused: taken, the top floor, no room for the mark (FS-X2CMM §J R57)", () => {
     const said = (reason: string) => encounterReplyNotice({ success: false, message: "server words", reason })?.text;
     expect(said("contract_taken")).toBe("A contract is already taken this delve.");
-    expect(said("contract_no_stairs")).toBe("No contract is taken on the top floor.");
+    expect(said("contract_no_stairs")).toBe("No contract can be taken on the top floor.");
     expect(said("contract_no_room")).toBe("No mark can be set on this floor.");
   });
 

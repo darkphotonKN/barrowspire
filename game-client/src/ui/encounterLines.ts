@@ -56,7 +56,7 @@ const REPLY_LINES: Readonly<Record<(typeof ENCOUNTER_REPLY_REASONS)[number], str
   not_willing: "They will not follow you.",
   already_hired: "Already sworn to another.",
   contract_taken: "A contract is already taken this delve.",
-  contract_no_stairs: "No contract is taken on the top floor.",
+  contract_no_stairs: "No contract can be taken on the top floor.",
   contract_no_room: "No mark can be set on this floor.",
 };
 

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { palette } from "@/utils/canvasPalette";
-import { HOUND_BAY, paintHoundBay, type BayBrush } from "./houndBay";
+import { HOUND_BAY, paintHoundBay, type HoundBayBrush } from "./houndBay";
 
 function brush() {
   const calls: [string, ...number[]][] = [];
-  const g: BayBrush = {
+  const g: HoundBayBrush = {
     clear: () => void calls.splice(0),
     fillStyle: (c: number, a = 1) => void calls.push(["fillStyle", c, a]),
     lineStyle: (w: number, c: number, a = 1) => void calls.push(["lineStyle", w, c, a]),

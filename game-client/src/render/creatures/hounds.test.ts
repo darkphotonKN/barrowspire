@@ -164,7 +164,7 @@ function fakeStage() {
   const sprites: ReturnType<typeof fakeSprite>[] = [];
   const bars: ReturnType<typeof fakeGraphics>[] = [];
   const rings: ReturnType<typeof fakeGraphics>[] = [];
-  const bays: ReturnType<typeof fakeGraphics>[] = [];
+  const houndBays: ReturnType<typeof fakeGraphics>[] = [];
   const stage: HoundStage = {
     sprite: () => {
       const s = fakeSprite();
@@ -181,13 +181,13 @@ function fakeStage() {
       rings.push(g);
       return g;
     },
-    bay: () => {
+    houndBay: () => {
       const g = fakeGraphics();
-      bays.push(g);
+      houndBays.push(g);
       return g;
     },
   };
-  return { stage, sprites, bars, rings, bays };
+  return { stage, sprites, bars, rings, houndBays };
 }
 
 const hound = (fields: Partial<BookEffectState> = {}): BookEffectState => ({
@@ -445,58 +445,58 @@ describe("HoundSet: the hound's bay, a mark at what it bays at (FS-X2CMM §J R49
   const drawn = (g: ReturnType<typeof fakeGraphics>) => g.calls.some(([c]) => c === "strokeEllipse" || c === "fillEllipse");
 
   it("should draw no bay while the state gives none", () => {
-    const { set, bays } = onStage();
+    const { set, houndBays } = onStage();
     set.sync([hound()]);
     set.update(16);
-    expect(bays).toHaveLength(1);
-    expect(bays[0].visible).toBe(false);
-    expect(drawn(bays[0])).toBe(false);
+    expect(houndBays).toHaveLength(1);
+    expect(houndBays[0].visible).toBe(false);
+    expect(drawn(houndBays[0])).toBe(false);
   });
 
   it("should ripple verdigris rings out on the floor at the point it bays toward, not at the hound", () => {
-    const { set, bays } = onStage();
+    const { set, houndBays } = onStage();
     set.sync([hound({ bay: { x: 640, y: 300 } })]);
     set.update(200);
-    const bay = bays[0];
+    const houndBay = houndBays[0];
     const at = worldToScreen(640, 300);
-    expect([bay.x, bay.y]).toEqual([at.x, at.y]);
-    expect(bay.visible).toBe(true);
-    expect(drawn(bay)).toBe(true);
-    for (const [, , color] of bay.calls.filter(([c]) => c === "lineStyle")) expect(color).toBe(palette.bookEffect.houndBay);
+    expect([houndBay.x, houndBay.y]).toEqual([at.x, at.y]);
+    expect(houndBay.visible).toBe(true);
+    expect(drawn(houndBay)).toBe(true);
+    for (const [, , color] of houndBay.calls.filter(([c]) => c === "lineStyle")) expect(color).toBe(palette.bookEffect.houndBay);
   });
 
   it("should play one bay once, its ripple gone after its time though the state still names it", () => {
-    const { set, bays } = onStage();
+    const { set, houndBays } = onStage();
     set.sync([hound({ bay: { x: 640, y: 300 } })]);
     set.update(16);
     set.sync([hound({ bay: { x: 640, y: 300 } })]);
     set.update(HOUND_BAY.ms);
-    expect(bays[0].visible).toBe(false);
+    expect(houndBays[0].visible).toBe(false);
   });
 
   it("should finish a bay's ripple when the state stops naming it, and play a new bay afresh", () => {
-    const { set, bays } = onStage();
+    const { set, houndBays } = onStage();
     set.sync([hound({ bay: { x: 640, y: 300 } })]);
     set.update(16);
     set.sync([hound()]);
     set.update(200);
-    expect(bays[0].visible).toBe(true);
+    expect(houndBays[0].visible).toBe(true);
     set.update(HOUND_BAY.ms);
-    expect(bays[0].visible).toBe(false);
+    expect(houndBays[0].visible).toBe(false);
     set.sync([hound({ bay: { x: 400, y: 500 } })]);
     set.update(16);
     const at = worldToScreen(400, 500);
-    expect([bays[0].visible, bays[0].x, bays[0].y]).toEqual([true, at.x, at.y]);
+    expect([houndBays[0].visible, houndBays[0].x, houndBays[0].y]).toEqual([true, at.x, at.y]);
   });
 
   it("should hide its bay with the hound where the hide rule says, and destroy it with the hound", () => {
-    const { set, bays } = onStage();
+    const { set, houndBays } = onStage();
     set.sync([hound({ bay: { x: 640, y: 300 } })]);
     set.update(16);
     set.hideWhere(() => true);
     set.update(16);
-    expect(bays[0].visible).toBe(false);
+    expect(houndBays[0].visible).toBe(false);
     set.clear();
-    expect(bays[0].destroyed).toBe(true);
+    expect(houndBays[0].destroyed).toBe(true);
   });
 });

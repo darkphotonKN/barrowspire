@@ -27,15 +27,15 @@ export const HOUND_BAY = {
   spotAlpha: 0.35,
 } as const;
 
-/** The slice of a brush the bay paints with. */
-export type BayBrush = Pick<LookBrush, "clear" | "lineStyle" | "strokeEllipse" | "fillStyle" | "fillEllipse">;
+/** The slice of a brush the hound's bay paints with. */
+export type HoundBayBrush = Pick<LookBrush, "clear" | "lineStyle" | "strokeEllipse" | "fillStyle" | "fillEllipse">;
 
 /**
  * Paints one frame of a bay `sinceMs` into it, about the point it bays at: each ring starting a little after
  * the last, growing out and fading as it goes; nothing once the ripple is done. With `reduced` motion, one
  * still ring and the spot, fading over the bay.
  */
-export function paintHoundBay(g: BayBrush, sinceMs: number, reduced = false): void {
+export function paintHoundBay(g: HoundBayBrush, sinceMs: number, reduced = false): void {
   g.clear();
   const { ms, rings, reach, width, alpha, spot, spotAlpha } = HOUND_BAY;
   if (sinceMs < 0 || sinceMs >= ms) return;

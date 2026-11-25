@@ -12,7 +12,7 @@
  */
 
 import type { AimTargetKind } from "@/data/classBooks";
-import type { ClientGameState } from "@/types/gameState";
+import { placedKind, type ClientGameState } from "@/types/gameState";
 import type { AimBody } from "./pageAim";
 
 /** The parts of a state the interactables are named from. */
@@ -35,8 +35,10 @@ export function aimInteractables(state: AimInteractableState, cell: number): Aim
     const kind = PIECE_TARGETS[piece.kind]?.(piece.active) ?? null;
     if (kind) named.push({ id: piece.entity_id, at: { x: piece.position.x, y: piece.position.y }, kind });
   }
+  // read through placedKind: a kind this client does not know is a chest, and aimable as one
   for (const c of state.containers ?? []) {
-    if (!c.is_open && (c.kind === "chest" || c.kind === "sack")) {
+    const kind = placedKind(c);
+    if (!c.is_open && (kind === "chest" || kind === "sack")) {
       named.push({ id: c.entity_id, at: { x: c.position.x, y: c.position.y }, kind: "chest" });
     }
   }
@@ -60,4 +62,29 @@ export function aimInteractables(state: AimInteractableState, cell: number): Aim
     }
   }
   return named;
+}
+
+/**
+ * The interactables of the last state asked about, named once per state: the aim asks every frame a page
+ * is armed, and a state comes far less often. A state is never changed in place (each broadcast is parsed
+ * anew), so the same state object and cell give the same list.
+ *
+ *   const candidates = new AimCandidates();
+ *   candidates.of(lastGameState, cell); // every frame: rebuilt only for a new state or cell
+ */
+export class AimCandidates {
+  private state?: AimInteractableState;
+  private cell?: number;
+  private named: readonly AimBody[] = [];
+
+  /** The interactables of `state` (none without one), named afresh only when it or `cell` changed. */
+  of(state: AimInteractableState | undefined, cell: number): readonly AimBody[] {
+    if (!state) return [];
+    if (state !== this.state || cell !== this.cell) {
+      this.named = aimInteractables(state, cell);
+      this.state = state;
+      this.cell = cell;
+    }
+    return this.named;
+  }
 }

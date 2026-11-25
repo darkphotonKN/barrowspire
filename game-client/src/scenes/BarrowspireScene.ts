@@ -153,7 +153,7 @@ import { CastBar } from "@/ui/castBar";
 import { PAGE_ROUNDEL_SIZE, PageRoundel } from "@/ui/pageRoundel";
 import { PAGE_ICONS, type PageId } from "@/ui/pageIcons";
 import type { AimBody, AimScene } from "./pageAim";
-import { aimInteractables } from "./aimInteractables";
+import { AimCandidates } from "./aimInteractables";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { FOG_FLOOR_AMBIENT, HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -553,6 +553,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private otherPlayersPos: Map<string, Point> = new Map();
   /** The bodies an armed page may snap to, as the last state left them (`seeAimAllies`). */
   private aimAllies: readonly AimBody[] = [];
+  /** The interactables an armed interactable page may snap to, named once per state (`aimScene`). */
+  private readonly aimCandidates = new AimCandidates();
   private otherPlayersTargets: Map<string, { x: number; y: number }> =
     new Map();
 
@@ -4061,18 +4063,23 @@ export class BarrowspireScene extends Phaser.Scene {
    * The run as an armed page reads it (FS-X2CMM R41): the player's drawn feet, the world point `cursor`, the
    * floor's cell, the living, un-escaped delvers where they are drawn (the player among them, by the id the
    * server knows them by, §C R15), the last state's interactables, each named by what it is (the armed page
-   * picks the kinds it targets, §J R50, R52), and the walkable floor.
+   * picks the kinds it targets, §J R50, R52), and the walkable floor. The interactables are named only when
+   * an armed interactable page reads them, and once per state (`AimCandidates`).
    */
   private aimScene(cursor: Point): AimScene {
     const from = this.playerPos ?? this.lastGameState?.current_player?.position ?? cursor;
     const grid = this.dungeon?.grid;
     const cell = grid?.cell ?? DEFAULT_CELL;
+    const candidates = this.aimCandidates;
+    const state = this.lastGameState;
     return {
       from,
       cursor,
       cell,
       allies: this.aimAllies,
-      interactables: this.lastGameState ? aimInteractables(this.lastGameState, cell) : [],
+      get interactables() {
+        return candidates.of(state, cell);
+      },
       walkable: grid
         ? (p) => {
             const { cx, cy } = grid.cellOf(p);
@@ -4166,9 +4173,11 @@ export class BarrowspireScene extends Phaser.Scene {
       if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     });
 
-    // A page refused by the world it works on (Take a Contract, FS-X2CMM §J R57) is answered on the
-    // cast's reply with its reason, in the client's words (FS-4EC7Z §F R27); a page the book itself
-    // refuses is answered with nothing (FS-X2CMM §A R4)
+    // A page refused by the world it works on (Pick the Lock's open cage, Strike a Deal's group that will
+    // not follow, is sworn to another or finds too many following, Take a Contract's: FS-X2CMM §J R55-R57,
+    // the reasons in `ENCOUNTER_REPLY_REASONS`) is answered on the cast's
+    // reply with its reason, in the client's words (FS-4EC7Z §F R27); a page the book itself refuses is
+    // answered with nothing (FS-X2CMM §A R4)
     socketManager.on("cast_skill", (reply: InteractReply) => {
       const notice = encounterReplyNotice(reply);
       if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);

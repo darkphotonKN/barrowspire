@@ -132,11 +132,11 @@ export interface HoundStage {
   sprite(): HoundSprite;
   bar(): HoundMark;
   ring(): HoundMark;
-  /** Its bay's mark, laid on the floor as the ring is (R49). */
-  bay(): HoundMark;
+  /** The mark of the hound's bay, laid on the floor as the ring is (R49). */
+  houndBay(): HoundMark;
   /** Backing px per logical unit, so the bar's edges fall on whole px; 1 if absent. */
   renderScale?(): number;
-  /** The viewer asked for less motion: the bay's rings stand still. */
+  /** The viewer asked for less motion: the hound bay's rings stand still. */
   reducedMotion?: boolean;
 }
 
@@ -145,10 +145,10 @@ interface HoundView {
   sprite: HoundSprite;
   bar: HoundMark;
   ring: HoundMark;
-  /** Its bay's mark, and the point and set-clock time its latest bay began; undefined before its first. */
-  bay: HoundMark;
-  bayAt?: Point;
-  bayFrom?: number;
+  /** The mark of its hound bay, and the point and set-clock time its latest bay began; undefined before its first. */
+  houndBay: HoundMark;
+  houndBayAt?: Point;
+  houndBayFrom?: number;
   anim: CharacterAnimator;
   chip: DamageChip;
   /** World position as drawn, eased toward the state's. */
@@ -212,7 +212,7 @@ export class HoundSet {
       const fill = healthOf(state);
       const was = healthOf(view.state);
       if (fill !== null) view.chip.set(fill, was !== null && fill < was && !fallen(state));
-      this.heardBay(view, state);
+      this.heardHoundBay(view, state);
       view.state = state;
     }
   }
@@ -223,7 +223,7 @@ export class HoundSet {
     for (const [id, view] of this.views) {
       if (view.goneAt !== undefined) {
         view.bar.setVisible(false);
-        view.bay.setVisible(false);
+        view.houndBay.setVisible(false);
         // its fall still drawing out: it lies as it is
         if (this.clock < view.goneAt) continue;
         const left = 1 - (this.clock - view.goneAt) / HOUND_FADE_MS;
@@ -239,7 +239,7 @@ export class HoundSet {
       this.play(view);
       view.chip.step(deltaMs);
       this.mark(view);
-      this.paintBay(view);
+      this.rippleHoundBay(view);
     }
   }
 
@@ -251,7 +251,7 @@ export class HoundSet {
       view.ring.setVisible(view.shown);
       if (!view.shown) {
         view.bar.setVisible(false);
-        view.bay.setVisible(false);
+        view.houndBay.setVisible(false);
       }
     }
   }
@@ -286,14 +286,17 @@ export class HoundSet {
     bar.setDepth(MARKER_DEPTH.bar);
     const ring = this.stage.ring();
     paintRing(ring);
-    const bay = this.stage.bay();
-    bay.setVisible(false);
+    const houndBay = this.stage.houndBay();
+    houndBay.setVisible(false);
     const view: HoundView = {
       state,
       sprite,
       bar,
       ring,
-      bay,
+      houndBay,
+      // one first seen baying bays from now: the held bay is set here, not heard against a state before it
+      houndBayAt: state.bay && { x: state.bay.x, y: state.bay.y },
+      houndBayFrom: state.bay ? this.clock : undefined,
       anim,
       chip: new DamageChip(healthOf(state) ?? 1),
       pos: { x: state.x, y: state.y },
@@ -302,7 +305,6 @@ export class HoundSet {
       shown: true,
     };
     this.stand(view);
-    if (state.bay) this.heardBay(view, { ...state, bay: state.bay }, true);
     // one first seen fallen (a reconnect, one coming into interest) already lies where it fell
     if (fallen(state)) {
       view.fellAt = this.clock - HOUND_FALL_MS;
@@ -393,43 +395,43 @@ export class HoundSet {
 
   /**
    * A bay the state newly names (it named none, or another point) begins now; one it goes on naming is the
-   * same bay, never begun again. `fresh` begins one first seen with the hound.
+   * same bay, never begun again. One first seen with the hound is held where the hound is made (`create`).
    */
-  private heardBay(view: HoundView, state: BookEffectState, fresh = false): void {
-    const bay = state.bay;
-    if (!bay) return;
-    const held = fresh ? undefined : view.state.bay;
-    if (held && held.x === bay.x && held.y === bay.y) return;
-    view.bayAt = { x: bay.x, y: bay.y };
-    view.bayFrom = this.clock;
+  private heardHoundBay(view: HoundView, state: BookEffectState): void {
+    const call = state.bay;
+    if (!call) return;
+    const held = view.state.bay;
+    if (held && held.x === call.x && held.y === call.y) return;
+    view.houndBayAt = { x: call.x, y: call.y };
+    view.houndBayFrom = this.clock;
   }
 
-  /** Its latest bay's ripple at the point it bays toward, while it plays and the hound is shown; else nothing. */
-  private paintBay(view: HoundView): void {
-    const since = view.bayFrom === undefined ? Infinity : this.clock - view.bayFrom;
-    const playing = view.shown && view.bayAt !== undefined && since < HOUND_BAY.ms;
-    view.bay.setVisible(playing);
-    if (!playing || !view.bayAt) {
-      view.bay.clear();
+  /** Its latest hound bay's ripple at the point it bays toward, while it plays and the hound is shown; else nothing. */
+  private rippleHoundBay(view: HoundView): void {
+    const since = view.houndBayFrom === undefined ? Infinity : this.clock - view.houndBayFrom;
+    const playing = view.shown && view.houndBayAt !== undefined && since < HOUND_BAY.ms;
+    view.houndBay.setVisible(playing);
+    if (!playing || !view.houndBayAt) {
+      view.houndBay.clear();
       return;
     }
-    const at = worldToScreen(view.bayAt.x, view.bayAt.y);
-    view.bay.setPosition(at.x, at.y);
-    paintHoundBay(view.bay, since, this.stage.reducedMotion === true);
+    const at = worldToScreen(view.houndBayAt.x, view.houndBayAt.y);
+    view.houndBay.setPosition(at.x, at.y);
+    paintHoundBay(view.houndBay, since, this.stage.reducedMotion === true);
   }
 
   private setAlpha(view: HoundView, alpha: number): void {
     view.sprite.setAlpha(alpha);
     view.ring.setAlpha(alpha);
     view.bar.setAlpha(alpha);
-    view.bay.setAlpha(alpha);
+    view.houndBay.setAlpha(alpha);
   }
 
   private destroy(view: HoundView): void {
     view.sprite.destroy();
     view.bar.destroy();
     view.ring.destroy();
-    view.bay.destroy();
+    view.houndBay.destroy();
   }
 }
 

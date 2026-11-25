@@ -147,6 +147,34 @@ describe("Strike a Deal's reticle (FS-X2CMM R41, R56)", () => {
   });
 });
 
+// I-X2CMM-27: the run names its interactables only when an interactable page reads them (`aimScene`)
+describe("pageReticle's reads of the interactables", () => {
+  const counting = () => {
+    const seen = { reads: 0 };
+    const at = scene({ x: 1100, y: 1000 });
+    Object.defineProperty(at, "interactables", {
+      get: () => {
+        seen.reads++;
+        return [];
+      },
+    });
+    return { seen, at };
+  };
+
+  it("should never read them for a ground or ally page", () => {
+    const { seen, at } = counting();
+    pageReticle("witchlight", at);
+    pageReticle("levitate", at);
+    expect(seen.reads).toBe(0);
+  });
+
+  it("should read them for an interactable page", () => {
+    const { seen, at } = counting();
+    pageReticle("far_hand", at);
+    expect(seen.reads).toBeGreaterThan(0);
+  });
+});
+
 describe("PageAim's click (FS-X2CMM R41)", () => {
   it("should hand back a valid target and disarm", () => {
     const aim = new PageAim();

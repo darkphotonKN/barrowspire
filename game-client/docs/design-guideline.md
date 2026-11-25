@@ -138,7 +138,7 @@ and the two are not required to agree (ADR-0025).
 | **Parchment / UI** | vellum `#cdbf9a`, darkened `#8a7d5c`, ink `#1c1712` |
 | **Brass** | `#9c7b3f`, `#c9a14e` |
 | **Passive tree hues** (a lit tree picture only) | copper `#d49274`, steelBlue `#5f82b8`, teal `#3aa0b0`, frost `#8ac2e6`, verdigris `#5fa88a`, amethyst `#a088cc`, silver `#c2c8d0` |
-| **Book pigments** (a class book page roundel only) | pigmentVerdigris `#5b9a80`, pigmentOchre `#a88b52`, pigmentMadder `#8f5048`, pigmentLapis `#52699a`, pigmentBone `#ddd3bb` |
+| **Book pigments** (a class book page roundel and the book's own world effects only) | pigmentVerdigris `#5b9a80`, pigmentOchre `#a88b52`, pigmentMadder `#8f5048`, pigmentLapis `#52699a`, pigmentBone `#ddd3bb` |
 | **Open tome** (the class book's panel only) | tomeLeather `#3b2a1d`, tomeVellumEdge `#c9b98f`, tomeVellumMiddle `#d8caa3`, tomeGutter `#a89772`, tomeInk `#2c2118`, tomeInkMuted `#5e4c34`, tomeInkMadder `#74392a` |
 
 **Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
@@ -165,12 +165,19 @@ draws, so they are narrow on purpose:
 - **Amethyst** marks crit in the tree and is not umbra, which stays the Shadow Shot's and the Shadow
   Ranger's gloom.
 
-**The book pigments are for a class book page's roundel only** (`palette.bookPigment`, FS-X2CMM R45,
-[ADR-0094](../../docs/adr/0094-class-book-page-icons-are-muted-pigment-glyphs-in-bronze-rimmed-roundels.md)):
+**The book pigments are for a class book page's roundel and the book's own world effects only**
+(`palette.bookPigment`, FS-X2CMM R45,
+[ADR-0094](../../docs/adr/0094-class-book-page-icons-are-muted-pigment-glyphs-in-bronze-rimmed-roundels.md),
+[ADR-0098](../../docs/adr/0098-the-class-book-pigments-are-read-by-the-page-roundels-and-the-books-own-world-effects.md)):
 a page's picture wears one main pigment by what the page does (light and finding ochre, movement and
 air lapis, binding and blood madder, growth, beasts and cures verdigris), never by its class, with bone
 for its highlights. Muted mineral tones, none more saturated than verdigris `#5fa88a`; ochre stays clear
-of amber and madder of oxblood. Nothing else reads them.
+of amber and madder of oxblood. Two things read them: the page-icon renderer, and what a page leaves on
+the floor or on a body (the witchlight, the rune, tracker's eye, the hound and the hound's bay, a revealed
+trap's wash), each in the pigment of the page that made it and always through `palette.bookEffect`, never
+from the tokens. Nothing else reads them: no other HUD element, creature, fixture or effect, and a world
+effect of the book that is not a page's own colour (the draught, afloat, hardened, the Long Night) keeps
+the barrow ramp.
 
 **Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
 interactable, which stays amber, and never stands in for a light source's colour. It may also be
@@ -983,7 +990,7 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   2026-11-25.)* A trap a book page **revealed** (Witchlight, Tracker's Eye) waits clearer, at
   alpha 0.8 (`TRAP_REVEALED`), under a multiply wash of light-and-finding ochre lifted toward
   vellum (`palette.bookEffect.revealedTrap`), kept through its spring, so the page's finding reads
-  apart from a careful step. The hound's **bay** at what it bays at is rings rippling out on the
+  apart from a careful step. The **hound's bay** at what it bays at is rings rippling out on the
   floor in its verdigris (`palette.bookEffect.houndBay`), once per bay, never a light. *(Added by
   [FS-X2CMM](../../docs/specs/X2CMM-class-books.md) §J R49, 2026-11-25.)*
 - **Health bars.** Every monster's HP bar, over its head or in the target frame, wears one look,

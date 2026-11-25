@@ -8,6 +8,7 @@
  */
 
 import type Phaser from "phaser";
+import { PAGE_COPY } from "@/data/classBooks";
 import { itemView } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { artSprite } from "@/render/art/phaser";
@@ -313,15 +314,20 @@ export const EFFECT_CARDS: EffectCard[] = [
   },
   {
     module: "pageReticle",
-    name: "Armed page reticle: Witchlight's ring, then faint, then the hound's paw",
+    name: "Armed page reticle: Witchlight's ring, then faint, then Far Hand's interactable ring, then the hound's paw",
     demo: (s) => {
       // at the point the figure aims, as an armed page draws it each frame (FS-X2CMM R41): plain on a valid
-      // target, faint where a click would do nothing, and Call the Hound's paw mark
+      // target, faint where a click would do nothing, Far Hand's ring under the interactable it snapped to in
+      // the interactable channel's amber, and Call the Hound's paw mark
       const reticle = new PageReticle(() => s.scene.add.graphics());
       const ring = { page: "witchlight", kind: "ground", at: s.aim, radius: 3 * 80, valid: true } as const;
+      const step = HOLD_MS / 4;
       reticle.draw(ring);
-      s.later(HOLD_MS / 3, () => reticle.draw({ ...ring, valid: false }));
-      s.later((HOLD_MS * 2) / 3, () => reticle.draw({ ...ring, page: "call_the_hound", radius: 40 }));
+      s.later(step, () => reticle.draw({ ...ring, valid: false }));
+      s.later(step * 2, () =>
+        reticle.draw({ ...ring, page: "far_hand", kind: "interactable", radius: (PAGE_COPY.far_hand.reticleCells ?? 0) * 80 }),
+      );
+      s.later(step * 3, () => reticle.draw({ ...ring, page: "call_the_hound", radius: 40 }));
       s.later(HOLD_MS, () => reticle.clear());
     },
   },

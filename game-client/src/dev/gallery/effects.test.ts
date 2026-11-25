@@ -1,7 +1,8 @@
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { EFFECT_CARDS } from "./effects";
+import { palette } from "@/utils/canvasPalette";
+import { EFFECT_CARDS, type Stage } from "./effects";
 
 // FS-1819Q R12: every effect module has a card, so the gallery can't fall behind the effects.
 // At least one card per module: a module may carry several (shimmer.ts: a granted base and an
@@ -107,6 +108,29 @@ describe("effect cards", () => {
     expect(names("stun")).toEqual(["Stun tell (on a ghoul)"]);
     for (const owner of ["earthbreaker", "blink", "arrowRain", "settleTheDebt", "stun"])
       for (const card of EFFECT_CARDS.filter((c) => c.module === owner)) expect(card.demo).toBeTypeOf("function");
+  });
+
+  // I-X2CMM-27: Far Hand arms on an interactable (FS-X2CMM §H R41, §J R50), so its amber ring is carded
+  it("should card the reticle's ground ring, the interactable ring in amber and the hound's paw, one after another", () => {
+    const card = EFFECT_CARDS.find((c) => c.module === "pageReticle");
+    if (!card?.demo) throw new Error("the pageReticle card must play");
+    const inks: number[] = [];
+    const graphics = new Proxy({} as Record<string, unknown>, {
+      get: (_, key) => (...args: unknown[]) => {
+        if (key === "lineStyle") inks.push(args[1] as number);
+        return graphics;
+      },
+    });
+    const later: (() => void)[] = [];
+    const stage = {
+      scene: { add: { graphics: () => graphics } },
+      aim: { x: 400, y: 300 },
+      later: (_ms: number, fn: () => void) => later.push(fn),
+    } as unknown as Stage;
+    card.demo(stage);
+    for (const step of later) step();
+    const runs = inks.filter((ink, i) => ink !== inks[i - 1]);
+    expect(runs).toEqual([palette.reticleGround, palette.reticleInteractable, palette.reticleGround]);
   });
 
   it("should give every card that can't be played a reason", () => {

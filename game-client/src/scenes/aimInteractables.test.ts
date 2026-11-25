@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CageState, ContainerState, DoorState, EncounterNPCState, SealPieceState, TrapState } from "@/types/gameState";
-import { aimInteractables } from "./aimInteractables";
+import { AimCandidates, aimInteractables } from "./aimInteractables";
 
 // FS-X2CMM §H R41, §J R50, R52 (I-X2CMM-15): the run's interactables an interactable page may name, each
 // with what it is, where it is drawn (world px) and the id the cast sends. Which a page takes is the
@@ -71,6 +71,13 @@ describe("aimInteractables (FS-X2CMM R41)", () => {
     ]);
   });
 
+  // I-X2CMM-27: a container's kind is read through placedKind, as everywhere on the client
+  it("should name a shut container of a kind this client does not know as a chest, never a shut drop pile", () => {
+    const unknown = { ...container("new", "chest"), kind: "reliquary" } as unknown as ContainerState;
+    const named = aimInteractables({ containers: [unknown, container("pile", "drop_pile")], doors: [] }, CELL);
+    expect(named.map((b) => [b.id, b.kind])).toEqual([["new", "chest"]]);
+  });
+
   it("should name a door at its doorway's middle, as the server measures its reach", () => {
     expect(aimInteractables({ containers: [], doors: [door] }, CELL)).toEqual([{ id: "door", at: { x: 340, y: 508 }, kind: "door" }]);
   });
@@ -109,5 +116,32 @@ describe("aimInteractables (FS-X2CMM R41)", () => {
   it("should name a detected trap still armed at its cell's centre, never one waiting to re-arm", () => {
     const named = aimInteractables({ containers: [], doors: [], traps: [trap("armed"), trap("waiting", false)] }, CELL);
     expect(named).toEqual([{ id: "armed", at: { x: 2.5 * CELL, y: 7.5 * CELL }, kind: "trap" }]);
+  });
+});
+
+// I-X2CMM-27: the aim asks every frame a page is armed; the list is named once per state
+describe("AimCandidates", () => {
+  const state = () => ({ containers: [container("chest", "chest")], doors: [door] });
+
+  it("should not rebuild the list on a frame with the same state and cell", () => {
+    const candidates = new AimCandidates();
+    const s = state();
+    const first = candidates.of(s, CELL);
+    expect(first).toEqual(aimInteractables(s, CELL));
+    expect(candidates.of(s, CELL)).toBe(first);
+  });
+
+  it("should name the list afresh for a new state or a new cell", () => {
+    const candidates = new AimCandidates();
+    const s = state();
+    const first = candidates.of(s, CELL);
+    const next = { ...s, doors: [] };
+    expect(candidates.of(next, CELL)).not.toBe(first);
+    expect(candidates.of(next, CELL)).toEqual([{ id: "chest", at: { x: 100, y: 200 }, kind: "chest" }]);
+    expect(candidates.of(next, CELL * 2)).not.toBe(candidates.of(next, CELL));
+  });
+
+  it("should name none without a state", () => {
+    expect(new AimCandidates().of(undefined, CELL)).toEqual([]);
   });
 });
