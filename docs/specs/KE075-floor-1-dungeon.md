@@ -723,56 +723,216 @@ themselves (this FS only avoids adding to them).
 ## Change: Sealed floors → FS-5FZ4J
 
 ## Change: Room variety
-Status: draft
+Status: work-order
 Date: 2026-11-25
 
-### Scoping notes (raw)
+> Anchored here: this FS owns the dungeon generator (§A), the floor build (§B) and the floor's
+> monsters (§C). This change rewrites R2, R3, R5, R15 and R18's values and the room's shape, and
+> adds a per-room roll for what a room holds. FS-5FZ4J (seals, traps, hidden rooms) and FS-4EC7Z
+> (encounters) sit on top and keep their guarantees. No thin line changes. Scoped and promoted
+> under the owner's charter of 2026-11-25 (charter child B, "Rooms"): every value below not quoted
+> from the charter's locked list is a **charter default**, with its reason.
 
-Scoped under the owner's charter of 2026-11-25 (charter child B, "Rooms"): runs should play like the
-old first-person dungeon crawlers (Dungeon Master, Eye of the Beholder, Grimrock), deliberate, room
-by room, few but meaningful fights, keys, puzzles and companions, with our angled overhead camera
-and free movement kept. The charter's approval covers this lock. Every value below is a **charter
-default**.
+The charter's aim: runs play like the old first-person dungeon crawlers (Dungeon Master, Eye of
+the Beholder, Grimrock), deliberate, room by room, few but meaningful fights, with our angled
+overhead camera and free movement kept. More rooms hold a decision or something to do; some are
+quiet; fewer hold large packs; rooms are a little smaller and their shapes vary.
 
-Locked:
+### Facts this change rests on
 
-- **M1. Smaller rooms and grid.** Rooms 4–8 × 4–7 (from 4–10 × 4–8). Grid 60×40 (from 72×48).
-  `SegmentMax` 12 (from 16). Reason: shorter walks at the slower pace (charter child A). Recheck
-  `HallMinWidth`/`HallMinHeight` so halls still occur (7×6). The start room's minimum (5×5) stays
-  valid.
-- **M2. Shapes.** Rectangle, L, cross, pillared hall and cut corners. A shape is a cell mask inside
-  the room's rect. Corridors, doors, seals, traps, chests and encounters still find valid cells.
-  The 1,000-seed property test is the gate, extended to every shape.
-- **M3. Room contents.** Each ordinary room rolls: 30% quiet (dressed with existing props and light
-  only, no new sound system), 40% one or two monsters, 30% a decision drawn from existing kinds
-  (trap, chest or sack, lever or plate, encounter, secret door). No new interactable kind. Start,
-  treasure, stairs, switch and merchant rooms keep their roles.
-- **M4. Fewer large packs.** A hall pack is a brute plus 0–1 fodder (from 1–3). Corridors hold 1–3
-  monsters in all (from 3–5). The room top-up cap goes from 3 to 2. A treasure room gets one elite,
-  or two at 25% (from 50% for 2–3).
-- The client renders any new shape: wall and floor art follow the cell mask. Art never blocks.
-
-Guarantees kept (FS-5FZ4J, FS-4EC7Z on top of the generator): the escape door and its switch, the
-stairs room and every hidden room a dead end behind its barrier, no trap in an encounter room.
-
-Found while scoping (measured, the reason for the defaults that follow):
-
-- 18–28 rooms do not fit 60×40 at 4–8 × 4–7: seed 10 exhausts its 32 retries ("placed 18 of 27
-  rooms"). 16–22 fits every one of the 1,000 seeds on all seven sealed-floor parameter sets, the
-  hardest (four hidden rooms) at a worst attempt of 12 of 32. Room count 16–22.
-- At a 7×6 hall threshold, about 20% of rooms are halls (widths 7–8 of 4–8, heights 6–7 of 4–7),
-  against about 26% at 8×6 before.
+- Floor 1's parameters are `levelgen.DungeonFloor1Params`; every dungeon floor uses them, with
+  `EscapeDoor` and `HiddenRooms` set on a copy (`dungeonParams`, `generateDungeonFloor`).
+- Rooms are rects; a room's region today is exactly its rect, and the validator checks so.
+  Corridors run from room centre to room centre, and the cells a corridor carves inside a room
+  are that room's (R4).
+- Measured on this branch's base: 18–28 rooms do not fit 60×40 at 4–8 × 4–7 (seed 10 exhausts its
+  32 retries, "placed 18 of 27 rooms"). 16–22 fits every one of the 1,000 seeds on all seven
+  sealed-floor parameter sets, the hardest (four hidden rooms) at a worst attempt of 12 of 32.
 - The seals, the Chasm, the secret doors and the party's start formation read their rooms as
-  rects (`plateFooting`, `chasmFrameOf`, the barrier search, `gatherParty`): those rooms stay
-  rectangles. The weighted plates' push search walks the rect, so a Weighted Plates seal takes a
-  rectangle room only.
-- Lever or plate, encounter and secret door already have their own per-floor draws
-  (FS-5FZ4J §B, §F; FS-4EC7Z §A): a room they claim counts as a decision room and rolls nothing.
-  The two decisions an ordinary room can draw for itself are a trap and a chest or sack.
-- Containers today come to `clamp(round(rooms / 2), 10, 14)`; traps go anywhere off the start;
-  monster totals are held to 15–25 (FS-5FZ4J §D R21). Each moves under M3.
-- Quiet rooms need the client to know them to dress them: an added `quiet_rooms` field on the
-  floor map (added field only, ADR-0060 unchanged). Not a role: roles stay server-only.
+  rects: `plateFooting` and the push search walk the plates room's rect, `chasmFrameOf` the stairs
+  room's, the barrier search the stairs and hidden rooms'.
+- Lever or plate (a seal's pieces, FS-5FZ4J §B–§E), the encounter (FS-4EC7Z §A) and the secret
+  door (FS-5FZ4J §F) each have a per-floor draw of their own, made before the floor is laid.
+- The client builds its cell grid, fog, minimap, floor art and wall art from the floor map's
+  region cells and wall cells (`DungeonGrid`, `wallEdges`), never from a room's rect.
 
-Open, settled at promotion: shape weights; the decision draw's split; the trap count across trap
-rooms and corridors; the floor's held monster total.
+### Requirements
+
+**§K. Size and grid (M1)**
+
+62. **Grid 60 × 40 cells of 80 px** (4800 × 3200 px), from 72 × 48 (R2). *(charter, M1: shorter
+    walks at the slower pace)*
+63. **Rooms 4–8 wide and 4–7 tall**, each drawn uniformly as before (R3). *(charter, M1)*
+64. **16–22 rooms a floor**, drawn uniformly as before (R3). *(charter default — reason: 18–28 do
+    not fit the smaller grid; 16–22 is the widest band that fits every seed on every sealed-floor
+    parameter set within the retry limit, measured above)*
+65. **Corridor segments at most 12 cells** on their longer side, from 16 (R5). *(charter, M1)*
+66. **A hall is at least 7 × 6**, width W ≥ 7 and height H ≥ 6, from 8 × 6 (R18). *(charter, M1 —
+    reason: at 8 × 6 only one room in ten is a hall on the new sizes; at 7 × 6 about one in five)*
+67. **The start room stays at least 5 × 5** (R12).
+
+**§L. Room shapes (M2)**
+
+68. **Every room has a shape**: rectangle, L, cross, pillared or cut corners. A shape is a set of
+    **cut cells** inside the room's rect; the room's floor is its rect less its cuts. A cut cell
+    is not walkable: it is shell where it touches the room's floor (R7), so a pillar or a notch is
+    a wall like any other. *(charter, M2)*
+69. **What each shape cuts**, in the room's own cells, (0, 0) its top-left, W × H its size:
+    - **rectangle**: nothing;
+    - **L**: one corner block of `(W−1)/2 × (H−1)/2` cells (integer halves), the corner drawn;
+    - **cross**: all four corner blocks of `W/3 × H/3` cells;
+    - **pillared**: four single-cell pillars, at columns {1, W−2} when W ≤ 6, else {2, W−3}, and
+      rows {1, H−2} when H ≤ 6, else {2, H−3};
+    - **cut corners**: each corner cell; on a room at least 6 × 6, each corner cell and its two
+      neighbours along the walls.
+    *(charter default — reason: each reads as its name at the new sizes and keeps the room's
+    centre cell, where corridors start, on the floor)*
+70. **Which shapes a room may take.** Rectangle: any room. L and cut corners: at least 5 × 5.
+    Cross: at least 6 × 6. Pillared: at least 7 × 6, a hall (R66). *(charter default — reason: below
+    these an L is one cell and a cross has no arms)*
+71. **The draw.** Each room draws its shape from those it may take, weighted rectangle 30, L 20,
+    cross 15, pillared 15, cut corners 20, on the attempt's own seeded stream, after its corridors
+    and roles: the same seed gives the same shapes. *(charter default — reason: about a third of
+    rooms stay plain, so a shaped room reads as one)*
+72. **Rooms that stay rectangles.** The start, stairs, switch and escape door rooms and every
+    hidden room are always rectangles. *(charter default — reason: the party's start formation,
+    the Chasm, the seals' barrier and the secret doors read those rooms as rects; a shape there
+    buys nothing the owner asked for and puts R14 and FS-5FZ4J's dead ends at risk)* A treasure
+    room may take any shape.
+73. **Corridors keep their way through.** A cell a corridor carves inside a room is never cut, so
+    every corridor still reaches its rooms' centres and every doorway still joins the room's
+    centre. A floor cell no longer 4-connected to the room's centre once the cuts are made is cut
+    too. *(charter default — reason: cutting a corridor's cell could cut a room off; R8 holds by
+    construction)*
+74. **The region is the floor.** A room's region is its floor (rect less cuts), as merged cell
+    rects. A doorway is a floor cell 4-adjacent to a corridor cell (R6). Server-only: the shape's
+    name is never sent; the client sees the region's cells and the walls, as today (R31).
+75. **Placements read the floor.** Everything stood in a room stands on its floor cells, as every
+    spot already reads the region (R16). A **Weighted Plates** seal takes a rectangle room only
+    (FS-5FZ4J §C R17): its footing and push search walk the rect. *(charter default)*
+76. **The gate.** The 1,000-seed property test (R8, FS-5FZ4J §A) holds on every sealed-floor
+    parameter set, with every room's region its expected floor, every shape coming up, every
+    fixed-role room a rectangle and every room's centre cell on its floor.
+
+**§M. Room contents (M3)**
+
+77. **Every room is given its contents** when the floor is planned, after its seals, respites
+    and encounter: *(charter, M3)*
+    - **role rooms** keep their roles and roll nothing: the start, stairs, switch, escape door and
+      treasure rooms, the respite rooms (the fountain's and the merchant's) and every hidden room;
+    - **claimed decision rooms** roll nothing either: a room holding a seal's piece (a lever, a
+      plate or its blocks, a brazier, a key or a bridge lever) and the encounter's room. A hidden
+      room's secret door is its decision. *(charter default — reason: these keep their own
+      per-floor draws, FS-5FZ4J and FS-4EC7Z; a second draw would double them)*
+    - every other room is **ordinary** and rolls **quiet** (30%), **monsters** (40%) or a
+      **decision** (30%). A rolled decision is a **trap** (40%) or a **chest or sack** (60%).
+      *(charter, M3; the split is a charter default — reason: the two decisions an ordinary room
+      can hold for itself without a new kind; the chest the likelier, so loot does not fall
+      further than the fewer containers already take it)*
+78. **A quiet room** holds no monster, container or trap: dressing and light only (R84). It is a
+    room the ambush and the respites may still use as today. *(charter, M3)*
+79. **A monsters room** holds one or two rolled monsters, uniform; a hall that rolls monsters holds
+    a hall pack instead (R82). No other room holds a rolled monster: a quiet room, a decision room
+    and a role room besides the treasure rooms hold none. *(charter, M3)*
+80. **A trap room** holds at least one trap. The floor's trap count is unchanged (FS-5FZ4J §D R23):
+    one goes to each trap room first, as far as the count goes, and the rest on the ground of the
+    trap rooms and the corridors, half off the walk to the stairs as before. No trap lies in any
+    other room, the encounter's included. *(charter default — reason: the count was tuned with the
+    seals; this only moves where it lies)*
+81. **A chest-or-sack room** holds one container, a chest or at today's sack share a sack. The
+    floor's containers are each treasure room's chest and these; the `clamp(round(rooms / 2), 10,
+    14)` of R15 no longer applies. *(charter default — reason: a container is a decision, not a
+    fixture of every other room)* A chest in such a room is not guarded (R57): no guard stands in
+    it.
+
+**§N. Packs and totals (M4)**
+
+82. **A hall pack is a brute and 0–1 fodder**, from 1–3 (R18, FS-C8VM7 §C R23). The archer slot
+    is the fodder's, when it rolls one. *(charter, M4)*
+83. **Corridors hold 1–3 monsters in all**, from 3–5, at most one a segment. A top-up takes a
+    monsters room past 2 never, from 3, and goes to monsters rooms only, never a hall. A treasure
+    room is guarded by one elite, or by two at 25%, from 2–3 at 50%. *(charter, M4)* The floor's
+    monsters besides a demon are held to **8–18**, from 15–25 (FS-5FZ4J §D R21). *(charter default —
+    reason: on the new rooms the floor's natural total is about 13 and its ceiling with every
+    top-up about 17; held at 15, nearly every floor would top every monsters room to 2 and M3's
+    "one or two" would be "two")*
+
+**§O. The client**
+
+84. **The floor map names its quiet rooms**: an added field `quiet_rooms`, the region ids of the
+    rolled quiet rooms, absent or empty when none. Added only: an older client ignores it.
+    *(charter default — reason: dressing a quiet room needs the client to know it; it says only
+    that a room holds nothing, which a delver sees on entering)*
+85. **A quiet room is dressed for ambience**: twice its share of run dressing, and a brazier, a
+    light, when one fits and the floor's brazier budget allows. No new sheet, no sound. *(charter,
+    M3)*
+86. **Shapes need no new art.** Floor art, wall art, the wall shadows, fog and the minimap follow
+    the region and wall cells: a notch is drawn as a wall run, a pillar as a wall cell standing on
+    its own, with posts at its corners (FS-XK2B6 §B.8). Where a look falls short, a working look
+    ships and the art is a follow-up. *(charter: art never blocks)*
+
+### Acceptance Criteria
+
+**Generator (§K, §L)**
+
+- [ ] For 1,000 seeds on every sealed-floor parameter set: 60 × 40 cells of 80 px, 16–22 rooms
+      within 4×4–8×7, corridor segments at most 12 cells, every walkable cell reachable from the
+      start room, every room with a doorway and its centre cell on its floor.
+- [ ] Every room's region is exactly its rect less its shape's cuts (R69), with corridor-carved
+      cells kept and cells cut off from the centre cut (R73); the walls are exactly the shell of
+      those floors.
+- [ ] Every shape comes up across the 1,000 seeds; no room takes a shape its size does not allow;
+      the start, stairs, switch, escape door and hidden rooms are always rectangles.
+- [ ] The same seed gives byte-identical layouts, shapes included; the golden layout is re-pinned.
+- [ ] Halls (≥ 7 × 6) occur on most floors.
+
+**Floor build (§M, §N)**
+
+- [ ] Every room is a role room, a claimed decision room or an ordinary room with one of quiet,
+      monsters, trap, chest or sack; across many builds the ordinary rooms come out near 30 / 40 /
+      30, and the decisions near 40 / 60.
+- [ ] No monster stands in a quiet, decision or non-treasure role room at the build; a monsters
+      room holds 1–2 (a top-up never past 2); a hall that rolled monsters holds a brute and 0–1
+      fodder; a treasure room 1–2 elites; corridors 1–3.
+- [ ] The floor's monsters besides a demon are 8–18 across many builds.
+- [ ] Every trap room holds a trap when the count allows; no trap lies in a room that is not a trap
+      room; the trap count per depth is unchanged; no trap in the encounter's room.
+- [ ] Every chest-or-sack room holds one container; no other ordinary room holds one; each treasure
+      room still holds its chest.
+- [ ] A Weighted Plates seal stands only in a rectangle room; every sealed floor's escape door,
+      switch, stairs gate and hidden rooms keep FS-5FZ4J's guarantees (their tests pass).
+- [ ] The floor map carries `quiet_rooms`, the rolled quiet rooms' region ids.
+
+**Client (§O)**
+
+- [ ] A quiet room gets more dressing than a room of the same size that is not quiet, and a brazier
+      where one fits within the floor's brazier budget.
+- [ ] A floor map with an L, a cross, a pillared and a cut-corners room draws walls on every cut
+      cell's faces and a pillar as a free-standing wall cell; the existing dungeon tests pass.
+
+**Records**
+
+- [ ] A contact sheet of a few generated floors, rooms coloured by contents, in `docs/art/`.
+- [ ] Before/after counts for rooms a floor, monsters a floor and rooms by contents.
+
+### Edge States
+
+- **A shape eats a corridor's cells.** It cannot: carved cells are never cut (R73).
+- **A shape leaves a pocket.** A floor cell cut off from the centre by the cuts is cut too (R73).
+- **No room may take a shape.** Every room may take a rectangle.
+- **A room's roll finds no spot** (a chest or a monster that fits nowhere on a small shaped
+  floor): it is skipped and logged, as a container or a monster is today; the room keeps its roll.
+- **More trap rooms than traps.** The count wins: some trap rooms hold none, and the warning is
+  logged as for short trap ground.
+- **No ordinary room rolls monsters.** The floor holds its treasure guards and corridors; the top-up
+  has nowhere to go and the floor stays under 8, logged.
+- **A floor of buildings** after a failed generation (R17): no shapes, no contents, no
+  `quiet_rooms`.
+- **An older client** ignores `quiet_rooms`; a client without it dresses every room alike.
+
+### Out of Scope
+
+New interactable kinds; a sound system or ambient sound for quiet rooms; new dressing sheets or new
+wall art; shapes for the start, stairs, switch, escape door or hidden rooms; floors of buildings;
+the pace (charter child A) and the roll, resources and the wolf (charter child C); the matchmaker;
+any change to the seals', encounters' or hidden rooms' own draws; the loot tables.

@@ -449,6 +449,9 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   On a **dungeon floor** (one whose floor map carries regions, FS-KE075) a room is instead a
   **region** of kind `room` from the floor map: no `house_id`, no building exterior, no roof or
   stone cap, no indoor blackout. Say *dungeon room* where either could be meant.
+- **Quiet room**: a dungeon room the floor map names in `quiet_rooms`: it holds nothing but
+  dressing, so the client dresses it more heavily and gives it a brazier where one fits (FS-KE075
+  §Change: Room variety). Its walls and floor are drawn like any room's.
 - **Floor map**: the static layout of the current run floor, sent once by the server
   (`floor_map`, FS-KE075, ADR-0060): size, cell size, regions and walls. The scene builds the floor
   from it; per-tick snapshots no longer carry walls in a run.
