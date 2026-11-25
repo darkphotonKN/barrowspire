@@ -240,8 +240,7 @@ type placedBody struct {
 func huntedHit(attack components.AttackSnapshot, entities []*ecs.Entity, playerDamage PlayerDamage) []placedBody {
 	var out []placedBody
 	for _, entity := range entities {
-		kind := BodyKindOf(entity)
-		if !kind.Hunted() || kind == BodyHound || !CanHit(attack, entity, playerDamage) {
+		if !BodyKindOf(entity).StruckByArea() || !CanHit(attack, entity, playerDamage) {
 			continue
 		}
 		tc, ok := entity.GetComponent(ecs.ComponentTypeTransform)

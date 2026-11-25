@@ -51,3 +51,26 @@ func TestBodyKindOf_WhatTheGroundCounts(t *testing.T) {
 		})
 	}
 }
+
+// FS-X2CMM "Reconciled at review (wave 1)": a monster's area or cone ability
+// lands on every hunted body but a hound, which only a strike or a shot meets.
+func TestBodyKind_StruckByArea(t *testing.T) {
+	cases := []struct {
+		kind BodyKind
+		want bool
+	}{
+		{BodyDelver, true},
+		{BodyAlly, true},
+		{BodyEncounterNPC, true},
+		{BodyHound, false},
+		{BodyCaptive, false},
+		{BodyMonster, false},
+		{BodyNone, false},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, tc.kind.StruckByArea(), "kind %d", tc.kind)
+		if tc.want {
+			assert.True(t, tc.kind.Hunted(), "an area strikes only what monsters hunt")
+		}
+	}
+}

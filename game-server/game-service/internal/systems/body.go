@@ -107,3 +107,8 @@ func (k BodyKind) Breathes() bool { return k.FiresTraps() || k == BodyEncounterN
 func (k BodyKind) Hunted() bool {
 	return k == BodyDelver || k == BodyEncounterNPC || k == BodyAlly || k == BodyHound
 }
+
+// StruckByArea is whether a monster's area or cone ability lands on a body of
+// this kind: every hunted body but a hound, which only a strike or a shot
+// meets (FS-X2CMM "Reconciled at review (wave 1)").
+func (k BodyKind) StruckByArea() bool { return k.Hunted() && k != BodyHound }

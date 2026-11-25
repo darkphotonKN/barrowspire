@@ -113,11 +113,14 @@ follows the floor. Each is [derived] and overridable.
   seal piece or tripwire within 6 cells whose ambush has not woken, as it bays at a shut secret
   door.
 - **No fall rule exists** (R51): FS-5FZ4J's pits are rock and "a body is never inside one". An
-  afloat delver whose state ends over a pit is set down on the nearest walkable cell, unhurt.
+  afloat delver whose state ends over a pit is set down, unhurt, on the nearest bank the pit reaches
+  (the nearest walkable cell across the pit's own cells), or the straight nearest walkable cell when
+  none is reached.
 - **No jammed portcullis exists** (R52): the gate opens only by its seals (ADR-0092), so Heave
   shoves stone blocks only, and only within the block's plates room, as the Spire's push keeps it.
 - **A plate takes no interact** (R50): it is held by weight, so Far Hand cannot work one; a hound
-  standing on it holds it (R58).
+  standing on it holds it (R58): the plate is down to the hound's archer while they are in play, so an
+  ambush it wakes hunts the archer (else the delver nearest the plate), never the hound.
 - **Hardened stops a poisoning from taking hold** (R53): a gas vent's puff does not poison a
   hardened warrior, and a trap's hit (a wrong lever's darts too) deals them nothing; a poison
   already running runs on. This holds for every poisoning, the contract mark's blades too.

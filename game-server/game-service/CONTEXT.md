@@ -862,7 +862,7 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   detection.
 - **Afloat** (FS-X2CMM, Levitate) — the 8 s state of a delver the Levitate page lifts: cannot
   attack while it runs; walks over a chasm's pits and fires no trap. Ending over a pit, the delver
-  is set down on the nearest walkable cell.
+  is set down on the nearest bank the pit reaches (else the nearest walkable cell).
 - **Hardened** (FS-X2CMM) — the 10 s self state the Scar of the Pit sets on the warrior: traps deal
   them nothing and no poisoning takes hold (a poison already running runs on).
 - **Long Night** (FS-X2CMM) — the 6 s self state the Scar of the Long Night sets: monsters within

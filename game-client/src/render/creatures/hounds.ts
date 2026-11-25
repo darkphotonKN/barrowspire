@@ -438,7 +438,7 @@ export class HoundSet {
 /** The faint verdigris ring laid on the floor under a hound, about its origin: whose it is, at a glance. */
 function paintRing(g: HoundMark): void {
   const { width, height } = groundEllipse(RING_RADIUS);
-  const ink = palette.bookPigment.verdigris;
+  const ink = palette.bookEffect.houndRing;
   g.clear();
   g.fillStyle(ink, RING_FILL_ALPHA);
   g.fillEllipse(0, 0, width, height);

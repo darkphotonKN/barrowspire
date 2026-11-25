@@ -316,7 +316,7 @@ describe("HoundSet: the archer's hound drawn from the book effects (FS-X2CMM §I
     const strokes = ring.calls.filter(([c]) => c === "lineStyle");
     expect(strokes.length).toBeGreaterThan(0);
     for (const [, , color, alpha] of strokes) {
-      expect(color).toBe(palette.bookPigment.verdigris);
+      expect(color).toBe(palette.bookEffect.houndRing);
       expect(alpha).toBeLessThan(0.6);
     }
     expect(ring.calls.some(([c]) => c === "strokeEllipse")).toBe(true);
