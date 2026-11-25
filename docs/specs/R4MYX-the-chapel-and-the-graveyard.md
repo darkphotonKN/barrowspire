@@ -991,6 +991,7 @@ Numbered 1–15 below and cited as **W1–W15**, separate from the work order's 
 ## Change: The chapel moves to the far left and gains a bell tower
 Status: shipped
 Date: 2026-11-25
+Related ADRs: [ADR-0093](../adr/0093-a-solid-town-structure-with-no-door-is-not-a-building.md) (the bell tower is not a building)
 
 > **Owner request (Nick, 2026-11-25), after the chapel shipped:** the chapel gains a bell tower
 > and moves to the ground its graveyard holds; the graveyard moves to a strip along the chapel's
