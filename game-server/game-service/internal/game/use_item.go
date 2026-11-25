@@ -11,10 +11,13 @@ import (
 )
 
 // The use_item replies' refusal reasons, from which the client writes its own
-// lines. FS-9JV5K §D R17.
+// lines. FS-9JV5K §D R17; §Change: The Restoring Draught D4.
 const (
 	// RefusalNotPoisoned is an antidote used by a delver who is not poisoned
 	RefusalNotPoisoned = "not_poisoned"
+	// RefusalResourceFull is a Restoring Draught used by a delver whose class
+	// resource is already at its max
+	RefusalResourceFull = "resource_full"
 	// RefusalNotInBag is a use of an item that is not in the user's bag
 	RefusalNotInBag = "not_in_bag"
 	// RefusalNotUsable is a use of a bag item that cannot be used
@@ -23,17 +26,19 @@ const (
 
 // useRefusals are the refusals the user is told of, with their message.
 var useRefusals = map[error]struct{ reason, message string }{
-	systems.ErrUseNotPoisoned: {RefusalNotPoisoned, "you are not poisoned"},
-	systems.ErrUseNotInBag:    {RefusalNotInBag, "that item is not in your bag"},
-	systems.ErrUseNotUsable:   {RefusalNotUsable, "that item cannot be used"},
+	systems.ErrUseNotPoisoned:  {RefusalNotPoisoned, "you are not poisoned"},
+	systems.ErrUseResourceFull: {RefusalResourceFull, "you are already full"},
+	systems.ErrUseNotInBag:     {RefusalNotInBag, "that item is not in your bag"},
+	systems.ErrUseNotUsable:    {RefusalNotUsable, "that item cannot be used"},
 }
 
 /**
 * useItem applies a queued use_item on the tick: the user uses an item in their
-* bag (an antidote ends their poison and is spent). Escape runs only, the
-* user in play: elsewhere, and out of play, it is refused quietly, as a
-* drink is. The user is replied { success: true }, or { success: false,
-* reason } with nothing spent. FS-9JV5K §D R17.
+* bag (an antidote ends their poison, a Restoring Draught refills half their
+* class resource, and it is spent). Escape runs only, the user in play:
+* elsewhere, and out of play, it is refused quietly, as a drink is. The user
+* is replied { success: true }, or { success: false, reason } with nothing
+* spent. FS-9JV5K §D R17; §Change: The Restoring Draught D3-D4.
 **/
 func (s *Session) useItem(playerID, itemID uuid.UUID) {
 	if s.worldType != types.WorldTypeRun {
@@ -65,7 +70,7 @@ func (s *Session) useItem(playerID, itemID uuid.UUID) {
 		return
 	}
 
-	slog.Info("Antidote drunk", "session_id", s.ID, "player_id", playerID)
+	slog.Info("Bag item used", "session_id", s.ID, "player_id", playerID, "item_entity_id", itemID)
 	if err := s.sender.SendMessageToPlayer(playerID, types.Message{
 		Action:  string(constants.ActionUseItem),
 		Payload: map[string]interface{}{"success": true},

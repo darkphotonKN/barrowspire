@@ -176,6 +176,27 @@ func TestBuy_ReservesDebitsAsTheBuyerAndGrantsOnALaterTick(t *testing.T) {
 	assert.Equal(t, MerchantPotionStock-1, potion.Left, "the reserve is a sale")
 }
 
+// FS-9JV5K §Change: The Restoring Draught D2: the draught is bought as any bag
+// ware: 50 gold debited, one reserved of its 3, and a Restoring Draught at the
+// end of the bag.
+func TestBuy_RestoringDraught_DebitsFiftyAndPutsOneInTheBag(t *testing.T) {
+	sh := newShop(t, 1)
+	draught := sh.wares.Ware(components.WareRestoringDraught)
+	require.NotNil(t, draught)
+	bagBefore := len(sh.bag(t, sh.buyer))
+
+	sh.s.buy(sh.buyer, sh.merchant.ID, components.WareRestoringDraught)
+
+	assert.Equal(t, map[string]interface{}{"success": true, "ware": "restoring_draught"}, sh.replied(t, sh.buyer, 1))
+	calls := sh.wallet.taken()
+	require.Len(t, calls, 1)
+	assert.Equal(t, int64(50), calls[0].amount)
+	bag := sh.bag(t, sh.buyer)
+	require.Len(t, bag, bagBefore+1)
+	assert.Equal(t, types.RestoringDraughtName, itemOf(t, sh.s, bag[len(bag)-1]).Name)
+	assert.Equal(t, 2, draught.Left)
+}
+
 // FS-9JV5K §B R6: each refusal replies at once with its reason, reserves
 // nothing and calls no wallet.
 func TestBuy_RefusalsAtOnce_NoReserveNoWalletCall(t *testing.T) {

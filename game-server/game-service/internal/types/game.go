@@ -717,6 +717,17 @@ func IsAntidote(itemType ItemType, name string) bool {
 	return itemType == ItemTypeConsumable && name == AntidoteName
 }
 
+// RestoringDraughtName is the Restoring Draught's catalogue name, by which the
+// game knows one as it knows an antidote. FS-9JV5K §Change: The Restoring
+// Draught D1.
+const RestoringDraughtName = "Restoring Draught"
+
+// IsRestoringDraught is whether an item of itemType named name is a Restoring
+// Draught.
+func IsRestoringDraught(itemType ItemType, name string) bool {
+	return itemType == ItemTypeConsumable && name == RestoringDraughtName
+}
+
 type ArmorSlot string
 
 const (

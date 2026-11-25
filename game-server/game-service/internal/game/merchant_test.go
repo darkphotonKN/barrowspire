@@ -1,6 +1,7 @@
 package game
 
 import (
+	"log/slog"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -15,7 +16,7 @@ import (
 // merchantRun is a seeded run of height floors for delvers, climbed to floor
 // 2, every floor's merchant and fountain forced, no tome plan, no hallowed
 // altar, and a tome offered at tomeChance. The catalogue holds the antidote
-// beside the test catalogue's potion.
+// and the Restoring Draught beside the test catalogue's potion.
 func merchantRun(t *testing.T, seed uint64, delvers, height int, tomeChance float64) (*Session, []uuid.UUID) {
 	t.Helper()
 	s, ids := dungeonRun(t, seed, delvers, 0, withTuning(func(t *floorTuning) {
@@ -28,6 +29,7 @@ func merchantRun(t *testing.T, seed uint64, delvers, height int, tomeChance floa
 	}
 	s.sender = &recordingSender{}
 	s.itemPool.Antidote = &lootTemplate{Config: types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemTypeConsumable, Name: types.AntidoteName}}
+	s.itemPool.RestoringDraught = &lootTemplate{Config: types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemTypeConsumable, Name: types.RestoringDraughtName}}
 	currentFloor(t, s).Count = height
 	require.NoError(t, s.regenerateFloor())
 	require.NotNil(t, s.dungeon, "seed %d: floor 2 is a dungeon floor", seed)
@@ -72,7 +74,8 @@ func TestMerchant_FloorOddsOverASeedSweep(t *testing.T) {
 // FS-9JV5K §A R1-R3: the merchant stands in a respite room that is not the
 // start, stairs, switch, escape door, treasure, a seal piece's, a hidden room
 // or the fountain's; at most one a floor; no monster or container in his room;
-// his wares are a potion and an antidote line at their prices and stock.
+// his wares are a potion, an antidote and a Restoring Draught line, in that
+// order, at their prices and stock (FS-9JV5K §Change: The Restoring Draught D2).
 func TestMerchant_RoomRulesAndWaresOverASeedSweep(t *testing.T) {
 	seen := 0
 	for seed := uint64(1); seed <= 30; seed++ {
@@ -110,16 +113,22 @@ func TestMerchant_RoomRulesAndWaresOverASeedSweep(t *testing.T) {
 				assert.False(t, other.HasComponent(ecs.ComponentTypeContainer), "seed %d floor %d: no container in it", seed, depth)
 			}
 
-			require.Len(t, mc.Wares, 2)
-			potion, antidote := mc.Ware(components.WareHealthPotion), mc.Ware(components.WareAntidote)
+			require.Len(t, mc.Wares, 3)
+			assert.Equal(t, []components.WareKind{components.WareHealthPotion, components.WareAntidote, components.WareRestoringDraught},
+				[]components.WareKind{mc.Wares[0].Kind, mc.Wares[1].Kind, mc.Wares[2].Kind}, "potion, antidote, draught")
+			potion, antidote, draught := mc.Ware(components.WareHealthPotion), mc.Ware(components.WareAntidote), mc.Ware(components.WareRestoringDraught)
 			require.NotNil(t, potion)
 			require.NotNil(t, antidote)
+			require.NotNil(t, draught)
 			assert.Equal(t, MerchantPotionPrice, potion.Price)
 			assert.Equal(t, MerchantPotionStock, potion.Left)
 			assert.Equal(t, "Lesser Heal Potion", potion.Item.Name)
 			assert.Equal(t, MerchantAntidotePrice, antidote.Price)
 			assert.Equal(t, MerchantAntidoteStock, antidote.Left)
 			assert.Equal(t, types.AntidoteName, antidote.Item.Name)
+			assert.Equal(t, int64(50), draught.Price)
+			assert.Equal(t, 3, draught.Left)
+			assert.Equal(t, types.RestoringDraughtName, draught.Item.Name)
 			assert.Nil(t, mc.Ware(components.WareTomeOfFilth), "no tome offer at chance 0")
 			require.NoError(t, s.regenerateFloor())
 		}
@@ -127,6 +136,24 @@ func TestMerchant_RoomRulesAndWaresOverASeedSweep(t *testing.T) {
 		assert.False(t, ok, "seed %d: none on the top floor", seed)
 	}
 	assert.Greater(t, seen, 80, "most of the 90 floors are dungeon floors with a merchant")
+}
+
+// FS-9JV5K §Change: The Restoring Draught D2: a catalogue without the draught's
+// template sells no draught and says so at warn, as for the antidote.
+func TestMerchantWares_NoDraughtTemplate_SellsNoneAndWarns(t *testing.T) {
+	logs := &logBuffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	s, _ := merchantRun(t, 3, 1, 5, 0)
+	s.itemPool.RestoringDraught = nil
+
+	wares := s.merchantWares()
+
+	require.Len(t, wares, 2)
+	assert.Equal(t, components.WareHealthPotion, wares[0].Kind)
+	assert.Equal(t, components.WareAntidote, wares[1].Kind)
+	assert.Contains(t, logs.String(), `level=WARN msg="Merchant sells no Restoring Draught: the catalogue has none"`)
 }
 
 // FS-9JV5K §A R3 (orchestrator note): the potion sold is the consumable that
@@ -186,16 +213,20 @@ func TestRunState_MerchantOnHisFloor(t *testing.T) {
 	assert.Equal(t, e.ID, got.EntityID)
 	at := transformOf(t, e)
 	assert.Equal(t, types.Position{X: at.X, Y: at.Y}, *got.Position)
-	require.Len(t, got.Wares, 3)
+	require.Len(t, got.Wares, 4)
 	assert.Equal(t, types.MerchantWareState{Ware: "health_potion", Price: 60, Left: 3,
 		Item: &types.MerchantWareItem{Name: "Lesser Heal Potion", ItemType: types.ItemTypeConsumable, Rarity: "normal", HealingAmount: 10}}, *got.Wares[0])
 	assert.Equal(t, "antidote", got.Wares[1].Ware)
 	assert.Equal(t, 1, got.Wares[1].Left)
 	assert.Equal(t, types.AntidoteName, got.Wares[1].Item.Name)
-	assert.Equal(t, types.MerchantWareState{Ware: "tome_of_filth", Price: 1500, Left: 1}, *got.Wares[2])
+	assert.Equal(t, "restoring_draught", got.Wares[2].Ware)
+	assert.Equal(t, int64(50), got.Wares[2].Price)
+	assert.Equal(t, 3, got.Wares[2].Left)
+	assert.Equal(t, types.RestoringDraughtName, got.Wares[2].Item.Name)
+	assert.Equal(t, types.MerchantWareState{Ware: "tome_of_filth", Price: 1500, Left: 1}, *got.Wares[3])
 
 	frame := frameOf(t, s, types.WorldTypeRun, ids[0])
-	tome := frame["merchant"].(map[string]any)["wares"].([]any)[2].(map[string]any)
+	tome := frame["merchant"].(map[string]any)["wares"].([]any)[3].(map[string]any)
 	assert.NotContains(t, tome, "item", "the tome has no item")
 
 	s.EntityManager.RemoveEntity(e.ID)

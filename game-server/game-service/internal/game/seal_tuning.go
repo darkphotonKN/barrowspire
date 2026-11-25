@@ -219,12 +219,15 @@ const (
 )
 
 // A merchant's wares, their prices in gold and the stock each is rolled with.
-// FS-9JV5K §A R3.
+// FS-9JV5K §A R3; the draught priced between the antidote and the potion,
+// §Change: The Restoring Draught D2.
 const (
 	MerchantPotionPrice   int64 = 60
 	MerchantPotionStock         = 3
 	MerchantAntidotePrice int64 = 40
 	MerchantAntidoteStock       = 3
+	MerchantDraughtPrice  int64 = 50
+	MerchantDraughtStock        = 3
 	MerchantTomePrice     int64 = 1500
 	MerchantTomeStock           = 1
 )
