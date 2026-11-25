@@ -31,9 +31,9 @@ const grid = new RegionGrid(fixture as DungeonMap);
 const at = (x: number, y: number) => ({ x, y });
 /** A cell's middle, in world px. */
 const cellAt = (cx: number, cy: number) => at((cx + 0.5) * grid.cell, (cy + 0.5) * grid.cell);
-/** Room 1 of the fixture (cells 28–35 × 35–41). */
+/** Room 1 of the fixture (cells 47–54 × 20–26, a pillar at 49,22). */
 const ROOM = 1;
-const IN_ROOM = at(2560, 3080);
+const IN_ROOM = at(3840, 1960);
 /** The fixture's switch, escape door and stairs, none of them in room 1. */
 const FIXTURES: MinimapFixture[] = [
   { kind: "switch", at: at(3000, 900) },
@@ -41,11 +41,12 @@ const FIXTURES: MinimapFixture[] = [
   { kind: "stairs", at: at(1000, 1200) },
 ];
 
-/** A region with no fixture in it, apart from room 1 and its group: somewhere to walk to. */
+/** A region with no fixture in it, apart from room 1 and its group and from what the fixtures' places show: somewhere to walk to. */
 const ELSEWHERE = (() => {
   const taken = new Set([ROOM, ...FIXTURES.map((f) => regionAt(grid, f.at))]);
   const seen = new Exploration(grid);
-  seen.see([IN_ROOM]);
+  // the escape door's corridor shows room 2 beside it, so a walk there would show nothing new
+  seen.see([IN_ROOM, ...FIXTURES.map((f) => f.at)]);
   const r = grid.regions.find((g) => !taken.has(g.id) && seen.state(g.id) === "unexplored")!;
   return cellAt(r.cells[0].x, r.cells[0].y);
 })();
@@ -220,7 +221,7 @@ describe("minimapRect (§E.20, §E.21; FS-56CKV §B.9)", () => {
 
 describe("minimapProjection (§E.21)", () => {
   const project = minimapProjection(grid);
-  const corners = [at(0, 0), at(5760, 0), at(0, 3840), at(5760, 3840)].map(project);
+  const corners = [at(0, 0), at(4800, 0), at(0, 3200), at(4800, 3200)].map(project);
 
   it("should fit the whole floor's iso diamond inside the panel's inset, centred", () => {
     const xs = corners.map((p) => p.x);
@@ -287,7 +288,7 @@ describe("minimapContent (§E.22)", () => {
 // FS-5FZ4J §J R56: a shut gate draws as a wall stroke while shut, as a wall does, once its corridor is seen
 describe("the shut gate's wall stroke (FS-5FZ4J §J R56)", () => {
   /** A stroke across room 1's first cell row, standing in room 1. */
-  const inRoom = { at: IN_ROOM, points: [at(28, 35.5), at(30, 35.5)] };
+  const inRoom = { at: IN_ROOM, points: [at(47, 21.5), at(49, 21.5)] };
   const unseen = { at: ELSEWHERE, points: [at(0, 0.5), at(1, 0.5)] };
 
   it("should keep a stroke standing in a seen region, and none in an unexplored one or off the floor", () => {
@@ -612,9 +613,9 @@ describe("the minimap's look (FS-56CKV §A)", () => {
   });
 
   describe("the walls' outline: walls are lines, openings are gaps (§A.5)", () => {
-    /** The corridor through cell (11, 18): two cell rects (9 × 2 and 4 × 1 under it), and room 20, which it opens on. */
-    const CORRIDOR = grid.region(11, 18);
-    const NEXT_DOOR = grid.region(4, 21);
+    /** The corridor through cell (30, 17): two cell rects (2 × 2 and 6 × 2 under it), and room 10, which it opens on. */
+    const CORRIDOR = grid.region(30, 17);
+    const NEXT_DOOR = grid.region(23, 12);
     type Outline = ReturnType<typeof regionOutline>;
     const regionOf = (id: number, on: RegionGrid = grid) => on.regions.find((r) => r.id === id)!;
     /** A run's sides: a closed loop's last point back to its first, an open run's not. */
@@ -719,7 +720,7 @@ describe("the minimap's look (FS-56CKV §A)", () => {
       expect(regionOf(CORRIDOR).cells.length).toBeGreaterThan(1);
       const { runs, units } = outlined([CORRIDOR]);
       expect(units.length).toBeGreaterThan(0);
-      // its mouths onto rooms 20, 21 and 22, none of them seen: gaps, so the line is open runs
+      // its mouths onto rooms 10 and 5, neither of them seen: gaps, so the line is open runs
       const mouths = grid.regions.filter((r) => r.kind === "room").flatMap((r) => between(CORRIDOR, r.id));
       expect(mouths.length).toBeGreaterThan(0);
       for (const u of mouths) expect(units).not.toContain(u);
@@ -787,11 +788,11 @@ describe("the minimap's look (FS-56CKV §A)", () => {
     it("should line every shown cell side facing a cell that is not walkable on the whole fixture floor, none missing, and none between two walkable cells", () => {
       const all = grid.regions.map((r) => r.id);
       const want = walls(all);
-      // the fixture floor's walls, counted apart from the minimap: 768 unit sides
-      expect(want.size).toBe(768);
+      // the fixture floor's walls, counted apart from the minimap: 532 unit sides
+      expect(want.size).toBe(532);
       const { runs, units } = outlined(all);
       // covered: every wall side once, none missing, none extra
-      expect(units).toHaveLength(768);
+      expect(units).toHaveLength(532);
       expect([...want].filter((u) => !units.includes(u))).toEqual([]);
       // no run on any of the floor's openings
       const open = openings();
@@ -803,11 +804,11 @@ describe("the minimap's look (FS-56CKV §A)", () => {
     });
 
     it("should line only the shown regions' walls with a few shown, open where they meet the unexplored", () => {
-      // room 20 and the corridor it opens on, the room beyond that corridor, and a corridor apart from them
+      // room 10 and the corridor it opens on, the room beyond that corridor (5), and a corridor apart from them
       const apart = grid.regions.find(
-        (r) => r.kind === "corridor" && r.id !== CORRIDOR && between(r.id, NEXT_DOOR).length === 0 && between(r.id, 21).length === 0,
+        (r) => r.kind === "corridor" && r.id !== CORRIDOR && between(r.id, NEXT_DOOR).length === 0 && between(r.id, 5).length === 0,
       )!;
-      const few = [NEXT_DOOR, CORRIDOR, 21, apart.id];
+      const few = [NEXT_DOOR, CORRIDOR, 5, apart.id];
       const { runs, units } = outlined(few);
       expect(units.length).toBe(walls(few).size);
       expect(runs.some((r) => !r.closed)).toBe(true);
@@ -819,12 +820,12 @@ describe("the minimap's look (FS-56CKV §A)", () => {
 
     it("should stroke the outline in one 1 px stroke of the edge token, each point projected, a closed loop closed and an open run not", () => {
       const { map, panel, show } = mapped();
-      // room 20 walked through, then the corridor it opens on, out of room 20's reach (FS-SRA9J
+      // room 10 walked through, then the corridor it opens on, out of room 10's reach (FS-SRA9J
       // §Change: Lighter fog and lit regions, F3): the room explored, the corridor visible, and room
-      // 21, a cell of it two walkable steps off, visible with it
-      show([cellAt(4, 21)]);
-      show([cellAt(11, 18)]);
-      expect(map.content.regions.map((r) => `${r.id}${r.state[0]}`).sort()).toEqual([`${NEXT_DOOR}e`, "21v", `${CORRIDOR}v`].sort());
+      // 5, a cell of it two walkable steps off, visible with it
+      show([cellAt(23, 12)]);
+      show([cellAt(30, 17)]);
+      expect(map.content.regions.map((r) => `${r.id}${r.state[0]}`).sort()).toEqual([`${NEXT_DOOR}e`, "5v", `${CORRIDOR}v`].sort());
       const drawn = panel.drawn();
       expect(drawn.filter((c) => c.name === "lineStyle").at(-1)).toEqual({
         name: "lineStyle",
@@ -1180,20 +1181,20 @@ describe("the map overlay (FS-1SEF0 §C)", () => {
     const { panel } = overlaid();
     const fills = panel.drawn().filter((c) => c.name === "fillPoints");
     expect(fills.length).toBeGreaterThan(0);
-    // floor 1's whole diamond is 960 × 480 at this scale
+    // floor 1's whole diamond is 800 × 400 at this scale
     const corner = (x: number, y: number) => {
       const s = worldToScreen(x, y);
       return at(s.x * 0.125, s.y * 0.125);
     };
     const pts = fills.flatMap((c) => c.args[0] as { x: number; y: number }[]);
     for (const p of pts) {
-      expect(p.x).toBeGreaterThanOrEqual(corner(0, 3840).x - 1e-9);
-      expect(p.x).toBeLessThanOrEqual(corner(5760, 0).x + 1e-9);
+      expect(p.x).toBeGreaterThanOrEqual(corner(0, 3200).x - 1e-9);
+      expect(p.x).toBeLessThanOrEqual(corner(4800, 0).x + 1e-9);
       expect(p.y).toBeGreaterThanOrEqual(-1e-9);
-      expect(p.y).toBeLessThanOrEqual(corner(5760, 3840).y + 1e-9);
+      expect(p.y).toBeLessThanOrEqual(corner(4800, 3200).y + 1e-9);
     }
-    expect(corner(5760, 0).x - corner(0, 3840).x).toBe(960);
-    expect(corner(5760, 3840).y).toBe(480);
+    expect(corner(4800, 0).x - corner(0, 3200).x).toBe(800);
+    expect(corner(4800, 3200).y).toBe(400);
     // room 1's first cell, exactly where the world puts it, scaled
     const c = grid.cell;
     const room = grid.regions.find((r) => r.id === ROOM)!.cells[0];

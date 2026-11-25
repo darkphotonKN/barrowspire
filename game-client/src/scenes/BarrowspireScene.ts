@@ -474,6 +474,8 @@ interface DungeonFloor {
   mapName?: MinimapName;
   /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
   dressed: DressedPiece[];
+  /** Its quiet rooms by region id, from its floor map, dressed for ambience (FS-KE075 §Change: Room variety R85). */
+  quiet: ReadonlySet<number>;
   /** Its wall pieces as planned, once its walls stand: what a secret door's cracks are laid over (FS-5FZ4J §J R51). */
   faces?: readonly WallFace[];
   /** The flames its wall pieces carry, once its walls stand: what a rebuild of its walls takes away (FS-5FZ4J §J R56). */
@@ -4569,6 +4571,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ),
       seen: new Exploration(grid),
       dressed: [],
+      quiet: new Set(map.quiet_rooms ?? []),
     };
   }
 
@@ -5713,7 +5716,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const plan = !look.dressing
       ? []
       : dungeon
-        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid))
+        ? planRoomDressing(look.dressing, look.seed, statics, dressingRooms(dungeon.grid, dungeon.quiet))
         : planDressing(look.dressing, look.seed, statics);
     // piece by piece, so each sprite and flame keeps where it stands (FS-9PN7X §C.2, §D.6)
     this.dressing = [];

@@ -1,6 +1,6 @@
 ---
 id: I-KE075-15
-status: open
+status: done
 implements: FS-KE075
 blocked_by: [I-KE075-14]
 labels: [ready-for-agent]
@@ -19,9 +19,9 @@ wall cell (R86). A contact sheet of generated floors in `docs/art/`.
 
 ## Acceptance Criteria
 
-- [ ] A quiet room is dressed more heavily than the same room not quiet, with a brazier where it fits
-- [ ] Shaped-room fixture: wall edges on every cut cell face, a pillar with four edges
-- [ ] `npm test`, `npm run lint`, `npx tsc --noEmit` pass
+- [x] A quiet room is dressed more heavily than the same room not quiet, with a brazier where it fits
+- [x] Shaped-room fixture: wall edges on every cut cell face, a pillar with four edges
+- [x] `npm test`, `npm run lint`, `npx tsc --noEmit` pass
 
 ## Blocked By
 
