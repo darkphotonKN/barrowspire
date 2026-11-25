@@ -360,3 +360,81 @@ describe("isChatLine for a whisper (FS-KCQ06 R6)", () => {
     expect(visibleChatLines(store.getState())).toHaveLength(1);
   });
 });
+
+describe("chatStore item links (FS-KBA4Q R31, R41: a line holds its snapshots)", () => {
+  const blade = { name: "Rusty Blade", item_type: "weapon", rarity: "rare" };
+
+  it("should hold a line's item snapshots with the line", () => {
+    const store = createChatStore();
+
+    store.getState().receive(line("look [Rusty Blade]", { items: [blade] }));
+
+    expect(store.getState().lines[0]).toMatchObject({
+      kind: "line",
+      text: "look [Rusty Blade]",
+      items: [blade],
+    });
+  });
+
+  it("should hold a line without items exactly as before, with no items member", () => {
+    const store = createChatStore();
+    const plain = line("hello");
+
+    store.getState().receive(plain);
+
+    expect(store.getState().lines[0]).toEqual({ kind: "line", ...plain });
+    expect("items" in store.getState().lines[0]).toBe(false);
+  });
+
+  it.each([
+    ["not an array", "Rusty Blade"],
+    ["an object", { name: "Rusty Blade" }],
+    ["null", null],
+    ["an empty array", []],
+    ["entries that cannot be read", [7, { item_type: "weapon" }]],
+  ])("should still be a line, held with no items, when its items are %s", (_what, items) => {
+    const store = createChatStore();
+    const bad = line("look [Rusty Blade]", { items });
+
+    expect(isChatLine(bad)).toBe(true);
+    store.getState().receive(bad);
+
+    const held = store.getState().lines[0];
+    expect(held.text).toBe("look [Rusty Blade]");
+    expect("items" in held).toBe(false);
+  });
+
+  it("should keep the snapshots it can read beside one it cannot", () => {
+    const store = createChatStore();
+
+    store.getState().receive(line("[Rusty Blade]", { items: [null, blade] }));
+
+    expect(store.getState().lines[0]).toMatchObject({ items: [blade] });
+  });
+
+  it("should hold nothing of a snapshot the snapshot does not name", () => {
+    const store = createChatStore();
+
+    store
+      .getState()
+      .receive(line("[Rusty Blade]", { items: [{ ...blade, status: "LISTED", item_id: "i" }] }));
+
+    expect(store.getState().lines[0]).toMatchObject({ items: [blade] });
+    const held = store.getState().lines[0];
+    expect(held.kind === "line" && held.items).toEqual([blade]);
+  });
+
+  it("should write nothing about a line or its items to this browser's storage", () => {
+    const writes: string[] = [];
+    const storage: KeyValueStore = {
+      getItem: () => null,
+      setItem: (key) => void writes.push(key),
+      removeItem: () => undefined,
+    };
+    const store = createChatStore({ storage: () => storage });
+
+    store.getState().receive(line("look [Rusty Blade]", { items: [blade] }));
+
+    expect(writes).toEqual([]);
+  });
+});

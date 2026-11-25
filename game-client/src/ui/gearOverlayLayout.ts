@@ -474,6 +474,14 @@ export function stashPanelLayout(
 
 // ── The item tip row ──────────────────────────────────────────────────────
 
+/** A place on the logical view a tip row may not cover (see {@link itemTipRow}). */
+export interface TipAvoid {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** How far the row stands right of the pointer and above it, and off it when flipped left. */
 const TIP_OFFSET_X = 14;
 const TIP_OFFSET_Y = 10;
@@ -490,11 +498,18 @@ const TIP_EDGE = 4;
  * would leave the right edge; where neither side has room it is pushed in from the right edge,
  * the left edge winning on a screen narrower than the row (R18–19). Vertically the tallest tip
  * decides: where it would leave the bottom the row rises above the pointer, never above the top.
+ *
+ * `avoid` is a place the row may not cover: the chat's text field while it is shown, a browser
+ * element that draws above every canvas tip (FS-KBA4Q). A row that would lie over any of it is
+ * raised until its bottom stands `TIP_EDGE` above the place, its side kept; one too tall to stand
+ * there is moved instead to the place's right, or to its left where only the left has room; one
+ * that fits nowhere clear stays where it stood.
  */
 export function itemTipRow(
   tips: readonly { width: number; height: number }[],
   pointer: { x: number; y: number },
   screen: { width: number; height: number },
+  avoid?: TipAvoid | null,
 ): { x: number; y: number }[] {
   const rowW =
     tips.reduce((sum, t) => sum + t.width, 0) +
@@ -509,6 +524,21 @@ export function itemTipRow(
   let y = pointer.y - TIP_OFFSET_Y;
   if (y + rowH > screen.height) y = pointer.y - rowH - TIP_FLIP_GAP;
   y = Math.round(Math.max(TIP_EDGE, y));
+
+  const covers =
+    !!avoid &&
+    x < avoid.x + avoid.width &&
+    x + rowW > avoid.x &&
+    y < avoid.y + avoid.height &&
+    y + rowH > avoid.y;
+  if (avoid && covers) {
+    const above = Math.floor(avoid.y - TIP_EDGE - rowH);
+    const right = avoid.x + avoid.width + TIP_EDGE;
+    const left = avoid.x - TIP_EDGE - rowW;
+    if (above >= TIP_EDGE) y = above;
+    else if (right + rowW <= screen.width - TIP_EDGE) x = right;
+    else if (left >= TIP_EDGE) x = left;
+  }
 
   const at: { x: number; y: number }[] = [];
   for (const t of tips) {

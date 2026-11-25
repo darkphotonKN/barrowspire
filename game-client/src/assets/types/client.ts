@@ -1,5 +1,6 @@
 import type { ChatChannel } from "@/stores/chatStore";
 import type { ItemState } from "@/types/gameState";
+import type { ItemSnapshot } from "@/chat/itemLinks";
 /**
  * Outgoing payloads carry only their own fields. None names its sender or its world: the server
  * takes both from its record of the connection's player (FS-29KSH §Requirements 16, §Change: The
@@ -30,6 +31,11 @@ export interface ChatPayload {
   /** A whisper's target, the character name as typed; on whisper only (FS-KCQ06 R1). */
   target?: string;
   text: string;
+  /**
+   * The line's item snapshots, one per paired item link, in text order; left out when the line
+   * links nothing (FS-KBA4Q R14, R24).
+   */
+  items?: ItemSnapshot[];
 }
 
 export interface FindGamePayload {

@@ -135,7 +135,7 @@ const gearMounts = vi.hoisted(
   () =>
     [] as {
       world: string;
-      wiring: { wrapper: { act(run: () => void): void }; take(item: unknown): void };
+      wiring: { wrapper: { act(run: () => void): void }; take(item: unknown): void; link(item: unknown): void; tipsAvoid(): unknown };
       inventory: boolean;
       character: boolean;
       released: boolean;
@@ -281,13 +281,19 @@ const chatMounts = vi.hoisted(
       top: number;
       synced: number;
       destroyed: boolean;
+      /** The items linked into the window (FS-KBA4Q R3). */
+      linked: unknown[];
+      /** Where its text field is shown; null while hidden. */
+      field: unknown;
     }[],
 );
 vi.mock("@/ui/chatPiece", () => ({
   mountChat: (scene: unknown, wiring: (typeof chatMounts)[number]["wiring"]) => {
-    const made = { scene, wiring, keeps: false, holds: false, top: 468, synced: 0, destroyed: false };
+    const made = { scene, wiring, keeps: false, holds: false, top: 468, synced: 0, destroyed: false, linked: [] as unknown[], field: null as unknown };
     chatMounts.push(made);
     return {
+      link: (item: unknown) => void made.linked.push(item),
+      fieldRow: () => made.field,
       holds: () => made.holds,
       keepsField: () => made.keeps,
       topEdge: () => made.top,
@@ -1154,6 +1160,25 @@ describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", ()
     expect(field.blurred).toBe(true);
   });
 
+  // FS-KBA4Q R4 (I-KBA4Q-6): a link press is the one press on a piece that does not let go of the field,
+  // amending R26 and R131 for it alone; the modifiers are the press's own event's
+  it.each([
+    ["Ctrl+Alt", { ctrlKey: true, altKey: true }],
+    ["Meta+Alt", { metaKey: true, altKey: true }],
+  ])("should keep the game's text field for a %s left-press on a piece, and let it go for any other press there (FS-KBA4Q R4)", (_name, event) => {
+    const { input, pointer, field } = created();
+    const overlay = [{ name: "the gear overlay's ground" }];
+
+    input.emit("pointerdown", Object.assign(pointer, { button: 0, event }), overlay);
+    expect(field.blurred).toBe(false);
+    // the right button with the modifiers held links nothing (R6), and lets go like any press
+    input.emit("pointerdown", Object.assign(pointer, { button: 2, event }), overlay);
+    expect(field.blurred).toBe(true);
+    field.blurred = false;
+    input.emit("pointerdown", Object.assign(pointer, { button: 0, event: { ctrlKey: true } }), overlay);
+    expect(field.blurred).toBe(true);
+  });
+
   // batch 6 review (LOW): with left held on a monster the UI scene's cameras stand aside (R25), so a right
   // press over the chat window hits nothing here and Phaser hands it to the world; the UI scene claims it,
   // and the world refuses a claimed press: never an attack, a cast or a hold
@@ -1687,6 +1712,24 @@ describe("the UI scene's chat window (FS-TQZ5J § Change: Batch 6, R125–R128)"
     report("run");
     expect(since(before).map((c) => c.destroyed)).toEqual([true, true, false]);
     expect(since(before)[0].scene).toBe(scene);
+  });
+
+  // FS-KBA4Q review (round 1): the gear overlay's tips keep clear of the chat window's shown text field
+  it.each(["hub", "field", "run"] as const)("should tell the %s's gear overlay where that world's chat window shows its text field (FS-KBA4Q)", (world) => {
+    const { report } = created();
+    report(world);
+    expect(gearMounts.at(-1)!.wiring.tipsAvoid()).toBeNull();
+    chatMounts.at(-1)!.field = { x: 109, y: 665, width: 232, height: 30 };
+    expect(gearMounts.at(-1)!.wiring.tipsAvoid()).toEqual({ x: 109, y: 665, width: 232, height: 30 });
+  });
+
+  // FS-KBA4Q §A (I-KBA4Q-6): the gear slot's link is joined to the chat slot here, world by world
+  it.each(["hub", "field", "run"] as const)("should hand an item linked on the %s's gear overlay to that world's chat window (FS-KBA4Q R2, R3)", (world) => {
+    const { report } = created();
+    report(world);
+    const item = { entity_id: "e-1", name: "Rusty Blade" };
+    gearMounts.at(-1)!.wiring.link(item);
+    expect(chatMounts.at(-1)!.linked).toEqual([item]);
   });
 
   it("should re-read who owns the keys as the world changes its report (R128)", () => {

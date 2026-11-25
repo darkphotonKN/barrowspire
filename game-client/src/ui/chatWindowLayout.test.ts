@@ -28,6 +28,15 @@ import {
   chatScrollTrack,
   chatTabSegments,
   wrapChatText,
+  wrapChatSegments,
+  chatEntrySegments,
+  chatTagColour,
+  CHAT_TAG_CUT,
+  CHAT_TAG_GROUND_ALPHA,
+  CHAT_TAG_PAD,
+  CHAT_TAG_SPACE,
+  type ChatRowPiece,
+  type ChatSegment,
   chatWindowFrame,
   formatChatEntry,
   scrolledOffset,
@@ -548,5 +557,235 @@ describe("chatFieldLabel (FS-J267Q R7: the field names its channel)", () => {
     ["whisper", "Chat — Whisper"],
   ] as const)("should name %s as %s", (channel, label) => {
     expect(chatFieldLabel(channel)).toBe(label);
+  });
+});
+
+describe("link tag tuning (FS-KBA4Q R34: named constants, a first pass)", () => {
+  it("should start from the spec's first values", () => {
+    expect(CHAT_TAG_GROUND_ALPHA).toBe(0.16);
+    expect(CHAT_TAG_PAD).toBe(3);
+    expect(CHAT_TAG_SPACE).toBe(3);
+  });
+});
+
+describe("chatTagColour (FS-KBA4Q R33: the item tip's rarity tokens)", () => {
+  it.each([
+    ["normal", palette.rarity.common],
+    ["uncommon", palette.rarity.uncommon],
+    ["rare", palette.rarity.rare],
+    ["runed", palette.rarity.epic],
+    ["fabled", palette.rarity.legendary],
+  ])("should draw a %s item in its rarity token", (rarity, colour) => {
+    expect(chatTagColour({ name: "X", item_type: "weapon", rarity })).toBe(colour);
+  });
+
+  it("should draw an item with no rarity in the ordinary text colour", () => {
+    expect(chatTagColour({ name: "X", item_type: "weapon" })).toBe(palette.hudText);
+    expect(chatTagColour({ name: "X", item_type: "weapon", rarity: " " })).toBe(palette.hudText);
+  });
+});
+
+describe("chatEntrySegments (FS-KBA4Q R32: a paired token becomes a tag)", () => {
+  const blade = { name: "Rusty Blade", item_type: "weapon", rarity: "rare" };
+  const linked = (text: string, items: ChatLine["items"], extra: Partial<ChatLine> = {}): ChatEntry => ({
+    ...(line(text) as ChatLine),
+    items,
+    ...extra,
+  });
+
+  it("should have none for a line with no items, a system line, or a line whose items pair with nothing", () => {
+    expect(chatEntrySegments(line("look [Rusty Blade] here"))).toBeNull();
+    expect(chatEntrySegments(system("[Rusty Blade]"))).toBeNull();
+    expect(chatEntrySegments(linked("look here", [blade]))).toBeNull();
+    expect(chatEntrySegments(linked("look [Rusty Blad] here", [blade]))).toBeNull();
+  });
+
+  it("should put the tag in place of the token, the words around it as they were", () => {
+    expect(chatEntrySegments(linked("look [Rusty Blade] here", [blade]))).toEqual([
+      { kind: "text", text: "Wren: look " },
+      { kind: "tag", item: blade },
+      { kind: "text", text: " here" },
+    ]);
+  });
+
+  it("should leave an unpaired token as text beside a paired one", () => {
+    const ring = { name: "Ring", item_type: "ring" };
+
+    expect(chatEntrySegments(linked("[Gone] [Ring]", [{ name: "Lost", item_type: "ring" }, ring]))).toEqual([
+      { kind: "text", text: "Wren: [Gone] " },
+      { kind: "tag", item: ring },
+    ]);
+  });
+
+  it("should draw two links that touch as two tags with no text between", () => {
+    const ring = { name: "Ring", item_type: "ring" };
+
+    expect(chatEntrySegments(linked("[Rusty Blade][Ring]", [blade, ring]))).toEqual([
+      { kind: "text", text: "Wren: " },
+      { kind: "tag", item: blade },
+      { kind: "tag", item: ring },
+    ]);
+  });
+
+  it("should never read a token out of the sender's name", () => {
+    const entry = linked("hi [Rusty Blade]", [blade], { sender_name: "[Rusty Blade]" });
+
+    expect(chatEntrySegments(entry)).toEqual([
+      { kind: "text", text: "[Rusty Blade]: hi " },
+      { kind: "tag", item: blade },
+    ]);
+  });
+
+  it("should head a whisper's echo with To and its target, as the plain line does", () => {
+    const echo = linked("[Rusty Blade]", [blade], {
+      channel: "whisper",
+      sender_id: "me",
+      target_id: "t",
+      target_name: "Ash",
+    });
+
+    expect(chatEntrySegments(echo, "me")?.[0]).toEqual({ kind: "text", text: "To Ash: " });
+    expect(chatEntrySegments(echo, "other")?.[0]).toEqual({ kind: "text", text: "From Wren: " });
+  });
+});
+
+describe("wrapChatSegments (FS-KBA4Q R35, R36: text wraps around tags, a tag never splits)", () => {
+  const measure = (s: string) => s.length * 10;
+  /** A tag's whole width in a row: its bracketed name as drawn, its inner padding and the space outside it. */
+  const tagW = (label: string) => measure(label) + (CHAT_TAG_PAD + CHAT_TAG_SPACE) * 2;
+  /** What the brackets add to a name's width; each row width below grows by it, so a case lays out as before. */
+  const B = measure("[]");
+  const text = (t: string): ChatSegment => ({ kind: "text", text: t });
+  const tag = (name: string): ChatSegment => ({ kind: "tag", item: { name, item_type: "weapon" } });
+  /** Each row as words: a tag as its name drawn, brackets and all. */
+  const words = (rows: ChatRowPiece[][]) =>
+    rows.map((row) => row.map((p) => (p.kind === "tag" ? p.name : p.text)).join(""));
+
+  it("should lay text, a tag and text on one row when they fit, each where the last ended", () => {
+    const rows = wrapChatSegments([text("a "), tag("Blade"), text(" b")], 400, measure);
+
+    expect(rows).toEqual([
+      [
+        { kind: "text", x: 0, text: "a " },
+        {
+          kind: "tag",
+          x: 20 + CHAT_TAG_SPACE,
+          width: 50 + B + CHAT_TAG_PAD * 2,
+          name: "[Blade]",
+          item: { name: "Blade", item_type: "weapon" },
+        },
+        { kind: "text", x: 20 + tagW("[Blade]"), text: " b" },
+      ],
+    ]);
+  });
+
+  it("should move a tag that does not fit the rest of the row whole to the next row", () => {
+    // "Wren: look " is 110 wide; the tag needs 130 + 12 more and the row is 200 + B
+    const rows = wrapChatSegments([text("Wren: look "), tag("Rusty Blade"), text(" here")], 200 + B, measure);
+
+    expect(words(rows)).toEqual(["Wren: look ", "[Rusty Blade] here"]);
+    expect(rows[1][0]).toMatchObject({ kind: "tag", x: CHAT_TAG_SPACE, name: "[Rusty Blade]" });
+  });
+
+  it("should keep a tag whose name has spaces whole, never breaking at them", () => {
+    const rows = wrapChatSegments([text("aaaaaaaa "), tag("A B C D E F")], 150 + B, measure);
+
+    expect(words(rows)).toEqual(["aaaaaaaa ", "[A B C D E F]"]);
+  });
+
+  it("should wrap the text after a tag as plain text does: at the last space that fits", () => {
+    const rows = wrapChatSegments([tag("Blade"), text(" one two three four")], 122, measure);
+
+    // the tag takes 82 of the 122; " one" fits beside it, then each row fills before it breaks
+    expect(words(rows)).toEqual(["[Blade] one", "two three", "four"]);
+    expect(rows[1][0]).toMatchObject({ kind: "text", x: 0 });
+  });
+
+  it("should break at the space right after a tag when the next word does not fit", () => {
+    const rows = wrapChatSegments([tag("Blade"), text(" abcdefgh")], 122 + B, measure);
+
+    expect(words(rows)).toEqual(["[Blade]", "abcdefgh"]);
+  });
+
+  it("should fill the row after a tag with Chinese before breaking", () => {
+    const rows = wrapChatSegments([tag("Blade"), text("這是一句很長的中文")], 122 + B, measure);
+
+    expect(words(rows)).toEqual(["[Blade]這是一句很長", "的中文"]);
+  });
+
+  it("should start a word that touches a tag and does not fit on the next row, not break inside it", () => {
+    const rows = wrapChatSegments([tag("Blade"), text("abcdefgh")], 122 + B, measure);
+
+    expect(words(rows)).toEqual(["[Blade]", "abcdefgh"]);
+  });
+
+  it("should put two tags that do not fit one row on a row each", () => {
+    const rows = wrapChatSegments([tag("Rusty Blade"), tag("Iron Helm")], 200 + B, measure);
+
+    expect(words(rows)).toEqual(["[Rusty Blade]", "[Iron Helm]"]);
+  });
+
+  it("should draw a tag wider than a row on a row of its own, cut at the row's width with an ellipsis", () => {
+    const name = "Averylongitemnameindeed";
+    const rows = wrapChatSegments([text("see "), tag(name), text(" ok")], 150 + B, measure);
+
+    expect(rows).toHaveLength(3);
+    expect(words([rows[0]])).toEqual(["see "]);
+    const [cut] = rows[1];
+    expect(rows[1]).toHaveLength(1);
+    if (cut.kind !== "tag") throw new Error("expected a tag");
+    expect(cut.name.endsWith(`${CHAT_TAG_CUT}]`)).toBe(true);
+    expect(cut.name.startsWith("[")).toBe(true);
+    expect(name.startsWith(cut.name.slice(1, -CHAT_TAG_CUT.length - 1))).toBe(true);
+    expect(tagW(cut.name)).toBeLessThanOrEqual(150 + B);
+    // as much of the name as the row holds
+    expect(tagW(cut.name) + measure("x")).toBeGreaterThan(150 + B);
+    // the item is whole: the tip still shows its full name
+    expect(cut.item.name).toBe(name);
+    expect(words([rows[2]])).toEqual(["ok"]);
+  });
+
+  it("should not leave a space hanging before the cut mark", () => {
+    const [[cut]] = wrapChatSegments([tag("A Very Long Item Name Indeed")], 150 + B, measure);
+
+    expect(cut).toMatchObject({ kind: "tag", name: `[A Very Long${CHAT_TAG_CUT}]` });
+  });
+
+  it("should end on an over-wide tag's row when nothing follows it", () => {
+    const rows = wrapChatSegments([tag("A Very Long Item Name Indeed")], 150 + B, measure);
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it("should keep every row within the width", () => {
+    const rows = wrapChatSegments(
+      [text("Wren: 看看這個 "), tag("Rusty Blade"), text(" and this "), tag("Iron Helm"), text(" 還有一句很長很長的中文訊息")],
+      200,
+      measure,
+    );
+
+    for (const row of rows) {
+      const last = row[row.length - 1];
+      const right = last.kind === "tag" ? last.x + last.width + CHAT_TAG_SPACE : last.x + measure(last.text);
+      expect(right).toBeLessThanOrEqual(200);
+    }
+    expect(words(rows).join("").replace(/ /g, "")).toBe(
+      "Wren:看看這個[RustyBlade]andthis[IronHelm]還有一句很長很長的中文訊息",
+    );
+  });
+
+  it.each([
+    "Wren: hi there",
+    "Wren: 這是一句很長很長而且沒有空白的中文訊息",
+    "Wren: one two three four",
+    "aaaaaaaaaaaaaaaaaaaaaaaaa",
+    "Wren: trailing space here ",
+    " leading",
+    "",
+  ])("should wrap text with no tag exactly as wrapChatText does: %j", (plain) => {
+    const rows = wrapChatSegments([text(plain)], 120, measure);
+
+    expect(words(rows)).toEqual(wrapChatText(plain, 120, measure));
+    expect(rows.every((row) => row.every((p) => p.x === 0))).toBe(true);
   });
 });

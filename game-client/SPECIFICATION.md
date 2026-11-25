@@ -206,6 +206,7 @@ server state and sends intents. ✅
 - [ ] Send to the party channel from the chat window → FS-XGW7H
 - [ ] Whisper a player from the chat window → FS-KCQ06
 - [ ] Click a sender's name to whisper them → FS-KCQ06
+- [x] Link an item into a chat line → FS-KBA4Q
 - [ ] Mute a player → FS-4HEG7
 - [ ] Report a chat message → FS-4HEG7
 

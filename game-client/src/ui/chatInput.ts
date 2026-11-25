@@ -9,7 +9,18 @@
  */
 
 import type { UiEffect } from "@/audio/uiSounds";
-import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
+import {
+  CHAT_CHANNELS,
+  type ChatChannel,
+  type ChatNoticePayload,
+} from "@/stores/chatStore";
+import type { ItemState } from "@/types/gameState";
+import {
+  itemSnapshot,
+  linkToken,
+  pairLinks,
+  type ItemSnapshot,
+} from "@/chat/itemLinks";
 import type { SceneKeyboard } from "./worldKeyboard";
 
 /**
@@ -72,8 +83,27 @@ export interface ChatInputField {
   channel: ChatChannel;
   focus(): void;
   blur(): void;
+  /**
+   * The caret, as the two ends of the selection in `value` (equal when nothing is selected). A
+   * field that is not focused keeps the one it last had, and a write to `value` puts it at the
+   * end. A field with none is written at its end (FS-KBA4Q R3).
+   */
+  selection?: { start: number; end: number };
+  /** Whether an input method is composing in the field now; its text is never written over. */
+  readonly composing?: boolean;
 }
 
+/** The most item links a line may carry (FS-KBA4Q R11); the server's `chatItemLinksMax`. */
+export const CHAT_LINKS_MAX = 3;
+
+/**
+ * The two refusals of a link press (FS-KBA4Q R11, R12): system lines the client holds itself,
+ * nothing sent.
+ */
+export const CHAT_LINK_REFUSALS = {
+  too_many_links: "Three items to a line, no more.",
+  link_too_long: "No room left in this line for that item.",
+} as const satisfies Record<string, string>;
 
 /**
  * What a sent line carries: the picked channel and the text without its prefix; a whisper also
@@ -83,6 +113,11 @@ export interface ChatSend {
   channel: ChatChannel;
   target?: string;
   text: string;
+  /**
+   * The line's item snapshots, one per paired item link, in text order; left out when the line
+   * links nothing, so such a line is what it always was (FS-KBA4Q R14, R24).
+   */
+  items?: ItemSnapshot[];
 }
 
 /** A whisper's body split into who it is for and what it says. */
@@ -125,6 +160,8 @@ export interface ChatInputDeps {
    * player (C2, C3), a draft refused (C5). None, nothing plays.
    */
   play?: (effect: UiEffect) => void;
+  /** Adds a system line the client holds itself: a refused link press (FS-KBA4Q R11, R12). */
+  notice?: (notice: ChatNoticePayload) => void;
 }
 
 /** The sent lines the arrow keys walk through, as a terminal's history (asked 2026-10-31). */
@@ -144,6 +181,17 @@ function channelOf(text: string, open: ReadonlySet<ChatChannel>): ChatChannel {
   return "area";
 }
 
+/** Where a link is written in `draft`: the field's caret, kept inside the draft, or the draft's end. */
+function caretIn(
+  draft: string,
+  selection: ChatInputField["selection"],
+): { start: number; end: number } {
+  if (!selection) return { start: draft.length, end: draft.length };
+  const inside = (at: number) => Math.min(draft.length, Math.max(0, at));
+  const ends = [inside(selection.start), inside(selection.end)];
+  return { start: Math.min(...ends), end: Math.max(...ends) };
+}
+
 export class ChatInput {
   private open = false;
   /** The keyboard's state when the input opened, put back as it was when it closes. */
@@ -153,6 +201,14 @@ export class ChatInput {
   private recalled: number | null = null;
   /** What the player had typed before the arrows took over, given back past the newest line. */
   private draft = "";
+  /**
+   * The draft's held links (FS-KBA4Q R9): one item snapshot per link press, in the order their
+   * tokens stand in the text. Which of them are links is worked out from the text when it is
+   * needed (R10); nothing follows the caret.
+   */
+  private held: ItemSnapshot[] = [];
+  /** The held links of the draft the arrows put aside, given back with it (R16). */
+  private draftHeld: ItemSnapshot[] = [];
   private readonly pickable: ReadonlySet<ChatChannel>;
   /** The picker's list: whether it is open, and the row the pointer or the keys are on. */
   private listOpen = false;
@@ -259,6 +315,67 @@ export class ChatInput {
     this.requestOpen();
   }
 
+  /**
+   * A link of an item (FS-KBA4Q R3): `[Name]` is written at the field's caret, over a selection if
+   * there is one, the caret left after the `]`; the item's snapshot is held beside the draft, in
+   * text order (R9); and the input opens if it was closed. Nothing happens while something else
+   * owns the keys (R7), while an input method composes, or for an item whose name a token cannot
+   * carry (R13). A fourth link, and a token the line has no room for, insert nothing and are
+   * refused with `menu_error` and a system line (R11, R12).
+   */
+  link(item: ItemState): void {
+    const field = this.deps.field;
+    if (field.composing || (!this.open && !this.deps.mayOpen())) return;
+    const snapshot = itemSnapshot(item);
+    if (!snapshot) return;
+
+    const draft = field.value;
+    const { start, end } = caretIn(draft, field.selection);
+    // The links the press leaves standing. One whose token is gone already is let go here, and so
+    // is one whose token the press replaces, cuts into or splits: either would otherwise pair with
+    // a later token of the same name, and show it as an item it was not linked for.
+    const links = pairLinks(draft, this.held).filter(
+      (link) => link.end <= start || link.start >= end,
+    );
+    if (links.length >= CHAT_LINKS_MAX) return this.refuseLink("too_many_links");
+    const token = linkToken(snapshot.name);
+    const next = draft.slice(0, start) + token + draft.slice(end);
+    const channel = channelOf(next, this.pickable);
+    // a token is never inserted cut short (R12)
+    if (clampDraft(next, channel) !== next) return this.refuseLink("link_too_long");
+
+    const before = links.filter((link) => link.end <= start);
+    this.held = [
+      ...before.map((link) => link.item),
+      snapshot,
+      ...links.slice(before.length).map((link) => link.item),
+    ];
+    // a recalled line with a link put in it is the player's own again
+    this.recalled = null;
+    field.value = next;
+    field.channel = channel;
+    field.focus();
+    field.selection = { start: start + token.length, end: start + token.length };
+    this.deps.changed?.();
+  }
+
+  private refuseLink(code: keyof typeof CHAT_LINK_REFUSALS): void {
+    this.deps.play?.("menu_error");
+    this.deps.notice?.({ code, text: CHAT_LINK_REFUSALS[code] });
+  }
+
+  /** The held links that pair with `text`, as the snapshots a line carries, or none (R14). */
+  private itemsIn(text: string): Pick<ChatSend, "items"> {
+    const items = pairLinks(text, this.held).map((link) => link.item);
+    return items.length > 0 ? { items } : {};
+  }
+
+  /** The draft's held links go, with those of a draft put aside (R15). */
+  private dropHeld(): void {
+    this.held = [];
+    this.draftHeld = [];
+  }
+
   isOpen(): boolean {
     return this.open;
   }
@@ -332,16 +449,21 @@ export class ChatInput {
         );
         // the one refusal of chat input (FS-WDM0X § Pass 2: the chat, C5)
         if (!whisper) return this.deps.play?.("menu_error");
+        const text = clampChatText(whisper.text);
         this.deps.send({
           channel,
           target: whisper.target,
-          text: clampChatText(whisper.text),
+          text,
+          ...this.itemsIn(text),
         });
       } else {
-        this.deps.send({ channel, text: clampChatText(body) });
+        const text = clampChatText(body);
+        this.deps.send({ channel, text, ...this.itemsIn(text) });
       }
       this.deps.recall?.remember(field.value.trim());
       this.recalled = null;
+      // unpaired held links go with the line (R14)
+      this.dropHeld();
       // the input stays open for the next line (revised by the user 2026-10-31); the channel and
       // its prefix stay ready
       field.value = CHAT_PREFIX[field.channel];
@@ -405,6 +527,9 @@ export class ChatInput {
     if (this.recalled === null) {
       if (step === 1) return;
       this.draft = field.value;
+      // a recalled line carries no links; the draft's wait with it (R16)
+      this.draftHeld = this.held;
+      this.held = [];
       this.recalled = lines.length - 1;
     } else if (step === -1) {
       this.recalled = Math.max(0, this.recalled - 1);
@@ -412,6 +537,8 @@ export class ChatInput {
       this.recalled += 1;
     } else {
       this.recalled = null;
+      this.held = this.draftHeld;
+      this.draftHeld = [];
     }
     field.value = this.recalled === null ? this.draft : lines[this.recalled];
     field.channel = channelOf(field.value, this.pickable);
@@ -460,13 +587,15 @@ export class ChatInput {
 
   /** The scene takes the keys back (the end-of-run overlay): close and drop the draft (R27). */
   cancel(): void {
-    if (this.open) this.discardAndClose();
-    else this.deps.field.value = CHAT_PREFIX[this.deps.field.channel];
+    if (this.open) return this.discardAndClose();
+    this.dropHeld();
+    this.deps.field.value = CHAT_PREFIX[this.deps.field.channel];
   }
 
   /** The draft goes; the picked channel stays, its prefix ready for the next line. */
   private discardAndClose(): void {
     this.recalled = null;
+    this.dropHeld();
     const field = this.deps.field;
     field.value = CHAT_PREFIX[field.channel];
     this.deps.field.blur();

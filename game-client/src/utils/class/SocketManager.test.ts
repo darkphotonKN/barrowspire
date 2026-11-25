@@ -349,6 +349,15 @@ describe("SocketManager chat (FS-WJGFJ §Requirements C20, C29: the socket feeds
       text: "That channel is not open yet.",
     });
   });
+
+  it("shows a line refused for its item links like any other notice (FS-KBA4Q R28)", () => {
+    const { old } = setup();
+    const refusal = { code: "bad_item_link", text: "That item could not be shown. Your line was not sent." };
+
+    old.receive({ action: "chat_notice", payload: refusal });
+
+    expect(useChatStore.getState().lines).toContainEqual({ kind: "system", ...refusal });
+  });
 });
 
 describe("SocketManager party (FS-R82NV §Requirements R21, R31: the socket feeds the party store and the chat window)", () => {

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 // own reads going from the pieces (R51; ADR-0085 D3). The pieces themselves are their own tests': here
 // recording stand-ins for what is built, with what.
 const built = vi.hoisted(() => ({
+  overlays: [] as { onLink?: (item: unknown) => void; tipsAvoid?: () => unknown }[],
   hub: [] as { refreshes: number; released: number; port?: { gearChanged?(): void } }[],
   hud: [] as {
     port: { send(action: string, payload: { item_entity_id: string }): void; notice(t: string): void; gearChanged?(): void };
@@ -13,7 +14,14 @@ const built = vi.hoisted(() => ({
     options: { onLoot(item: unknown): void; mayTake?(): boolean; characterLevel?(): number | undefined; onOpen?(kind: string): void };
   }[],
 }));
-vi.mock("./GearOverlay", () => ({ GearOverlay: class {} }));
+vi.mock("./GearOverlay", () => ({
+  GearOverlay: class {
+    onLink?: (item: unknown) => void;
+    constructor() {
+      built.overlays.push(this);
+    }
+  },
+}));
 vi.mock("./purse", () => ({ PurseReader: class {} }));
 vi.mock("@/utils/api", () => ({ apiClient: {} }));
 vi.mock("./HubGear", () => ({
@@ -65,6 +73,8 @@ const wiring = () => ({
   take: vi.fn(),
   level: () => 7,
   sounds: { play: vi.fn() },
+  link: vi.fn(),
+  tipsAvoid: vi.fn(() => ({ x: 109, y: 665, width: 232, height: 30 })),
 });
 const art = () => ({}) as never;
 const goldTake = () => useMailboxStore.setState({ goldTaken: useMailboxStore.getState().goldTaken + 1 });
@@ -165,5 +175,28 @@ describe("the gameplay sounds of the gear and the container view on the UI scene
     mountGearPieces({} as never, art, "field", w);
     built.views.at(-1)!.options.onLoot({ entity_id: "ring-1" });
     expect(w.sounds.play).not.toHaveBeenCalled();
+  });
+});
+
+// FS-KBA4Q review (round 1): the overlay's tips keep clear of the place the wiring names, in every world
+describe("the gear overlay's tips and the chat's text field on the UI scene (FS-KBA4Q)", () => {
+  it.each(["hub", "field", "run"] as const)("should hand the %s's overlay the wiring's place to keep its tips clear of", (world) => {
+    const w = wiring();
+    const pieces = mountGearPieces({} as never, art, world, w);
+    expect(built.overlays.at(-1)!.tipsAvoid!()).toEqual({ x: 109, y: 665, width: 232, height: 30 });
+    expect(w.tipsAvoid).toHaveBeenCalledTimes(1);
+    pieces.gear.release();
+  });
+});
+
+// FS-KBA4Q §A (I-KBA4Q-6): the overlay's link press is the wiring's, in the town, a field and the run
+describe("the gear overlay's link press on the UI scene (FS-KBA4Q R2)", () => {
+  it.each(["hub", "field", "run"] as const)("should hand the %s's overlay the wiring's link", (world) => {
+    const w = wiring();
+    const pieces = mountGearPieces({} as never, art, world, w);
+    const item = { entity_id: "e-1", name: "Rusty Blade" };
+    built.overlays.at(-1)!.onLink!(item);
+    expect(w.link).toHaveBeenCalledWith(item);
+    pieces.gear.release();
   });
 });

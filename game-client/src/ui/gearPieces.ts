@@ -27,6 +27,10 @@ import { equipmentPiece, hubGearPiece, type GearPieces, type GearWiring } from "
 export function mountGearPieces(scene: Phaser.Scene, library: () => ArtLibrary, world: World, wiring: GearWiring): GearPieces {
   const art = library();
   const overlay = new GearOverlay(scene, art, world, wiring.wrapper);
+  // a link press on a bag, worn or stash item, in every world (FS-KBA4Q R2): the overlay's own, whatever its source
+  overlay.onLink = wiring.link;
+  // its tips keep clear of the chat's shown text field, a browser element above the canvas (FS-KBA4Q)
+  overlay.tipsAvoid = wiring.tipsAvoid;
   const purse = new PurseReader(apiClient, overlay);
   if (world === "hub") {
     const hub = new HubGear(

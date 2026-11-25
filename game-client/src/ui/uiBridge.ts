@@ -120,7 +120,8 @@ export interface WorldBlockers {
   /**
    * The world turns the chat's input away now (§ Change: Batch 6, R126): its part of the rule each world
    * kept (the town's dialogue or its letter panel; the run's end or an open container). The UI scene's
-   * chat window takes no keys while this is true, its menu slot is filled or a gear panel is open.
+   * chat window takes no keys while this is true or its menu slot is filled; an open gear panel does not
+   * turn it away (FS-KBA4Q R18).
    */
   readonly chat?: boolean;
 }
