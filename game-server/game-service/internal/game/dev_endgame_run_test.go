@@ -234,7 +234,7 @@ func TestEndgameRunHubGate_StandsClearOfEverything(t *testing.T) {
 
 	points := map[string][2]float64{"gate": {gate.X, gate.Y}, "arrival": {gate.Arrival.X, gate.Arrival.Y}}
 	for what, at := range points {
-		for _, wall := range allWalls(hubWalls(t)) {
+		for _, wall := range everyHubWall(t) {
 			assert.Greater(t, wall.distanceTo(at[0], at[1]), constants.PlayerRadius, "the %s touches the wall at %+v", what, wall)
 		}
 		for _, foot := range footprints(hubWalls(t)) {

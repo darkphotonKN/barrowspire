@@ -27,8 +27,12 @@ var hubTownGoldenPath = filepath.Join("..", "..", "..", "..", "game-client", "sr
 type townGolden struct {
 	// The hub's size, HubMapWidth × HubMapHeight, so the client's HUB_SIZE is
 	// held to the server's map and not to a second literal. FS-R4MYX §Requirements 1, 22.
-	MapSize        townGoldenSize       `json:"mapSize"`
-	Buildings      []townGoldenBuilding `json:"buildings"`
+	MapSize   townGoldenSize       `json:"mapSize"`
+	Buildings []townGoldenBuilding `json:"buildings"`
+	// The chapel's bell tower: one solid wall that is no building, which the
+	// client tells by this rect. FS-R4MYX §Change: The chapel moves to the far
+	// left and gains a bell tower, T8.
+	BellTower      townGoldenRect       `json:"bellTower"`
 	FixedResidents []townGoldenResident `json:"fixedResidents"`
 	// Each wandering resident's quarter, so the client's keep-out rule and its
 	// hidden-behind-a-building test read the server's. FS-R4MYX §Requirements 40.
@@ -93,6 +97,7 @@ func townFromHubMap() townGolden {
 	town := townGolden{
 		MapSize:        townGoldenSize{W: constants.HubMapWidth, H: constants.HubMapHeight},
 		Buildings:      []townGoldenBuilding{},
+		BellTower:      townGoldenRect(hubBellTower),
 		FixedResidents: []townGoldenResident{},
 		WanderRegions:  []townGoldenRegion{},
 	}
@@ -143,13 +148,24 @@ func TestHubTown_MatchesTheGolden(t *testing.T) {
 // client to if the built hub stands exactly that: each building's walls enclose
 // its footprint, its door gap is the opening its door face leaves, its
 // partition is its walls reaching the edge off the outline,
-// its furnishings are its walls clear of every edge, each fixed resident
-// stands where the golden says, and each wandering resident keeps the quarter
-// it says.
+// its furnishings are its walls clear of every edge, the bell tower is one
+// wall on its rect under a house id of its own, each fixed resident stands
+// where the golden says, and each wandering resident keeps the quarter it says.
 func TestHubTown_BuiltHubStandsTheGoldenTown(t *testing.T) {
 	town := townFromHubMap()
 	houses := hubWalls(t)
 	require.Len(t, houses, len(town.Buildings), "the built hub has a different number of buildings")
+
+	onTheTower := [][]box{}
+	for _, walls := range wallsByHouseID(t) {
+		for _, w := range walls {
+			if w == box(town.BellTower) {
+				onTheTower = append(onTheTower, walls)
+			}
+		}
+	}
+	require.Len(t, onTheTower, 1, "the built hub's walls on the bell tower's rect")
+	assert.Len(t, onTheTower[0], 1, "the bell tower's house id is shared with another wall")
 
 	for _, b := range town.Buildings {
 		house := houseOf(t, houses, b.Name)
