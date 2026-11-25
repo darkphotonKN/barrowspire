@@ -217,6 +217,27 @@ func TestRoll_StopsAtWhatBlocksAWalk(t *testing.T) {
 	})
 }
 
+// An afloat (Levitate) roller passes a shut pit as its walk does, the whole
+// 200 px; a grounded roller beside them stops at the same pit's edge. A pit is
+// rock only to a body on the ground, so a roll begun over one is never pushed
+// out of it. FS-7P736 §A R4, Edge States "Afloat"; Reconciled at build
+// (I-7P736-1); FS-X2CMM §J R51.
+func TestRoll_AfloatPassesShutPits(t *testing.T) {
+	w := newRollWorld()
+	addPit(w.em, 400, 0, 80, constants.MapHeight)
+	floating := lift(roller(w, 300, 200), 60)
+	grounded := roller(w, 300, 600)
+
+	require.True(t, StartRoll(floating, 1, 0))
+	require.True(t, StartRoll(grounded, 1, 0))
+	w.ticks(rollTicks + 5)
+
+	assert.InDelta(t, 300+constants.RollDistance, transformOf(t, floating).X, 1e-6, "afloat: the whole roll, over the pit")
+	assert.InDelta(t, 400-constants.PlayerRadius, transformOf(t, grounded).X, 1e-6, "grounded: flush against the pit, never into it")
+	assert.False(t, Rolling(floating), "both rolls are over")
+	assert.False(t, Rolling(grounded))
+}
+
 // It ends early: the tick after a roll touches a wall it is over, well short
 // of its 12 ticks, and the walk is back. FS-7P736 §A R4; Edge States "Roll
 // started touching a wall".
@@ -449,6 +470,24 @@ func TestRoll_QueuedAttacksAreDroppedWhileRolling(t *testing.T) {
 	assert.Equal(t, 100, pool(d), "nothing spent")
 	w.ticks(rollTicks)
 	assert.Equal(t, 1000, health(target), "and nothing kept for after")
+}
+
+// No dash starts on a rolling body, whatever asks for it: one carry at a time,
+// so the roll in flight is the one the movement carries. FS-7P736 §A R6, R8.
+func TestRoll_NoDashStartsMidRoll(t *testing.T) {
+	w := newRollWorld()
+	d := roller(w, 300, 300)
+	require.True(t, StartRoll(d, 0, 1))
+
+	startCharge(d, transformOf(t, d), 400, 300)
+
+	assert.False(t, d.HasComponent(ecs.ComponentTypeDash), "no charge in flight")
+	carry, ok := carryOf(d)
+	require.True(t, ok)
+	assert.Equal(t, [2]float64{0, 1}, [2]float64{carry.DirX, carry.DirY}, "the roll carries on")
+	w.tick()
+	assert.Equal(t, 300.0, transformOf(t, d).X, "carried along the roll, not the dash")
+	assert.Greater(t, transformOf(t, d).Y, 300.0)
 }
 
 // A roll on a body out of play is over on the next tick: a delver a poison

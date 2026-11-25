@@ -107,7 +107,7 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 
 		transformComp, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
 		_, hasVelocity := entity.GetComponent(ecs.ComponentTypeVelocity)
-		hasCharge := carried(entity)
+		hasCarry := carried(entity)
 
 		_, hasWallComp := entity.GetComponent(ecs.ComponentTypeWall)
 		if hasWallComp {
@@ -131,7 +131,7 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 			continue
 		}
 
-		if hasTransform && (hasVelocity || hasCharge) {
+		if hasTransform && (hasVelocity || hasCarry) {
 			// type assertion
 			transform := transformComp.(*components.TransformComponent)
 
@@ -165,11 +165,11 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 		// a charge or a roll in flight replaces the walk: held input neither
 		// adds to it nor steers it, so it can never stack into a faster move,
 		// and nothing that scales a walk scales it (FS-7P736 §A R3)
-		var dx, dy, chargeStep float64
-		charge, charging := carryOf(targetEntity)
-		if charging {
-			chargeStep = min(charge.Speed*deltaTime, max(charge.Remaining, 0))
-			dx, dy = charge.DirX*chargeStep, charge.DirY*chargeStep
+		var dx, dy, carryStep float64
+		carry, carrying := carryOf(targetEntity)
+		if carrying {
+			carryStep = min(carry.Speed*deltaTime, max(carry.Remaining, 0))
+			dx, dy = carry.DirX*carryStep, carry.DirY*carryStep
 		} else {
 			velocityComp, _ := targetEntity.GetComponent(ecs.ComponentTypeVelocity)
 			velocity := velocityComp.(*components.VelocityComponent)
@@ -179,7 +179,9 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 		}
 
 		// an afloat body passes a chasm's pits; walls, closed doors and
-		// blocks stop it as they stop anyone
+		// blocks stop it as they stop anyone. Its carry passes them too, as its
+		// walk does: a roll begun over a pit is never pushed out of it
+		// (FS-7P736 Reconciled at build (I-7P736-1))
 		walls := blockers
 		if afloat(targetEntity) {
 			if afloatBlockers == nil {
@@ -194,9 +196,9 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 		// Y second
 		newY := transform.Y + dy*walls.sweepY(newX, transform.Y, dy)
 
-		// check collision in 9-grid and resolve position by hashmap; a charge
-		// runs through bodies, as the teleport it replaced did
-		for i := -1; i <= 1 && !charging; i++ {
+		// check collision in 9-grid and resolve position by hashmap; a carry
+		// runs through bodies, as the teleport the charge replaced did
+		for i := -1; i <= 1 && !carrying; i++ {
 			for j := -1; j <= 1; j++ {
 				cellKey := hashKey(cellX+i, cellY+j)
 				for _, other := range cells[cellKey] {
@@ -236,11 +238,11 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 		}
 		// a charge or a roll stopped short by a wall, a closed door, a block
 		// or the edge is over
-		if charging {
-			if math.Hypot(newX-(transform.X+dx), newY-(transform.Y+dy)) > dashEpsilon {
-				charge.Remaining = 0
+		if carrying {
+			if math.Hypot(newX-(transform.X+dx), newY-(transform.Y+dy)) > carryEpsilon {
+				carry.Remaining = 0
 			} else {
-				charge.Remaining -= chargeStep
+				carry.Remaining -= carryStep
 			}
 		}
 

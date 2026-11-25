@@ -115,7 +115,7 @@ func NewRollSystem() *RollSystem {
 func (s *RollSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 	for _, entity := range entities {
 		if rc, ok := entity.GetComponent(ecs.ComponentTypeRoll); ok {
-			if rc.(*components.RollComponent).Remaining <= dashEpsilon || !InPlay(entity) {
+			if rc.(*components.RollComponent).Remaining <= carryEpsilon || !InPlay(entity) {
 				entity.RemoveComponent(ecs.ComponentTypeRoll)
 			}
 		}

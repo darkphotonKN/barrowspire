@@ -202,3 +202,15 @@ walking is" means here. A roll the server never confirms (no `roll`, no `roll_co
 300 ms after its end and the body eases back. Gates, secret doors, pits and stone blocks are not in
 the client sweep: a roll into one draws past it until the ease pulls the body back. Also, Space is
 held back while an archer draws Shadow Shot, and after the run's end.
+
+## Reconciled at build (I-7P736-1)
+
+Date: 2026-11-26. R4 lists a pit among the barriers that stop a roll, and the Edge States say a
+roll "works as for anyone" when afloat. The two meet at an afloat (Levitate) roller, and the build
+settles it: **an afloat roll passes shut pits, as its walk does** (FS-X2CMM §J R51). Walls, shut
+doors, gates, secret doors, stone blocks and the world's edge still stop it. The reason: the roll
+is swept against the same blockers the body's walk is, so a pit that is open ground to an afloat
+walk is open ground to its roll. Holding a pit as rock to the roll alone would push a delver who
+starts a roll while over a pit out of it, and would make the roll the one move that cannot cross
+the chasm. The Edge State "Rolling over a pit's edge" holds for a grounded roller. Pinned by
+`TestRoll_AfloatPassesShutPits` (game-service `internal/systems/roll_test.go`).
