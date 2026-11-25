@@ -304,3 +304,5 @@ encounter kind.
   point with tests only.
 - Gold for hires or contracts (rejected, owner). Turncoat (rejected, owner).
 - Encounters in the hub or the fields, ally commands, ally equipment, allies across floors.
+
+## Change: Exploration pace → FS-TAGWA

@@ -162,7 +162,7 @@ func TestRegenerateFloor_RebuildsTheWallIndex(t *testing.T) {
 	*transformOf(t, carrier) = components.TransformComponent{X: x, Y: y}
 	vc, _ := carrier.GetComponent(ecs.ComponentTypeVelocity)
 	vc.(*components.VelocityComponent).VX = 1
-	tick(s)
+	ticks(s, ticksToWalk(10))
 
 	assert.Greater(t, transformOf(t, carrier).X-x, 5.0, "the index still held an old-floor wall")
 }

@@ -3,6 +3,7 @@ package game
 import (
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/stretchr/testify/assert"
@@ -22,7 +23,7 @@ var r11 = map[components.MonsterAbilityKind]components.MonsterAbility{
 	components.MonsterAbilityVolley: {
 		Kind: components.MonsterAbilityVolley, Shape: components.AbilityShots,
 		MaxRange: 320, WindUp: 0.6, Cooldown: 5, Multiplier: 1.0,
-		ProjectileType: "bone_arrow", ShotSpeed: 420, ShotRadius: 8, ShotMaxFlight: 850, Shots: 3, Fan: 12,
+		ProjectileType: "bone_arrow", ShotSpeed: 420 * constants.PaceScale, ShotRadius: 8, ShotMaxFlight: 850, Shots: 3, Fan: 12,
 	},
 	components.MonsterAbilityGroundSlam: {
 		Kind: components.MonsterAbilityGroundSlam, Shape: components.AbilityAreaAroundSelf,
@@ -35,12 +36,12 @@ var r11 = map[components.MonsterAbilityKind]components.MonsterAbility{
 	components.MonsterAbilityDagger: {
 		Kind: components.MonsterAbilityDagger, Shape: components.AbilityShots,
 		MinRange: 90, MaxRange: 260, WindUp: 0.4, Cooldown: 5, Multiplier: 1.0,
-		ProjectileType: "thrown_dagger", ShotSpeed: 480, ShotRadius: 8, ShotMaxFlight: 520, Shots: 1,
+		ProjectileType: "thrown_dagger", ShotSpeed: 480 * constants.PaceScale, ShotRadius: 8, ShotMaxFlight: 520, Shots: 1,
 	},
 	components.MonsterAbilityRock: {
 		Kind: components.MonsterAbilityRock, Shape: components.AbilityShots,
 		MinRange: 140, MaxRange: 380, WindUp: 1.0, Cooldown: 7, Multiplier: 1.5,
-		ProjectileType: "ogre_rock", ShotSpeed: 240, ShotRadius: 18, ShotMaxFlight: 420, Shots: 1,
+		ProjectileType: "ogre_rock", ShotSpeed: 240 * constants.PaceScale, ShotRadius: 18, ShotMaxFlight: 420, Shots: 1,
 	},
 	components.MonsterAbilityCleave: {
 		Kind: components.MonsterAbilityCleave, Shape: components.AbilityCone,

@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/stretchr/testify/assert"
@@ -172,7 +173,7 @@ func TestHound_FollowsTheArcherToWithinTwoCells(t *testing.T) {
 	floor.run(1)
 	assert.Equal(t, components.HoundActionRun, houndT(t, hound).Action)
 
-	floor.run(ticksOf(4))
+	floor.run(ticksOf(4 / constants.PaceScale))
 	assert.LessOrEqual(t, distanceOf(t, hound, archer), 2*testCell+1, "heels within 2 cells")
 	assert.Zero(t, velocityOf(t, hound).VX, "and stands there")
 	assert.Equal(t, components.HoundActionIdle, houndT(t, hound).Action)

@@ -12,6 +12,7 @@
  * draws nothing here: the floor map re-sent with its cells walkable draws the doorway (R56).
  */
 
+import { BASE_MOVE_SPEED, BLOCK_PUSH_SPEED_SHARE } from "@/data/pace";
 import type { Point } from "@/render/iso/projection";
 import type { FixedLightKind } from "./floorLights";
 import {
@@ -27,10 +28,11 @@ import { INTERACT_RANGE } from "./stairs";
 import type { WallPiece } from "./walls";
 
 /**
- * World px a second a block slides at: half a player's walk (the server's `DefaultSpeed` of 200 at
- * its `BlockPushSpeedShare` of 0.5, FS-5FZ4J §C R19), so a slide of one cell takes the push time.
+ * World px a second a block slides at: the server's push speed, a player's paced walk at its push
+ * share (`DefaultSpeed` × `BlockPushSpeedShare`, FS-5FZ4J §C R19), read from the pace golden
+ * (FS-TAGWA R10), so a slide of one cell takes the push time at any pace.
  */
-export const BLOCK_SLIDE_SPEED = 100;
+export const BLOCK_SLIDE_SPEED = BASE_MOVE_SPEED * BLOCK_PUSH_SPEED_SHARE;
 
 /**
  * The ground band's depth for a pit, a bridge and a plate: over the floor's ground (`GROUND_DEPTH`,

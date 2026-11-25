@@ -3,6 +3,7 @@ package systems
 import (
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -232,7 +233,7 @@ func TestGearSystem_MoveSpeed_RaisesSpeedCapped(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			em := ecs.NewEntityManager()
 			walker := delver(em, 100, 100)
-			walker.AddComponent(components.NewVelocityComponent(0, 0, 200))
+			walker.AddComponent(components.NewVelocityComponent(0, 0, constants.DefaultSpeed))
 			wear(em, walker, legsSlot, types.ItemTypeArmor, affix(types.AffixMoveSpeed, tt.percent))
 
 			gear := NewGearSystem(em, testGearCaps, testUniqueEffects, vitalityAside)
@@ -240,7 +241,7 @@ func TestGearSystem_MoveSpeed_RaisesSpeedCapped(t *testing.T) {
 			gear.Update(tickSeconds, em.GetAllEntities())
 
 			vc, _ := walker.GetComponent(ecs.ComponentTypeVelocity)
-			assert.InDelta(t, tt.want, vc.(*components.VelocityComponent).Speed, 1e-9, "set from the default, never compounded")
+			assert.InDelta(t, tt.want*constants.PaceScale, vc.(*components.VelocityComponent).Speed, 1e-9, "set from the default, never compounded (want at full pace)")
 		})
 	}
 }

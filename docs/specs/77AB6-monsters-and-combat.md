@@ -528,3 +528,5 @@ directly (ADR-0004), which is outside the generated OpenAPI surface.
 ## Change: Tiered enemy roster and floor pools → FS-C8VM7
 
 ## Change: Vorsk summoned by tome and altar → FS-3103M
+
+## Change: Exploration pace → FS-TAGWA

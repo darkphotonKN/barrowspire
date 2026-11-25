@@ -3,6 +3,7 @@ package game
 import (
 	"math"
 
+	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 )
 
@@ -161,11 +162,12 @@ const (
 
 	// step k of a family at level 1 is step 0's HP, damage, defence and magic
 	// resistance times these growths to the k (defence at least the step
-	// below's + 1), and its move speed plus k × the gain, in px/s (R5)
+	// below's + 1), and its move speed plus k × the gain, in px/s (R5), paced
+	// as every speed is (FS-TAGWA)
 	VariantStepHPGrowth         = 1.2
 	VariantStepDamageGrowth     = 1.15
 	VariantStepMitigationGrowth = 1.25
-	VariantStepSpeedGain        = 8.0
+	VariantStepSpeedGain        = 8 * commonconstants.PaceScale
 
 	// each goblin spawned of a variant takes its blade + shield look at this
 	// share, with this much more defence than the blade look (R8)
@@ -378,6 +380,9 @@ var BloodDemonChanceByFloor = []float64{0.02, 0.05, 0.10}
 const MonsterCorpseLifetime = 4.0
 
 // The level curve. Speeds, radii and timings do not scale.
+//
+// Every speed below, a sheet's MoveSpeed and every shot's, is its full-pace
+// figure times PaceScale (FS-TAGWA R2, ADR-0099); timings and reach are not.
 const (
 	// HP and damage × (1 + growth × (level − 1))
 	MonsterPowerGrowth = 0.12
@@ -393,7 +398,7 @@ type monsterSheet struct {
 	AttackInterval  float64 // s
 	WindUp          float64 // s
 	AttackRange     float64 // px
-	MoveSpeed       float64 // px/s; delvers move at 200 and outrun every archetype
+	MoveSpeed       float64 // px/s, paced; delvers walk at DefaultSpeed and outrun every archetype
 	Defense         int
 	MagicResistance int
 	AggroRadius     float64 // px
@@ -453,11 +458,12 @@ type monsterShot struct {
 
 // The Bone Archer's arrow: a hostile one, drawn apart from a party archer's.
 // Its max flight catches a delver at the base speed who runs straight away
-// from shooting range from the first tick of the draw (826 px of flight).
+// from shooting range from the first tick of the draw (826 px of flight at
+// full pace; about 725 at the pace's 0.5, the wind-up not scaling).
 // FS-B4SG9 §A R2. Starting values.
 var boneArrowShot = monsterShot{
 	ProjectileType: "bone_arrow",
-	Speed:          420,
+	Speed:          420 * commonconstants.PaceScale,
 	Radius:         8,
 	MaxFlight:      850,
 }
@@ -500,13 +506,13 @@ var (
 	thrownDaggerAbility = components.MonsterAbility{
 		Kind: components.MonsterAbilityDagger, Shape: components.AbilityShots,
 		MinRange: 90, MaxRange: 260, WindUp: 0.4, Cooldown: 5, Multiplier: 1.0,
-		ProjectileType: "thrown_dagger", ShotSpeed: 480, ShotRadius: 8, ShotMaxFlight: 520, Shots: 1,
+		ProjectileType: "thrown_dagger", ShotSpeed: 480 * commonconstants.PaceScale, ShotRadius: 8, ShotMaxFlight: 520, Shots: 1,
 	}
 	// every ogre's: slow, large and long-wound, easy to dodge but painful
 	rockThrowAbility = components.MonsterAbility{
 		Kind: components.MonsterAbilityRock, Shape: components.AbilityShots,
 		MinRange: 140, MaxRange: 380, WindUp: 1.0, Cooldown: 7, Multiplier: 1.5,
-		ProjectileType: "ogre_rock", ShotSpeed: 240, ShotRadius: 18, ShotMaxFlight: 420, Shots: 1,
+		ProjectileType: "ogre_rock", ShotSpeed: 240 * commonconstants.PaceScale, ShotRadius: 18, ShotMaxFlight: 420, Shots: 1,
 	}
 	// every dark warrior's: a wide cone in front
 	cleaveAbility = components.MonsterAbility{
@@ -518,7 +524,7 @@ var (
 var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	components.MonsterArchetypeGhoul: {
 		Name: "Ghoul", HP: 40, Damage: 6,
-		AttackInterval: 1.0, WindUp: 0.35, AttackRange: 45, MoveSpeed: 150,
+		AttackInterval: 1.0, WindUp: 0.35, AttackRange: 45, MoveSpeed: 150 * commonconstants.PaceScale,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 260, LeashRadius: 520,
 	},
@@ -526,7 +532,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// range (FS-B4SG9 §A R2)
 	components.MonsterArchetypeBoneArcher: {
 		Name: "Bone Archer", HP: 30, Damage: 7,
-		AttackInterval: 2.0, WindUp: 0.6, AttackRange: 320, MoveSpeed: 130,
+		AttackInterval: 2.0, WindUp: 0.6, AttackRange: 320, MoveSpeed: 130 * commonconstants.PaceScale,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 360, LeashRadius: 560,
 
@@ -534,13 +540,13 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	},
 	components.MonsterArchetypeTroll: {
 		Name: "Troll", HP: 140, Damage: 16,
-		AttackInterval: 2.0, WindUp: 0.7, AttackRange: 60, MoveSpeed: 90,
+		AttackInterval: 2.0, WindUp: 0.7, AttackRange: 60, MoveSpeed: 90 * commonconstants.PaceScale,
 		Defense: 10, MagicResistance: 4,
 		AggroRadius: 220, LeashRadius: 480,
 	},
 	components.MonsterArchetypeDemon: {
 		Name: "Vorsk", HP: 1200, Damage: 28,
-		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
+		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120 * commonconstants.PaceScale,
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
 
@@ -549,7 +555,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// the red boss: the demon's sheet, harder and longer (FS-VHGE7 §A R3)
 	components.MonsterArchetypeBloodDemon: {
 		Name: "Blood Demon", HP: 1600, Damage: 34,
-		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
+		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120 * commonconstants.PaceScale,
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
 
@@ -558,7 +564,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// a Master Spire's boss: the blood demon's sheet, harder (FS-M8CSE §E R25)
 	components.MonsterArchetypeDaagon: {
 		Name: "Daa'gon", HP: 2200, Damage: 45,
-		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
+		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120 * commonconstants.PaceScale,
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
 
@@ -567,21 +573,21 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// field wildlife: a lowered-head charge (FS-X2F2H §Requirements 37)
 	components.MonsterArchetypeBoar: {
 		Name: "Boar", HP: 36, Damage: 5,
-		AttackInterval: 1.2, WindUp: 0.45, AttackRange: 45, MoveSpeed: 140,
+		AttackInterval: 1.2, WindUp: 0.45, AttackRange: 45, MoveSpeed: 140 * commonconstants.PaceScale,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 200, LeashRadius: 450,
 	},
 	// the Forest's shambling default (FS-3QHQZ §Requirements 18)
 	components.MonsterArchetypeZombie: {
 		Name: "Zombie", HP: 70, Damage: 9,
-		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100,
+		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100 * commonconstants.PaceScale,
 		Defense: 5, MagicResistance: 1,
 		AggroRadius: 240, LeashRadius: 480,
 	},
 	// the Forest's rare drifter: faster and frailer than the zombie
 	components.MonsterArchetypeGhost: {
 		Name: "Ghost", HP: 30, Damage: 8,
-		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175,
+		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175 * commonconstants.PaceScale,
 		Defense: 0, MagicResistance: 8,
 		AggroRadius: 300, LeashRadius: 560,
 	},
@@ -589,14 +595,14 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// field factor (FS-M8CSE §D R19). The Barrow Thrall is the zombie's
 	components.MonsterArchetypeBarrowThrall: {
 		Name: "Barrow Thrall", HP: 70, Damage: 9,
-		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100,
+		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100 * commonconstants.PaceScale,
 		Defense: 5, MagicResistance: 1,
 		AggroRadius: 240, LeashRadius: 480,
 	},
 	// and the Spire Wraith the ghost's
 	components.MonsterArchetypeSpireWraith: {
 		Name: "Spire Wraith", HP: 30, Damage: 8,
-		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175,
+		AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175 * commonconstants.PaceScale,
 		Defense: 0, MagicResistance: 8,
 		AggroRadius: 300, LeashRadius: 560,
 	},
@@ -605,21 +611,21 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// the ghoul's reach, quicker and keener, frail with a medium hit
 	components.MonsterArchetypeGoblin: {
 		Name: "Goblin", HP: 32, Damage: 8,
-		AttackInterval: 1.0, WindUp: 0.3, AttackRange: 45, MoveSpeed: 160,
+		AttackInterval: 1.0, WindUp: 0.3, AttackRange: 45, MoveSpeed: 160 * commonconstants.PaceScale,
 		Defense: 1, MagicResistance: 0,
 		AggroRadius: 280, LeashRadius: 540,
 	},
 	// the ogre: slower and harder-hitting than the troll
 	components.MonsterArchetypeOgre: {
 		Name: "Ogre", HP: 200, Damage: 24,
-		AttackInterval: 2.4, WindUp: 0.9, AttackRange: 70, MoveSpeed: 75,
+		AttackInterval: 2.4, WindUp: 0.9, AttackRange: 70, MoveSpeed: 75 * commonconstants.PaceScale,
 		Defense: 12, MagicResistance: 4,
 		AggroRadius: 220, LeashRadius: 480,
 	},
 	// the dark warrior: a disciplined greatsword, the demons' rhythm
 	components.MonsterArchetypeDarkWarrior: {
 		Name: "Dark Warrior", HP: 260, Damage: 30,
-		AttackInterval: 1.6, WindUp: 0.6, AttackRange: 70, MoveSpeed: 120,
+		AttackInterval: 1.6, WindUp: 0.6, AttackRange: 70, MoveSpeed: 120 * commonconstants.PaceScale,
 		Defense: 16, MagicResistance: 10,
 		AggroRadius: 320, LeashRadius: 600,
 	},
@@ -629,7 +635,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// monster level
 	components.MonsterArchetypeCutthroat: {
 		Name: "Cutthroat", HP: 60, Damage: 10,
-		AttackInterval: 1.0, WindUp: 0.35, AttackRange: 50, MoveSpeed: 165,
+		AttackInterval: 1.0, WindUp: 0.35, AttackRange: 50, MoveSpeed: 165 * commonconstants.PaceScale,
 		Defense: 4, MagicResistance: 1,
 		AggroRadius: 300, LeashRadius: 560,
 	},
@@ -640,7 +646,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	// poison as a gas trap does (FS-5FZ4J §D R29). Never in a floor's pool
 	components.MonsterArchetypeContractMark: {
 		Name:           "Mark",
-		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 55, MoveSpeed: 150,
+		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 55, MoveSpeed: 150 * commonconstants.PaceScale,
 		Defense: 12, MagicResistance: 10,
 		AggroRadius: 320, LeashRadius: 700,
 

@@ -81,8 +81,9 @@ export const HOUND_BAR = { width: 28, height: 4 } as const;
 /** How often a hound bites while it goes on biting (FS-X2CMM R28: every 1.0 s), so each bite is drawn. */
 export const HOUND_BITE_MS = 1000;
 /**
- * World px per second its gallop covers at 1x: the archer's base speed it moves at (R28), which the clip
- * was keyed for at 14 fps. Faster or slower, the stride follows the pace drawn.
+ * World px per second its gallop covers at 1x: the clip's stride, keyed at 14 fps for the archer's full-pace
+ * base speed (R28). A fact of the art, not a speed: faster or slower, the stride follows the pace drawn.
+ * At the paced base walk (100 px/s at the pace's 0.5, FS-TAGWA R11) the gallop plays at its 0.5x floor.
  */
 export const HOUND_PACE = 200;
 /** The ring under it, world px: a little wider than its body. */
