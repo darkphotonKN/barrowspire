@@ -118,6 +118,18 @@ func (s *MonsterAISystem) think(
 	// a stun runs out on its own clock, whatever else it does (FS-04EEA §C R15)
 	monster.StunRemaining = max(monster.StunRemaining-deltaTime, 0)
 
+	// a fleeing monster turns on no one and answers no hit until it arrives;
+	// a stun still holds it (FS-4EC7Z §E R18)
+	if monster.Flight.Fleeing {
+		monster.LastAttacker = uuid.Nil
+		if monster.StunRemaining > stunEpsilon {
+			s.stunned(deltaTime, entity, monster, at, velocity)
+			return
+		}
+		s.flee(deltaTime, monster, at, velocity)
+		return
+	}
+
 	target, hunting := s.target(monster, at, delvers)
 
 	if monster.StunRemaining > stunEpsilon {

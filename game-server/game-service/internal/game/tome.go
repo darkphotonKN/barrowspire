@@ -298,7 +298,16 @@ func (s *Session) besideAltar(d *dungeonFloor, area *spawnArea, altar *ecs.Entit
 		return 0, 0, false
 	}
 	at := tc.(*components.TransformComponent)
-	region := d.regionAt(at.X, at.Y)
+	return s.besidePoint(d, area, point{at.X, at.Y})
+}
+
+// besidePoint is the spot in at's region nearest at where a body stands off
+// the doorways, on open ground and clear of every delver's body, among
+// DemonPlacementSamples draws; false when none of them fits or at is on no
+// region. A summoned boss beside its altar, a mark's called cutthroats
+// beside it (FS-4EC7Z §E R18).
+func (s *Session) besidePoint(d *dungeonFloor, area *spawnArea, at point) (x, y float64, ok bool) {
+	region := d.regionAt(at.x, at.y)
 	if region == 0 {
 		return 0, 0, false
 	}
@@ -310,7 +319,7 @@ func (s *Session) besideAltar(d *dungeonFloor, area *spawnArea, altar *ecs.Entit
 		if !d.stands(centredArea(cx, cy, r, r), region, offDoorways) || !area.open(cx, cy) || onADelver(area, cx, cy) {
 			continue
 		}
-		if dist := math.Hypot(cx-at.X, cy-at.Y); dist < best {
+		if dist := math.Hypot(cx-at.x, cy-at.y); dist < best {
 			best, x, y, ok = dist, cx, cy, true
 		}
 	}

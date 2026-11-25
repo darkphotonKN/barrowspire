@@ -407,6 +407,9 @@ type monsterSheet struct {
 	// roster archetype's is its variant's (spireRoster), never its sheet
 	// literal's (FS-C8VM7 §B R10).
 	Ability components.MonsterAbility
+	// PoisonSeconds is how long each of its hits that costs health poisons
+	// for; 0 for an archetype whose hits do not poison (FS-4EC7Z §E R18).
+	PoisonSeconds float64
 }
 
 // The demons' two moves: the slam, their wind-up strike doubled and rationed,
@@ -629,6 +632,19 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		AttackInterval: 1.0, WindUp: 0.35, AttackRange: 50, MoveSpeed: 165,
 		Defense: 4, MagicResistance: 1,
 		AggroRadius: 300, LeashRadius: 560,
+	},
+	// a contract's mark (FS-4EC7Z §E R17-R18): a human duelist. Its HP and
+	// damage are a champion's at the floor's champion level (FS-C8VM7 §D
+	// R28), its mitigation this sheet's × the champion multiplier; its
+	// blades poison as a gas trap does (FS-5FZ4J §D R29). Never in a
+	// floor's pool
+	components.MonsterArchetypeContractMark: {
+		Name: "Mark", HP: 1200, Damage: 28,
+		AttackInterval: 1.4, WindUp: 0.5, AttackRange: 55, MoveSpeed: 150,
+		Defense: 12, MagicResistance: 10,
+		AggroRadius: 320, LeashRadius: 700,
+
+		PoisonSeconds: PoisonDuration,
 	},
 }
 

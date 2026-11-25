@@ -128,15 +128,21 @@ func (d *dungeonFloor) medianRoomDistance() float64 {
 	for i, r := range d.layout.Rooms {
 		distances[i] = r.Distance
 	}
-	slices.Sort(distances)
-	n := len(distances)
+	return medianOf(distances)
+}
+
+// medianOf is the median of values, the mean of the middle two for an even
+// count; 0 for none. values is sorted in place.
+func medianOf(values []int) float64 {
+	slices.Sort(values)
+	n := len(values)
 	if n == 0 {
 		return 0
 	}
 	if n%2 == 1 {
-		return float64(distances[n/2])
+		return float64(values[n/2])
 	}
-	return float64(distances[n/2-1]+distances[n/2]) / 2
+	return float64(values[n/2-1]+values[n/2]) / 2
 }
 
 // encounterSpots finds n spots of half-size half in room, each as a

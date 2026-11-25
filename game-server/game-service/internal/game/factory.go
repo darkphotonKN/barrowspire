@@ -563,6 +563,8 @@ func CreateMonsterEntity(em *ecs.EntityManager, config MonsterConfig) *ecs.Entit
 		ShotMaxFlight:      sheet.Shot.MaxFlight,
 
 		Ability: sheet.Ability,
+
+		PoisonSeconds: sheet.PoisonSeconds,
 	})
 	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
 	entity.AddComponent(components.NewVelocityComponent(0, 0, sheet.MoveSpeed))

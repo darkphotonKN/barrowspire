@@ -85,7 +85,9 @@ func gainExperience(entity *ecs.Entity, class ClassConfig, amount int) {
 
 // killExperience is what one kill is worth to each member it is awarded to:
 // round(base × (1 + growth × (level − 1)) × multiplier). FS-BDA7X §Requirements 10.
-// A champion's base is the Demon's, not its variant's (FS-C8VM7 §D R31).
+// A champion's base is the Demon's, not its variant's (FS-C8VM7 §D R31); a
+// contract's mark, champion-scaled, pays it at an elite's multiplier
+// (FS-4EC7Z §E R19).
 func killExperience(record systems.KillRecord) int {
 	archetype := record.Archetype
 	if record.Champion {
@@ -98,6 +100,10 @@ func killExperience(record systems.KillRecord) int {
 
 	multiplier := 1.0
 	switch {
+	// a contract's mark wears the boss plate but pays an elite's (FS-4EC7Z
+	// §E R19)
+	case record.Archetype == components.MonsterArchetypeContractMark:
+		multiplier = EliteExperienceMultiplier
 	case record.Boss:
 		multiplier = BossExperienceMultiplier
 	case record.Elite:

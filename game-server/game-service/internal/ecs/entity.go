@@ -136,6 +136,11 @@ const (
 	ComponentTypeCageKey  ComponentType = "CageKey"
 	// the Cutthroats' parley and hire (FS-4EC7Z §D R14-R15)
 	ComponentTypeCutthroats ComponentType = "Cutthroats"
+	// the delve's contract, its mark and the taker's Contract Settled
+	// (FS-4EC7Z §E R16-R19)
+	ComponentTypeContract        ComponentType = "Contract"
+	ComponentTypeMark            ComponentType = "Mark"
+	ComponentTypeContractSettled ComponentType = "ContractSettled"
 )
 
 type Entity struct {

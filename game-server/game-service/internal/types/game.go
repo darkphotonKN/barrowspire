@@ -64,6 +64,17 @@ type PublicPlayerState struct {
 	// Blessed is true while the delver carries the hallowed altar's Blessing,
 	// absent when not: public, as poison is. FS-5FZ4J §I R47.
 	Blessed bool `json:"blessed,omitempty"`
+	// ContractSettled is true while the delver holds Contract Settled,
+	// absent when not: public, as the Blessing is. FS-4EC7Z §F R25.
+	ContractSettled bool `json:"contract_settled,omitempty"`
+}
+
+// ContractState is the delve's contract as its taker is told it: its state
+// (active, settled or lost) and, while active, the mark's heading from them
+// as a compass word, never its position. FS-4EC7Z §F R25, §E R21.
+type ContractState struct {
+	State   string `json:"state"`
+	Heading string `json:"heading,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole

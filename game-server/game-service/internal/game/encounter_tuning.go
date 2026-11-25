@@ -117,3 +117,37 @@ const (
 // CutthroatLooks are the Cutthroats' art variants, one a Cutthroat in turn;
 // a turned one keeps its look as a monster (§F R24).
 var CutthroatLooks = []string{"cutthroat_a", "cutthroat_b"}
+
+// The contract's mark (FS-4EC7Z §E R17-R18): its health is a champion's at
+// the floor's champion level × (1 + MarkHealthPerExtraDelver × (living
+// delvers − 1)). Once, at MarkCallAt of its max health, it calls
+// MarkCallCount cutthroats beside it; once, at MarkFleeAt, it flees to the
+// room farthest by walk from the nearest delver and, there, heals
+// MarkFleeHeal of its max health. A flight that has not arrived in
+// MarkFleeMaxSeconds (a path blocked by bodies) ends where it stands.
+const (
+	MarkHealthPerExtraDelver = 0.5
+	MarkCallAt               = 0.5
+	MarkCallCount            = 3
+	MarkFleeAt               = 0.25
+	MarkFleeHeal             = 0.2
+	MarkFleeMaxSeconds       = 60.0
+)
+
+// MarkLooks are the mark's art variants, one drawn a contract; MarkNames
+// their server names (FS-4EC7Z §E R17).
+var (
+	MarkLooks = []string{"hooded_duelist", "debtor_knight"}
+	MarkNames = map[string]string{
+		"hooded_duelist": "The Hooded Duelist",
+		"debtor_knight":  "The Debtor Knight",
+	}
+)
+
+// The contract (FS-4EC7Z §E R19, R21): the taker's heading to the mark is
+// refreshed every ContractHeadingInterval seconds, and a settled contract
+// multiplies the taker's outgoing damage by ContractSettledDamageFactor.
+const (
+	ContractHeadingInterval     = 5.0
+	ContractSettledDamageFactor = 1.15
+)

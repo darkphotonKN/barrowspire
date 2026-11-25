@@ -94,6 +94,12 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		if pc, hasPlan := entity.GetComponent(ecs.ComponentTypeTomePlan); hasPlan {
 			plan = pc.(*components.TomePlanComponent)
 		}
+		// the delve's contract, on the run-level entity (FS-4EC7Z §F R25)
+		if cc, hasContract := entity.GetComponent(ecs.ComponentTypeContract); hasContract {
+			contract := cc.(*components.ContractComponent)
+			backendState.Contract = &types.ContractState{State: string(contract.State), Heading: contract.Heading}
+			backendState.ContractTaker = contract.Taker
+		}
 
 		// --- A sealed floor's seals, pieces and barriers (FS-5FZ4J §I R46) ---
 		if sc, isSeal := entity.GetComponent(ecs.ComponentTypeSeal); isSeal {
@@ -335,6 +341,8 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			}
 			// and their Blessing (FS-5FZ4J §I R47)
 			playerState.Blessed = systems.Blessed(entity)
+			// and their Contract Settled (FS-4EC7Z §F R25)
+			playerState.ContractSettled = systems.ContractSettled(entity)
 
 			// a body in play is a centre of interest (FS-KE075 §G R37)
 			if systems.InPlay(entity) {
@@ -795,6 +803,10 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 			TreeAbilityCooldown: backendState.TreeAbilityCooldowns[playerID],
 			PassiveState:        backendState.Passives[playerID],
 		}
+		// the contract is its taker's alone (FS-4EC7Z §F R25)
+		if backendState.Contract != nil && backendState.ContractTaker == playerID {
+			currentPlayer.Contract = backendState.Contract
+		}
 	}
 
 	state := &types.ClientGameState{
@@ -936,6 +948,8 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Cages = fresh(state.Cages)
 	state.EncounterKeys = fresh(state.EncounterKeys)
 	state.CageKeyCarried = false
+	state.Contract = nil
+	state.ContractTaker = uuid.Nil
 }
 
 // fresh is an empty list on new memory as large as the old, or nil if it was

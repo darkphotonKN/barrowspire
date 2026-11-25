@@ -159,6 +159,9 @@ type CurrentPlayerState struct {
 	// absent when they have none. Nobody else is told it. FS-MQYEX
 	// §Requirements 18–19.
 	TimedOpen *TimedOpenState `json:"timed_open,omitempty"`
+	// Contract is the delve's contract when the recipient took it; absent
+	// for everyone else and when none was taken. FS-4EC7Z §F R25.
+	Contract *ContractState `json:"contract,omitempty"`
 	// AbilityCooldown is the recipient's right-click ability's cooldown, a
 	// mercenary's the whiff lockout; absent only for a delver with no ability.
 	// Never on another player. FS-Q18Q3 §A R1–R2, R6.
@@ -262,6 +265,10 @@ type BackendGameState struct {
 	Cages          []*CageState
 	EncounterKeys  []*EncounterKeyState
 	CageKeyCarried bool
+	// Contract is the delve's contract and ContractTaker the member who took
+	// it, told to them alone; nil before one is taken (FS-4EC7Z §F R25)
+	Contract      *ContractState
+	ContractTaker uuid.UUID
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.

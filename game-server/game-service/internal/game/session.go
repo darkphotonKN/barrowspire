@@ -1010,6 +1010,13 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.recordEliminations(fallen)
 	}
 
+	// the delve's contract: settled by its mark's kill, lost with its floor
+	// or its taker, else its mark's call, flight and heal and the taker's
+	// heading, after the tick's hits and deaths (FS-4EC7Z §E R18-R21)
+	if s.worldType == types.WorldTypeRun {
+		s.advanceContract(deltaTime, kills)
+	}
+
 	// rules
 	s.applyEndRule(deltaTime, entities)
 

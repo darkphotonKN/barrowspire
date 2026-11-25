@@ -1255,8 +1255,13 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 	// the ward's mana share comes off first; only the HP share can be a
 	// killing blow (FS-E1ZDG Edge States)
 	toHealth := arcaneWard(target, damage)
+	before := health.CurrentHealth
 	if !lastStand(target, health, toHealth) {
 		health.CurrentHealth = max(health.CurrentHealth-toHealth, 0)
+	}
+	// poison blades poison with a hit that cost health (FS-4EC7Z §E R18)
+	if attack.PoisonSeconds > 0 && health.CurrentHealth < before {
+		Poison(target, attack.PoisonSeconds)
 	}
 
 	// the hit that took it to 0 is the killing blow; every later one stops at
@@ -1379,6 +1384,8 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 	attack.Pierce += spec.pierce
 	attack.PiercesAll = shadowRangersShadowShot(attacker, spec.kind)
 	attack.Coefficient *= bloodPricedDamage(attacker)
+	// Contract Settled raises the taker's own hits (FS-4EC7Z §E R19)
+	attack.Coefficient *= settledDamage(attacker)
 
 	return attack
 }
@@ -1400,6 +1407,9 @@ func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapsh
 		attack.AttackerMemberID = pc.(*components.PlayerComponent).MemberID
 	}
 	attack.AllyOf = hirerOf(attacker)
+	if mc, ok := attacker.GetComponent(ecs.ComponentTypeEnemy); ok {
+		attack.PoisonSeconds = mc.(*components.MonsterComponent).PoisonSeconds
+	}
 	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCombat); ok {
 		attack.Power = float64(cc.(*components.CombatComponent).Attack)
 	}

@@ -93,6 +93,9 @@ type AttackSnapshot struct {
 	// uuid.Nil for any other: it lands only on a monster, and a kill it makes
 	// is the hirer's for loot alone. FS-4EC7Z §C R9, R11.
 	AllyOf uuid.UUID
+	// PoisonSeconds, above 0, is how long a hit of this that costs health
+	// poisons its target for: a monster's poison blades (FS-4EC7Z §E R18).
+	PoisonSeconds float64
 }
 
 // AttackIntent is a request a handler validated and the CombatSystem has yet to
