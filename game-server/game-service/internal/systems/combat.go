@@ -228,9 +228,10 @@ const (
 	// and starts afresh, so no cast ever carries anyone more than dashDistance.
 	dashDistance = 180.0
 	dashSpeed    = 450.0 // px per second
-	// dashEpsilon absorbs the float drift of summing steps, so a charge whose
-	// last step lands it on its distance is over on that tick.
-	dashEpsilon = 1e-6
+	// carryEpsilon absorbs the float drift of summing steps, so a carry (a
+	// charge or a roll) whose last step lands it on its distance is over on
+	// that tick.
+	carryEpsilon = 1e-6
 
 	// The parry stance: open for parryWindow from its opening tick; one that
 	// closes having negated nothing locks the stance out for parryLockout from
@@ -766,7 +767,7 @@ func (s *CombatSystem) blink(caster *ecs.Entity, at *components.TransformCompone
 	}
 	share := min(dist, spec.reach) / dist
 	x, y := s.Ground.Reach(entities, at.X, at.Y, at.X+dx*share, at.Y+dy*share)
-	if math.Hypot(x-at.X, y-at.Y) <= dashEpsilon {
+	if math.Hypot(x-at.X, y-at.Y) <= carryEpsilon {
 		return false
 	}
 	s.EndCharge(caster)
@@ -1046,8 +1047,13 @@ func monsterShot(attacker *ecs.Entity) (projectileSpec, bool) {
 }
 
 // startCharge sets a charge going from where the attacker stands toward the
-// aim: +x when the aim is where they stand. The MovementSystem carries it.
+// aim: +x when the aim is where they stand. The MovementSystem carries it. A
+// rolling body starts none: one carry at a time, as a roll refuses a charge in
+// flight (FS-7P736 §A R6, R8).
 func startCharge(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64) {
+	if Rolling(attacker) {
+		return
+	}
 	dirX, dirY := 1.0, 0.0
 	dx, dy := aimX-at.X, aimY-at.Y
 	if dist := math.Hypot(dx, dy); dist > 0 {
@@ -1074,7 +1080,7 @@ func (s *CombatSystem) settleCharge(entity *ecs.Entity) {
 		entity.RemoveComponent(ecs.ComponentTypeDash)
 		return
 	}
-	if dc.(*components.DashComponent).Remaining <= dashEpsilon {
+	if dc.(*components.DashComponent).Remaining <= carryEpsilon {
 		s.EndCharge(entity)
 	}
 }
