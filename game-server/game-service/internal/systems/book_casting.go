@@ -152,7 +152,8 @@ func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent
 	if s.ownGate(cast) != nil {
 		return
 	}
-	s.resolve(cast, book)
+	// an entry point's refusal ends the cast with nothing, as a failed gate does
+	_ = s.resolve(cast, book)
 }
 
 // castTarget is the entity a cast named, nil when it named none or it is gone.

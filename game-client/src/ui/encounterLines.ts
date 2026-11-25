@@ -29,8 +29,19 @@ export function encounterLineText(key: string): string | null {
   return Object.hasOwn(LINES, key) ? LINES[key] : null;
 }
 
-/** The encounters' refusal reasons (§F R27), each the HUD notice's, never a lore line. */
-export const ENCOUNTER_REPLY_REASONS = ["cage_locked", "too_many_allies", "not_willing", "already_hired", "contract_taken"] as const;
+/**
+ * The encounters' refusal reasons (§F R27), each the HUD notice's, never a lore line; the contract's
+ * top floor and no-room refusals are Take a Contract's (FS-X2CMM §J R57), on the cast's reply.
+ */
+export const ENCOUNTER_REPLY_REASONS = [
+  "cage_locked",
+  "too_many_allies",
+  "not_willing",
+  "already_hired",
+  "contract_taken",
+  "contract_no_stairs",
+  "contract_no_room",
+] as const;
 
 /**
  * Each refusal's words: the cage's is §G R31's; the rest are the client's own, for the reasons the
@@ -42,6 +53,8 @@ const REPLY_LINES: Readonly<Record<(typeof ENCOUNTER_REPLY_REASONS)[number], str
   not_willing: "They will not follow you.",
   already_hired: "Already sworn to another.",
   contract_taken: "A contract is already taken this delve.",
+  contract_no_stairs: "No contract is taken on the top floor.",
+  contract_no_room: "No mark can be set on this floor.",
 };
 
 /** The HUD notice an encounter refusal raises, or `null` for any other reply. */

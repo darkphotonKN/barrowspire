@@ -1290,6 +1290,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.connectionStatusUnsubscribe = undefined;
     socketManager.off("exit_door_unlocked");
     socketManager.off("interact");
+    socketManager.off("cast_skill");
     socketManager.off("equip");
     socketManager.off("end_game");
     socketManager.off("settlement");
@@ -4157,6 +4158,14 @@ export class BarrowspireScene extends Phaser.Scene {
       if (line) this.sayLore(line);
       // a sealed floor's replies, as HUD notices in their tones (FS-5FZ4J §I R49, §J R53)
       const notice = this.sealReplies.notice(payload, this.lastGameState?.seal) ?? encounterReplyNotice(payload);
+      if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    });
+
+    // A page refused by the world it works on (Take a Contract, FS-X2CMM §J R57) is answered on the
+    // cast's reply with its reason, in the client's words (FS-4EC7Z §F R27); a page the book itself
+    // refuses is answered with nothing (FS-X2CMM §A R4)
+    socketManager.on("cast_skill", (reply: InteractReply) => {
+      const notice = encounterReplyNotice(reply);
       if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     });
 

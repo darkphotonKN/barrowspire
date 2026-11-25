@@ -49,16 +49,37 @@ func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 	assert.Equal(t, map[string]any{"remaining": float64(45), "total": float64(90)}, page["cooldown"])
 }
 
-// A class with no offered page still has a book in a run, its page list
-// empty, never null. FS-X2CMM §F R32; Edge States "A mercenary's book in wave 1".
+// A book with no offered page is still a book in a run, its page list empty,
+// never null. FS-X2CMM §F R32; Edge States "A mercenary's book in wave 1".
 func TestFormatStateToClientState_ABookWithNoOfferedPageIsEmpty(t *testing.T) {
+	em := ecs.NewEntityManager()
+	merc := uuid.New()
+	seatBook(seatMerc(em, merc, 2, components.ParryComponent{}))
+
+	me := ownFrame(t, em, types.WorldTypeRun, merc)
+	assert.Equal(t, map[string]any{"pages": []any{}}, me["book"])
+}
+
+// The Ledger is written from wave 2: Take a Contract is offered, so a
+// mercenary's book is sent with it, costing nothing and unspent.
+// FS-X2CMM §F R32, §J R57, §K R59. I-X2CMM-21.
+func TestFormatStateToClientState_TheLedgerSendsTakeAContract(t *testing.T) {
 	em := ecs.NewEntityManager()
 	merc := uuid.New()
 	seatBook(seatMerc(em, merc, 2, components.ParryComponent{}),
 		components.PagePickTheLock, components.PageStrikeADeal, components.PageTakeAContract)
 
 	me := ownFrame(t, em, types.WorldTypeRun, merc)
-	assert.Equal(t, map[string]any{"pages": []any{}}, me["book"])
+	var contract map[string]any
+	for _, p := range me["book"].(map[string]any)["pages"].([]any) {
+		if page := p.(map[string]any); page["id"] == string(components.PageTakeAContract) {
+			contract = page
+		}
+	}
+	require.NotNil(t, contract, "take_a_contract on the book")
+	assert.Equal(t, float64(15), contract["unlock_level"])
+	assert.Equal(t, float64(0), contract["cost"])
+	assert.Equal(t, false, contract["spent"])
 }
 
 // The book is absent in the hub and the fields. FS-X2CMM §F R32.

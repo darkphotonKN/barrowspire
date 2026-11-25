@@ -41,7 +41,8 @@ func (s *Session) castSkill(playerID uuid.UUID, cast types.PlayerCastSkillPayloa
 }
 
 // castPage judges and resolves a book ability. Escape runs only, as the
-// potion is; a refusal of any kind sends nothing back. FS-X2CMM §A R4.
+// potion is; a refusal sends nothing back, but for an entry point's, whose
+// reason is told (refusePage). FS-X2CMM §A R4.
 func (s *Session) castPage(playerID uuid.UUID, page systems.BookPage, cast types.PlayerCastSkillPayload) {
 	if s.worldType != types.WorldTypeRun {
 		slog.Debug("Refusing a book ability outside a run", "session_id", s.ID, "player_id", playerID, "page", page.ID, "world_type", s.worldType)
@@ -70,6 +71,7 @@ func (s *Session) castPage(playerID uuid.UUID, page systems.BookPage, cast types
 	})
 	if err != nil {
 		slog.Debug("Refusing a book ability", "session_id", s.ID, "player_id", playerID, "page", page.ID, "reason", err)
+		s.refusePage(playerID, err)
 	}
 }
 
@@ -141,6 +143,7 @@ func (s *Session) bookGround() systems.BookGround {
 		Walkable:  s.pageGround,
 		Ground:    s.movementSystem,
 		EndCharge: s.combatSystem.EndCharge,
+		Contracts: s,
 	}
 	// a nil grid is no footing, never a footing holding a nil grid
 	if s.navGrid != nil {

@@ -71,6 +71,9 @@ type BookGround struct {
 	// afloat ends over a pit is set down (book_levitate.go). Nil off a
 	// dungeon floor: no one is set down.
 	Footing Footing
+	// Contracts is the world's contract entry point, Take a Contract's effect
+	// (book_contract.go). Nil takes none.
+	Contracts ContractTaker
 }
 
 // pageResolver has a page's effect, once its cast is accepted and paid for.
@@ -91,10 +94,22 @@ var pageResolvers = map[components.PageID]pageResolver{
 	components.PageWitchlight:   resolveWitchlight,
 }
 
+// pageEntry has the effect of a page that is one of the world's entry
+// points, which may refuse: it is had before the page is paid for, and a
+// refusal refuses the cast with nothing spent.
+type pageEntry func(cast BookCast) error
+
+// pageEntries holds the effect of every offered page that is an entry point,
+// by page id, as pageResolvers holds the rest.
+var pageEntries = map[components.PageID]pageEntry{
+	components.PageTakeAContract: enterTakeAContract,
+}
+
 // PageOffered is whether the server resolves the page: castable and sent.
 func PageOffered(id components.PageID) bool {
-	_, ok := pageResolvers[id]
-	return ok
+	_, resolved := pageResolvers[id]
+	_, entered := pageEntries[id]
+	return resolved || entered
 }
 
 // bookGate refuses a cast that does not meet one condition of R4.
@@ -154,8 +169,7 @@ func (s *BookSystem) Cast(cast BookCast) error {
 		return nil
 	}
 
-	s.resolve(cast, book)
-	return nil
+	return s.resolve(cast, book)
 }
 
 // ownGate judges the cast against its page's own condition, if it has one.
@@ -166,9 +180,16 @@ func (s *BookSystem) ownGate(cast BookCast) error {
 	return nil
 }
 
-// resolve pays for an accepted page and has its effect. Nothing here reads
-// attack speed, starts the pin or touches a charge (R6–R7).
-func (s *BookSystem) resolve(cast BookCast, book *components.BookComponent) {
+// resolve pays for an accepted page and has its effect; a page that is an
+// entry point has it first, and the world's refusal comes back with nothing
+// paid. Nothing here reads attack speed, starts the pin or touches a charge
+// (R6–R7).
+func (s *BookSystem) resolve(cast BookCast, book *components.BookComponent) error {
+	if enter, ok := pageEntries[cast.Page.ID]; ok {
+		if err := enter(cast); err != nil {
+			return err
+		}
+	}
 	if pool, ok := bookPool(cast.Caster); ok && cast.Page.Cost > 0 {
 		pool.Current -= cast.Page.Cost
 	}
@@ -178,7 +199,10 @@ func (s *BookSystem) resolve(cast BookCast, book *components.BookComponent) {
 	case cast.Page.Cooldown > 0:
 		book.Cooldowns[cast.Page.ID] = components.BookCooldown{Remaining: cast.Page.Cooldown, Total: cast.Page.Cooldown}
 	}
-	pageResolvers[cast.Page.ID](s.em, cast)
+	if resolver, ok := pageResolvers[cast.Page.ID]; ok {
+		resolver(s.em, cast)
+	}
+	return nil
 }
 
 // Update is the books' tick, in simulation time: the floor's book effects

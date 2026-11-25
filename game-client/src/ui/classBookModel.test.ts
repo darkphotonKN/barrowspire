@@ -51,6 +51,12 @@ describe("the class book's view (FS-X2CMM R37)", () => {
     expect(bookView({ class: "warrior" }).empty).toBe("No scar is yet written.");
     expect(bookView(undefined).title).toBe("Book");
   });
+
+  it("should read a Ledger with Take a Contract sent as written: one page, no empty line (FS-X2CMM §J R57)", () => {
+    const ledger = bookView({ class: "mercenary", level: 15, book: { pages: [page("take_a_contract", 15, 0, { limit: "delve" as const })] } });
+    expect(ledger.pages.map((p) => [p.id, p.state])).toEqual([["take_a_contract", "ready"]]);
+    expect(ledger.empty).toBeUndefined();
+  });
 });
 
 describe("a page's state (FS-X2CMM R38)", () => {
