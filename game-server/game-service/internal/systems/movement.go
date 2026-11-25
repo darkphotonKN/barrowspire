@@ -13,10 +13,11 @@ import (
 // map and the hub are different sizes, and a run's floors may differ too (the
 // session hands its floor's size over every tick, FS-KE075 §B R11).
 //
-// A charge in flight (DashComponent) carries its body in place of the walk: a
-// step a tick at the charge's speed, through bodies but never through a wall, a
-// closed door or the world's edge. Anything that stops a step short stops the
-// charge; the CombatSystem then ends it.
+// A move in flight (a charge's DashComponent, a roll's RollComponent) carries
+// its body in place of the walk: a step a tick at its own speed, through bodies
+// but never through a wall, a closed door, a stone block or the world's edge.
+// Anything that stops a step short stops it; the CombatSystem then ends a
+// charge, the RollSystem a roll (FS-7P736 §A R4).
 //
 // PlayersPassThrough belongs to the world, like its bounds: in the hub and the
 // fields two player bodies never push each other; in a run they do. Every other
@@ -106,7 +107,7 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 
 		transformComp, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
 		_, hasVelocity := entity.GetComponent(ecs.ComponentTypeVelocity)
-		hasCharge := entity.HasComponent(ecs.ComponentTypeDash)
+		hasCharge := carried(entity)
 
 		_, hasWallComp := entity.GetComponent(ecs.ComponentTypeWall)
 		if hasWallComp {
@@ -161,13 +162,12 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 		cellX := int(transform.X / hashCellSize)
 		cellY := int(transform.Y / hashCellSize)
 
-		// a charge in flight replaces the walk: held input neither adds to it
-		// nor steers it, so it can never stack into a faster move
+		// a charge or a roll in flight replaces the walk: held input neither
+		// adds to it nor steers it, so it can never stack into a faster move,
+		// and nothing that scales a walk scales it (FS-7P736 §A R3)
 		var dx, dy, chargeStep float64
-		dashComp, charging := targetEntity.GetComponent(ecs.ComponentTypeDash)
-		var charge *components.DashComponent
+		charge, charging := carryOf(targetEntity)
 		if charging {
-			charge = dashComp.(*components.DashComponent)
 			chargeStep = min(charge.Speed*deltaTime, max(charge.Remaining, 0))
 			dx, dy = charge.DirX*chargeStep, charge.DirY*chargeStep
 		} else {
@@ -234,7 +234,8 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 		if newY > mapHeight-constants.PlayerRadius {
 			newY = mapHeight - constants.PlayerRadius
 		}
-		// a charge stopped short by a wall, a closed door or the edge is over
+		// a charge or a roll stopped short by a wall, a closed door, a block
+		// or the edge is over
 		if charging {
 			if math.Hypot(newX-(transform.X+dx), newY-(transform.Y+dy)) > dashEpsilon {
 				charge.Remaining = 0

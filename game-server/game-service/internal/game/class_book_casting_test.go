@@ -116,6 +116,11 @@ func TestCastSkill_WitchlightBrokenWithNothingSpent(t *testing.T) {
 			tick(s)
 			require.NoError(t, s.handleMove(mage, 0, 0))
 		}},
+		// FS-7P736 §A R10; AC 5
+		{"a roll", func(t *testing.T, s *Session, mage uuid.UUID, _ *ecs.Entity) {
+			s.queueIntent(func() { s.roll(mage, 0, 1) })
+			tick(s)
+		}},
 		{"a monster hit that costs health", func(t *testing.T, s *Session, _ uuid.UUID, body *ecs.Entity) {
 			before := currentHealth(body)
 			strikeFrom(t, s, body)

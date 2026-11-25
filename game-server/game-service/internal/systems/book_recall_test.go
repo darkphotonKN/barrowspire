@@ -157,7 +157,7 @@ func TestBookSystemCast_RecallBreaksWhatTheTeammateWasDoing(t *testing.T) {
 	mage, cast := recallCast(em)
 	mate := recallBody(em, "warrior", 9, 1000, 500, components.PageHardened)
 	mate.AddComponent(&components.TimedOpenComponent{TargetID: uuid.New(), Duration: 1.5, FromX: 1000, FromY: 500, HealthBeforeCombat: 100})
-	mate.AddComponent(&components.DashComponent{DirX: 1, Speed: 600, Remaining: 100})
+	mate.AddComponent(&components.DashComponent{Carry: components.Carry{DirX: 1, Speed: 600, Remaining: 100}})
 	var endedAt [2]float64
 	ground := recallGround
 	ground.EndCharge = func(e *ecs.Entity) {
@@ -181,6 +181,28 @@ func TestBookSystemCast_RecallBreaksWhatTheTeammateWasDoing(t *testing.T) {
 	assert.Nil(t, bookOfT(t, mate).Casting, "the cast broke")
 	assert.Equal(t, [2]float64{1000, 500}, endedAt, "the charge ended where they stood")
 	assert.False(t, mate.HasComponent(ecs.ComponentTypeDash))
+}
+
+// A recalled teammate mid-roll lands beside the caster with the roll over: it
+// never runs on from where they were set down. FS-7P736 §A R4.
+func TestBookSystemCast_RecallEndsATeammatesRoll(t *testing.T) {
+	em := ecs.NewEntityManager()
+	mage, cast := recallCast(em)
+	mate := recallBody(em, "warrior", 9, 1000, 500, components.PageHardened)
+	books := NewBookSystem(em)
+	require.NoError(t, books.Cast(cast))
+
+	for range recallTicks {
+		if !Rolling(mate) {
+			mate.RemoveComponent(ecs.ComponentTypeRollCooldown)
+			require.True(t, StartRoll(mate, 1, 0))
+		}
+		books.Update(castTick, em.GetAllEntities(), BookGround{})
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, recallGround, PageEntryPoints{})
+	}
+
+	require.InDelta(t, 2*constants.PlayerRadius, apart(t, mage, mate), 1e-6, "recalled")
+	assert.False(t, Rolling(mate), "the roll is over")
 }
 
 // A teammate never lands in a wall, past one, or on another body: with a wall

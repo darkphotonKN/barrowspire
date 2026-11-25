@@ -680,6 +680,17 @@ func (s *Session) manageClientMessages() {
 					}
 				})
 
+			case constants.ActionRoll:
+				// A roll, judged on the tick and never answered. FS-7P736 §A R1–R2, R6.
+				parsedPayload, err := msg.Message.ParsePayload()
+				if err != nil {
+					slog.Debug("Failed to parse roll payload", "player_id", playerID, "error", err)
+					continue
+				}
+				rollPayload := parsedPayload.(types.PlayerRollPayload)
+
+				s.queueIntent(func() { s.roll(playerID, rollPayload.DirX, rollPayload.DirY) })
+
 			case constants.ActionUseItem:
 				// A bag item used on the tick (an antidote). FS-9JV5K §D R17.
 				parsedPayload, err := msg.Message.ParsePayload()
@@ -887,6 +898,12 @@ func (s *Session) advanceTick(deltaTime float64) ([]*ecs.Entity, error) {
 // It must not be called holding s.mu: the client actions it applies first, and
 // the end rule, take the lock themselves.
 func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
+	// a roll the last tick spent or stopped is over, and the roll cooldowns
+	// count the tick down, before this tick's requests are judged: a delver
+	// is untouchable on a roll's last tick, and may act, be hit and walk on
+	// the next (FS-7P736 §A R5, R7–R8)
+	systems.NewRollSystem().Update(deltaTime, entities)
+
 	// what clients asked for since the last tick lands before anything reads
 	// the world, on this goroutine alone
 	s.applyIntents()
@@ -2058,6 +2075,10 @@ func interactRefusedQuietly(err error) bool {
 * handles player interacting with x object with target entity id.
 **/
 func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) error {
+	// a rolling delver's interact is dropped, unanswered (FS-7P736 §A R8)
+	if s.rolling(playerID) {
+		return nil
+	}
 	return s.interactFrom(playerID, targetEntityID, nil)
 }
 
@@ -2962,6 +2983,10 @@ func (s *Session) handleAttack(playerID uuid.UUID, enemyEntityID uuid.UUID) erro
 	if err := s.combatAllowed(); err != nil {
 		return err
 	}
+	// a rolling delver's attack is dropped, unanswered (FS-7P736 §A R8)
+	if s.rolling(playerID) {
+		return nil
+	}
 	if err := s.delverInPlay(playerID); err != nil {
 		return fmt.Errorf("attack: %w", err)
 	}
@@ -3849,8 +3874,10 @@ func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 		if ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent); ok {
 			ic.(*components.AttackIntentComponent).Pending = nil
 		}
-		// nor a charge running on from the old floor
+		// nor a charge or a roll running on from the old floor; the roll's
+		// cooldown runs on (FS-7P736 §A R11)
 		entity.RemoveComponent(ecs.ComponentTypeDash)
+		entity.RemoveComponent(ecs.ComponentTypeRoll)
 
 		if player.Escape {
 			continue

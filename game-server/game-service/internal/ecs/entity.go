@@ -74,6 +74,9 @@ const (
 
 	ComponentTypeBurningTrail ComponentType = "BurningTrail"
 	ComponentTypeDash         ComponentType = "Dash"
+	// a roll in flight, and the wait before the next (FS-7P736 §A)
+	ComponentTypeRoll         ComponentType = "Roll"
+	ComponentTypeRollCooldown ComponentType = "RollCooldown"
 	ComponentTypeParry        ComponentType = "Parry"
 	ComponentTypePotion       ComponentType = "Potion"
 	ComponentTypeTimedOpen    ComponentType = "TimedOpen"

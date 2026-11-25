@@ -48,6 +48,7 @@ func NewStateSerializer(em *ecs.EntityManager, parties PartyMembership) *StateSe
 				TimedOpens:           make(map[uuid.UUID]*types.TimedOpenState),
 				AbilityCooldowns:     make(map[uuid.UUID]*types.CooldownState),
 				TreeAbilityCooldowns: make(map[uuid.UUID]*types.CooldownState),
+				RollCooldowns:        make(map[uuid.UUID]*types.CooldownState),
 				Passives:             make(map[uuid.UUID]*types.PassiveState),
 				InPlay:               make(map[uuid.UUID]types.Position),
 				Items:                make([]uuid.UUID, 0),
@@ -298,6 +299,10 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			if cooldown := cooldownState(systems.TreeAbilityCooldown(entity)); cooldown != nil {
 				backendState.TreeAbilityCooldowns[player.MemberID] = cooldown
 			}
+			// the roll cooldown only while it runs (FS-7P736 §A R12)
+			if cooldown, running := systems.RollCooldown(entity); running {
+				backendState.RollCooldowns[player.MemberID] = &types.CooldownState{Remaining: cooldown.Remaining, Total: cooldown.Total}
+			}
 
 			level, experience := 1, int64(0)
 			if statsC, ok := entity.GetComponent(ecs.ComponentTypeStats); ok {
@@ -344,6 +349,10 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			playerState.Blessed = systems.Blessed(entity)
 			// and their Contract Settled (FS-4EC7Z §F R25)
 			playerState.ContractSettled = systems.ContractSettled(entity)
+			// and their roll in flight, public (FS-7P736 §A R12)
+			if dirX, dirY, rolling := systems.RollHeading(entity); rolling {
+				playerState.Roll = &types.RollState{DirX: dirX, DirY: dirY}
+			}
 
 			// a body in play is a centre of interest (FS-KE075 §G R37)
 			if systems.InPlay(entity) {
@@ -811,6 +820,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 			TimedOpen:           backendState.TimedOpens[playerID],
 			AbilityCooldown:     backendState.AbilityCooldowns[playerID],
 			TreeAbilityCooldown: backendState.TreeAbilityCooldowns[playerID],
+			RollCooldown:        backendState.RollCooldowns[playerID],
 			PassiveState:        backendState.Passives[playerID],
 		}
 		// the contract is its taker's alone (FS-4EC7Z §F R25)
@@ -917,6 +927,9 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	}
 	for k := range state.TreeAbilityCooldowns {
 		delete(state.TreeAbilityCooldowns, k)
+	}
+	for k := range state.RollCooldowns {
+		delete(state.RollCooldowns, k)
 	}
 	for k := range state.Passives {
 		delete(state.Passives, k)

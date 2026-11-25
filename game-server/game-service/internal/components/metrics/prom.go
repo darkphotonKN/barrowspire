@@ -114,6 +114,7 @@ var knownActions = map[string]struct{}{
 	string(constants.ActionUnequip):            {},
 	string(constants.ActionCastSkill):          {},
 	string(constants.ActionBuy):                {},
+	string(constants.ActionRoll):               {},
 	string(constants.ActionChat):               {},
 	string(constants.ActionChatNotice):         {},
 	string(constants.ActionPartyInvite):        {},

@@ -297,6 +297,11 @@ func TestTimedOpen_MovingCancels(t *testing.T) {
 			// the cast lands on one tick and carries the body from the next
 			ticks(s, 2)
 		},
+		// FS-7P736 §A R10; AC 5
+		"a roll": func(t *testing.T, s *Session, player uuid.UUID) {
+			s.queueIntent(func() { s.roll(player, 0, 1) })
+			tick(s)
+		},
 	}
 	for name, move := range moves {
 		t.Run(name, func(t *testing.T) {
