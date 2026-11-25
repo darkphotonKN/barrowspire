@@ -50,7 +50,7 @@ const tickLength = 1.0 / float64(constants.GameFrameRate)
 
 // A Bone Archer with a delver in range draws for 0.6 s, standing still and
 // reporting `attack`, then one bone arrow exists where it stands, flying at
-// 420 px/s at where its target stood on the release tick, not where they
+// its paced 420 px/s (FS-TAGWA) at where its target stood on the release tick, not where they
 // stood when the draw began. FS-B4SG9 §A R6–R9.
 func TestBoneArcher_DrawsThenLoosesOneArrowAtWhereItsTargetStands(t *testing.T) {
 	s := unstartedRun(t)
@@ -88,8 +88,8 @@ func TestBoneArcher_DrawsThenLoosesOneArrowAtWhereItsTargetStands(t *testing.T) 
 
 	dist := math.Hypot(aimX-1000, aimY-1000)
 	v := velocityOf(arrow)
-	assert.InDelta(t, 420*(aimX-1000)/dist, v.VX, 1e-9)
-	assert.InDelta(t, 420*(aimY-1000)/dist, v.VY, 1e-9)
+	assert.InDelta(t, 420*constants.PaceScale*(aimX-1000)/dist, v.VX, 1e-9)
+	assert.InDelta(t, 420*constants.PaceScale*(aimY-1000)/dist, v.VY, 1e-9)
 	assert.InDelta(t, (aimX-1000)/dist, m.FacingX, 1e-9, "the draw pointed where the arrow went")
 	assert.InDelta(t, (aimY-1000)/dist, m.FacingY, 1e-9)
 }
@@ -121,9 +121,11 @@ func TestBoneArcher_ArrowsLeaveTwoSecondsApart(t *testing.T) {
 	}
 }
 
-// From 320 px, a delver who strafes across the line at 200 px/s as the arrow
-// leaves is not hit; one who runs straight away at 200 px/s is. FS-B4SG9 §A
-// R8, user stories 5–6.
+// From 320 px, a delver who strafes across the line at the base walk as the
+// arrow leaves is not hit; one who runs straight away at it is. FS-B4SG9 §A
+// R8, user stories 5–6. Paced (FS-TAGWA R3), the walk and the arrow both
+// halve, so the strafe still covers 152 px while the arrow flies 320, and the
+// arrow's flight takes twice the time to be spent.
 func TestBoneArcher_StrafingDodgesTheArrowRunningStraightAwayDoesNot(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -136,15 +138,19 @@ func TestBoneArcher_StrafingDodgesTheArrowRunningStraightAwayDoesNot(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := unstartedRun(t)
-			boneArcher(s, 1000, 1000)
+			archer := boneArcher(s, 1000, 1000)
 			_, delver := placeDelver(t, s, "warrior", 1320, 1000)
 
 			tickUntilLoosed(t, s, nil)
+			// felled as it looses, so the one arrow is all that flies over the
+			// paced flight's longer window; it still lands (R9)
+			hc, _ := archer.GetComponent(ecs.ComponentTypeHealth)
+			hc.(*components.HealthComponent).CurrentHealth = 0
 			full := currentHealth(delver)
 			v := velocityOf(delver)
-			require.Equal(t, 200.0, v.Speed)
+			require.Equal(t, 200*constants.PaceScale, v.Speed)
 			v.VX, v.VY = tt.vx, tt.vy
-			tickFor(s, 3)
+			tickFor(s, 3/constants.PaceScale)
 
 			require.Empty(t, boneArrows(s), "the arrow is spent")
 			if tt.hit {
@@ -156,24 +162,26 @@ func TestBoneArcher_StrafingDodgesTheArrowRunningStraightAwayDoesNot(t *testing.
 	}
 }
 
-// A delver at the base 200 px/s who runs straight away from 320 px from the
+// A delver at the base walk who runs straight away from 320 px from the
 // first tick of the draw is still hit: the draw's clock runs a tick over
-// 0.6 s, so they are 453 px away when the arrow leaves, and an arrow of radius
-// 8 closing at 220 px/s on a body of radius 20 reaches them after 826 px of
-// flight. FS-B4SG9 §A R2, R8, user story 6.
+// 0.6 s, so at full pace they are 453 px away when the arrow leaves, and an
+// arrow of radius 8 closing at 220 px/s on a body of radius 20 reaches them
+// after 826 px of flight. FS-B4SG9 §A R2, R8, user story 6. At the pace's 0.5
+// (FS-TAGWA) the draw does not shorten: they are 387 px away, the arrow
+// closes at 110 px/s and reaches them after about 685 px, inside its 850.
 func TestBoneArcher_RunningStraightAwayFromTheStartOfTheDrawDoesNotDodge(t *testing.T) {
 	s := unstartedRun(t)
 	boneArcher(s, 1000, 1000)
 	_, delver := placeDelver(t, s, "warrior", 1320, 1000)
 	v := velocityOf(delver)
-	require.Equal(t, 200.0, v.Speed)
+	require.Equal(t, 200*constants.PaceScale, v.Speed)
 	v.VX, v.VY = 1, 0
 
 	_, n := tickUntilLoosed(t, s, nil)
 	require.Equal(t, 20, n, "the draw lasted 19 ticks, 0.633 s")
-	require.InDelta(t, 1000+320+20*200*tickLength, transformOf(t, delver).X, 1e-6, "they ran through all of it")
+	require.InDelta(t, 1000+320+20*constants.DefaultSpeed*tickLength, transformOf(t, delver).X, 1e-6, "they ran through all of it")
 	full := currentHealth(delver)
-	tickFor(s, 3)
+	tickFor(s, 3/constants.PaceScale)
 
 	require.Empty(t, boneArrows(s), "the arrow is spent")
 	assert.Less(t, currentHealth(delver), full)
@@ -208,7 +216,7 @@ func TestBoneArcher_KilledWithAnArrowInTheAir_TheArrowStillLands(t *testing.T) {
 
 	hc, _ := archer.GetComponent(ecs.ComponentTypeHealth)
 	hc.(*components.HealthComponent).CurrentHealth = 0
-	tickFor(s, 1)
+	tickFor(s, 1/constants.PaceScale)
 
 	assert.Less(t, currentHealth(delver), full)
 	assert.Empty(t, boneArrows(s))

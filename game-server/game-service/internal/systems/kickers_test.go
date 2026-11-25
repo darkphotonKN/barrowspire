@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -414,7 +415,7 @@ func TestKicker_WideVolley(t *testing.T) {
 func TestKicker_Searing(t *testing.T) {
 	t.Run("the stat, each rank", func(t *testing.T) {
 		for rank := 0; rank <= 3; rank++ {
-			for kind, base := range map[components.AttackKind]float64{components.AttackFireball: 350, components.AttackTripleFireball: 360} {
+			for kind, base := range map[components.AttackKind]float64{components.AttackFireball: 350 * constants.PaceScale, components.AttackTripleFireball: 360 * constants.PaceScale} {
 				w := newKickerWorld("mage", passivetree.Ranks{"mage.t5b": rank}, neverCrit)
 				w.fired(kind)
 				_, speeds := shotAngles(w.em)

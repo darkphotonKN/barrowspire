@@ -302,3 +302,5 @@ agents to build both in this run.
 ## Change: Shadow look only for the Shadow Ranger → FS-1J1CB
 
 ## Change: Heavy Shot for every archer but the Shadow Ranger → FS-E1ZDG
+
+## Change: Exploration pace → FS-TAGWA

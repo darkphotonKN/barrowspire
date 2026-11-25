@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/serializer"
@@ -106,7 +107,7 @@ func TestBoarSheet_StartingValues(t *testing.T) {
 
 	assert.Equal(t, monsterSheet{
 		Name: "Boar", HP: 36, Damage: 5,
-		AttackInterval: 1.2, WindUp: 0.45, AttackRange: 45, MoveSpeed: 140,
+		AttackInterval: 1.2, WindUp: 0.45, AttackRange: 45, MoveSpeed: 140 * constants.PaceScale,
 		Defense: 2, MagicResistance: 0,
 		AggroRadius: 200, LeashRadius: 450,
 	}, sheet)

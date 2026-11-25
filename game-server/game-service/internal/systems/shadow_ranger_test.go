@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -76,12 +77,12 @@ func TestShadowRanger_ShadowShotPiercesEveryMonsterInItsLine(t *testing.T) {
 	behindWall := ghoul(w.em, 660, 100, 1000)
 	shot := w.shadowShot(t)
 
-	w.flyWith(PlayerDamageOff, 90) // 390 px: past the fifth at x = 400
+	w.flyWith(PlayerDamageOff, paced(90)) // 390 px: past the fifth at x = 400
 	shots := projectileEntities(w.em)
 	require.Len(t, shots, 1, "it flies on past the fifth")
 	assert.Len(t, projectileOf(shots[0]).HitEntityIDs, 5)
 
-	w.flyWith(PlayerDamageOff, 200)
+	w.flyWith(PlayerDamageOff, paced(200))
 	assert.Empty(t, projectileEntities(w.em))
 	assert.Equal(t, 1000, health(behindWall), "the wall stops it")
 
@@ -100,7 +101,7 @@ func TestShadowRanger_ShadowShotStopsAtItsMaxFlight(t *testing.T) {
 	beyond := ghoul(w.em, 800, 100, 1000)
 	w.shadowShot(t)
 
-	w.flyWith(PlayerDamageOff, 300)
+	w.flyWith(PlayerDamageOff, paced(300))
 
 	assert.Empty(t, projectileEntities(w.em))
 	assert.Less(t, health(within), 1000)
@@ -235,3 +236,7 @@ func TestShadowRanger_OnlyTheShadowRangersShadowShotPierces(t *testing.T) {
 		})
 	}
 }
+
+// paced is n ticks of flight at full pace stretched to the pace (FS-TAGWA): a
+// shot covers the same ground in n / PaceScale ticks.
+func paced(n int) int { return int(float64(n)/constants.PaceScale + 0.5) }

@@ -1,8 +1,6 @@
 export const GAME_CONFIG = {
   WIDTH: 900,
   HEIGHT: 600,
-  PLAYER_SPEED: 200,
-  BULLET_SPEED: 400,
   // Treasure Hunt specific
   MAP_WIDTH: 3000,
   MAP_HEIGHT: 3000,

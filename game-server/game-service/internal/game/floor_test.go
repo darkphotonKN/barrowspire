@@ -634,7 +634,7 @@ func TestRegenerateFloor_OldWallsNoLongerBlock(t *testing.T) {
 	// one delver of two is down; the carrier is still in play, so the co-op rule
 	// keeps the run going. Buffered so a wrong end signal cannot hang the test
 	s.endSessionCh = make(chan bool, 1)
-	tick(s)
+	ticks(s, ticksToWalk(10))
 
 	moved := transformOf(t, carrier).X - x
 	assert.Greater(t, moved, 5.0, "an old-floor wall still blocked the delver")

@@ -3596,3 +3596,5 @@ Merged into main `697260c6` (FS-1J1CB § Change: Looks v2) on `integrate/class-s
 
 The Berserker's idle and walk axe floors stay held at Looks v2's own measures (0.018 and 0.0017 H,
 axe.test.mjs `AXE_FLOORS`): Looks v2's carry, left as it is (the coordinator).
+
+## Change: Exploration pace → FS-TAGWA

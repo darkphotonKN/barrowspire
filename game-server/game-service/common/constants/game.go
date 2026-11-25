@@ -318,8 +318,19 @@ const (
 // Server Memory Constants
 const MaxMsgChanBuffer int = 30
 
+// PaceScale is THE pace knob (the charter's PACE_SCALE): every travel speed in
+// game-service is its full-pace figure times this, written where the speed is
+// defined. Walks, monster and ally pace, the roster's step gain and every
+// projectile follow it; wind-ups, intervals, cooldowns and reach never do.
+// Turning it re-paces the client too: rewrite the pace golden it reads with
+// `go test ./internal/systems -run TestPaceGolden -update`. FS-TAGWA R1-R9,
+// ADR-0099.
+const PaceScale float64 = 0.5
+
 // Game Defaults
-const DefaultSpeed float64 = 200
+//
+// DefaultSpeed is a delver's walk in every world, px/s: 200 at full pace.
+const DefaultSpeed float64 = 200 * PaceScale
 const DefaultInteractableRange float64 = 60
 const DefautMaxSessionPlayers = 2
 
@@ -354,8 +365,9 @@ const HubOccupancyCap int = 40
 // FS-NCC9J §Requirements 18, 20 (amended).
 const HubTravelMargin int = 4
 
-// How fast a resident ambles, and how long they stand once they arrive.
-const NPCWanderSpeed float64 = 60
+// How fast a resident ambles (60 px/s at full pace), and how long they stand
+// once they arrive.
+const NPCWanderSpeed float64 = 60 * PaceScale
 const NPCPauseSeconds float64 = 1.6
 
 // How long a resident may fail to close on its destination before giving up on

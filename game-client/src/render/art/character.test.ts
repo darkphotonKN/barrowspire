@@ -773,7 +773,7 @@ describe("CharacterAnimator", () => {
 
 // FS-1J1CB R21-R22: a body re-dressed in its spec look, on its own sprite, between two frames.
 describe("CharacterAnimator.wearing", () => {
-  const STRIDE = 200; // world px/s, the server's DefaultSpeed
+  const STRIDE = 200; // world px/s, a brisk walk (the server's full-pace DefaultSpeed)
   const art = () => new ArtLibrary(manifest(), quiet);
 
   /** Walks `anim` east on `sprite` for `ms`, showing each frame as a scene does. */

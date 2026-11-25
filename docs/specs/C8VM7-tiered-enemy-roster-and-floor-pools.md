@@ -595,3 +595,5 @@ Each **(charter default)** above, so the owner can revise it in play:
 9. Stand-ins on `creatures`, the dark warrior's as the ghoul (R44).
 
 ## Change: Sealed floors → FS-5FZ4J
+
+## Change: Exploration pace → FS-TAGWA

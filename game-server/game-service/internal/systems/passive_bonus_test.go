@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -116,7 +117,7 @@ func TestPassiveBonus_TreeSpeeds_SumWithGearInsideTheCaps(t *testing.T) {
 		quickDraw, fleetFoot int
 		wornAttack, wornMove int
 		wantAttack, wantMove int
-		wantSpeed            float64
+		wantSpeed            float64 // at full pace
 	}{
 		{"tree alone", 2, 2, 0, 0, 8, 6, 212},
 		{"tree and gear sum", 2, 3, 10, 10, 18, 19, 238},
@@ -134,7 +135,7 @@ func TestPassiveBonus_TreeSpeeds_SumWithGearInsideTheCaps(t *testing.T) {
 			assert.Equal(t, tt.wantAttack, gearOf(archer).AttackSpeedPercent)
 			assert.Equal(t, tt.wantMove, gearOf(archer).MoveSpeedPercent)
 			vc, _ := archer.GetComponent(ecs.ComponentTypeVelocity)
-			assert.InDelta(t, tt.wantSpeed, vc.(*components.VelocityComponent).Speed, 1e-9)
+			assert.InDelta(t, tt.wantSpeed*constants.PaceScale, vc.(*components.VelocityComponent).Speed, 1e-9)
 		})
 	}
 }
@@ -288,7 +289,7 @@ func TestPassiveBonus_HasteAndFleetness_SumWithGearInsideTheCaps(t *testing.T) {
 		name                 string
 		wornAttack, wornMove int
 		wantAttack, wantMove int
-		wantSpeed            float64
+		wantSpeed            float64 // at full pace
 	}{
 		{"tree alone", 0, 0, 4, 4, 208},
 		{"tree and gear sum", 10, 10, 14, 14, 228},
@@ -306,7 +307,7 @@ func TestPassiveBonus_HasteAndFleetness_SumWithGearInsideTheCaps(t *testing.T) {
 			assert.Equal(t, tt.wantAttack, gearOf(warrior).AttackSpeedPercent)
 			assert.Equal(t, tt.wantMove, gearOf(warrior).MoveSpeedPercent)
 			vc, _ := warrior.GetComponent(ecs.ComponentTypeVelocity)
-			assert.InDelta(t, tt.wantSpeed, vc.(*components.VelocityComponent).Speed, 1e-9)
+			assert.InDelta(t, tt.wantSpeed*constants.PaceScale, vc.(*components.VelocityComponent).Speed, 1e-9)
 		})
 	}
 }

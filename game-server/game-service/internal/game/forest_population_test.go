@@ -27,13 +27,13 @@ func TestForestSheets_StartingValues(t *testing.T) {
 	}{
 		{components.MonsterArchetypeZombie, monsterSheet{
 			Name: "Zombie", HP: 70, Damage: 9,
-			AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100,
+			AttackInterval: 1.4, WindUp: 0.5, AttackRange: 45, MoveSpeed: 100 * constants.PaceScale,
 			Defense: 5, MagicResistance: 1,
 			AggroRadius: 240, LeashRadius: 480,
 		}, 15},
 		{components.MonsterArchetypeGhost, monsterSheet{
 			Name: "Ghost", HP: 30, Damage: 8,
-			AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175,
+			AttackInterval: 0.9, WindUp: 0.3, AttackRange: 50, MoveSpeed: 175 * constants.PaceScale,
 			Defense: 0, MagicResistance: 8,
 			AggroRadius: 300, LeashRadius: 560,
 		}, 20},
@@ -45,7 +45,7 @@ func TestForestSheets_StartingValues(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, tt.sheet, sheet)
 			assert.Equal(t, tt.killXP, killExperienceBase[tt.archetype])
-			assert.Less(t, sheet.MoveSpeed, 200.0, "slower than a player")
+			assert.Less(t, sheet.MoveSpeed, constants.DefaultSpeed, "slower than a player")
 		})
 	}
 

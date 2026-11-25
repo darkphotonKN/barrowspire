@@ -294,7 +294,7 @@ func TestAllies_FollowOnTheTick_StayBehindOnAClimb(t *testing.T) {
 	}
 	cell := s.dungeon.layout.CellSize
 	hirer := transformOf(t, bodies[0])
-	keepHirerStill(t, s, bodies[0], seconds(60))
+	keepHirerStill(t, s, bodies[0], seconds(60/constants.PaceScale))
 	for _, a := range allies {
 		at := transformOf(t, a)
 		assert.LessOrEqual(t, math.Hypot(at.X-hirer.X, at.Y-hirer.Y), AllyFollowFarCells*cell+constants.PlayerRadius, "it came to its hirer")

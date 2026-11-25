@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -35,7 +36,7 @@ func TestRun_GhoulInAggro_ClosesOnTheDelver(t *testing.T) {
 	_, delver := placeDelver(t, s, "warrior", 500, 500)
 	g := ghoulAt(s, 700, 500)
 
-	tickFor(s, 1.5)
+	tickFor(s, 1.5/constants.PaceScale)
 
 	d, m := transformOf(t, delver), transformOf(t, g)
 	assert.Less(t, math.Hypot(m.X-d.X, m.Y-d.Y), 60.0)

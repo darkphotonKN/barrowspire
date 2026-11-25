@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { BASE_MOVE_SPEED } from "@/data/pace";
 import type { Facing8 } from "@/render/iso/facing";
 import {
   CHARACTER_ANIMATIONS,
@@ -137,7 +138,13 @@ describe("selectAnimation", () => {
   it("should scale the walk to the speed drawn, so feet do not slide", () => {
     const got = selectAnimation(state({ velocity: { vx: 200, vy: 0 } }));
     expect(got.timeScale).toBeCloseTo(200 / WALK_PACE);
-    expect(got.timeScale).toBeCloseTo(2.7, 1);
+  });
+
+  it("should walk at the paced base walk with its feet planted: the stride covers the speed drawn (FS-TAGWA R11)", () => {
+    const got = selectAnimation(state({ velocity: { vx: BASE_MOVE_SPEED, vy: 0 } }));
+    expect(got.animation).toBe("walk");
+    expect(got.timeScale * WALK_PACE).toBeCloseTo(BASE_MOVE_SPEED);
+    expect(got.timeScale).toBeLessThan(MAX_WALK_SCALE);
   });
 
   it("should scale a diagonal walk by its full speed, not one axis", () => {
@@ -290,12 +297,10 @@ describe("selectAnimation: the run, and the standing attack on the move (FS-JS7C
     expect(selectAnimation(state(fields))).toMatchObject({ animation: "attack", timeScale: 1 });
   });
 
-  it("should play the run at the speed drawn over RUN_PACE: about 1x at the server's 200 px/s (R4)", () => {
-    const got = selectAnimation(state({ velocity: { vx: 0, vy: -200 }, ...full }));
+  it("should play the run at the speed drawn over RUN_PACE, its feet planted at the paced base walk (R4, FS-TAGWA R11)", () => {
+    const got = selectAnimation(state({ velocity: { vx: 0, vy: -BASE_MOVE_SPEED }, ...full }));
     expect(got.animation).toBe("run");
-    expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
-    expect(got.timeScale).toBeGreaterThanOrEqual(0.9);
-    expect(got.timeScale).toBeLessThanOrEqual(1.1);
+    expect(got.timeScale * RUN_PACE).toBeCloseTo(BASE_MOVE_SPEED);
   });
 
   it("should play the run at speed / RUN_PACE on a sheet with run and no attack on the move (the archer's, R80)", () => {

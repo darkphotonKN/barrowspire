@@ -519,3 +519,5 @@ The stubs in FS-F6F88, FS-KE075, FS-C8VM7 and FS-SRA9J point here. This FS carri
 FS-F6F88 loses floor 1's escape door and switch (§A R6); FS-KE075's stairs placement, extra
 connections and room roles change (§A R2–R7); FS-C8VM7's dungeon counts drop to 15–25 and gain
 ambushes (§B R14, §D R21); FS-SRA9J's minimap omits unopened hidden rooms (§F R37, §J R56).
+
+## Change: Exploration pace → FS-TAGWA
