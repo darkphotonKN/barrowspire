@@ -58,3 +58,34 @@ export function drinkRefusal(reply: UseItemReply): string | null {
   const words = reply.message?.trim();
   return words ? `${words[0].toUpperCase()}${words.slice(1)}${/[.!?]$/.test(words) ? "" : "."}` : USE_REFUSALS.not_usable;
 }
+
+/**
+ * The one drink in flight (FS-9JV5K §F R24): the antidote whose `use_item` is sent and not yet
+ * answered, so Drink pressed again sends nothing. It ends as a state's bag drops that antidote (it was
+ * drunk) or a refusal answers (it is still there, to be drunk again).
+ */
+export class DrinkInFlight {
+  private pending?: string;
+
+  /** Drink pressed on `item`: whether to send its `use_item`; never while one is still to be answered. */
+  press(item: string): boolean {
+    if (this.pending !== undefined) return false;
+    this.pending = item;
+    return true;
+  }
+
+  /** A state's bag: the drink is over once its antidote is gone from it. */
+  see(bag: readonly Pick<ItemState, "entity_id">[]): void {
+    if (this.pending !== undefined && !bag.some((item) => item.entity_id === this.pending)) this.pending = undefined;
+  }
+
+  /** The drink refused: nothing was spent, so it may be pressed again. */
+  refused(): void {
+    this.pending = undefined;
+  }
+
+  /** A new run: nothing in flight. */
+  reset(): void {
+    this.pending = undefined;
+  }
+}

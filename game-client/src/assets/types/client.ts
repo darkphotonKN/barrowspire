@@ -208,6 +208,7 @@ export type ClientAction =
   | { action: "attack"; payload: AttackPayload; seq: number }
   | { action: "pickup"; payload: PickupPayload; seq: number }
   | { action: "use_item"; payload: UseItemPayload; seq: number }
+  | { action: "buy"; payload: BuyPayload; seq: number }
   | { action: "chat"; payload: ChatPayload; seq: number }
   | { action: "cast_skill"; payload: CastSkillPayload; seq: number };
 

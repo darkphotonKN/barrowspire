@@ -53,7 +53,7 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { healthPotionCount, drinkRefusal, type UseItemReply } from "@/ui/potions";
+import { DrinkInFlight, healthPotionCount, drinkRefusal, type UseItemReply } from "@/ui/potions";
 import { WaresTrade, type BuyReply, type ShownWares } from "@/ui/wares";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
@@ -353,6 +353,8 @@ interface MerchantParts {
   name: Phaser.GameObjects.Text;
   anim?: CharacterAnimator;
   lantern?: LightSource;
+  /** Where he stands: his lantern hangs over it. */
+  at?: Point;
 }
 /**
  * A teammate's overhead health bar (FS-8AY7S req 27): the monsters' bar, health only, sat
@@ -845,6 +847,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private readonly merchantParts = new Map<Phaser.GameObjects.Sprite, MerchantParts>();
   /** The wares panel's run side (FS-9JV5K §F R22, R23): whose panel is open and the purchase in flight. */
   private readonly trade = new WaresTrade();
+  /** The gear's Drink in flight (FS-9JV5K §F R24): a second press on it sends nothing until it is answered. */
+  private readonly drinking = new DrinkInFlight();
   /** The wares last handed to the UI scene, as a key: a state that changes nothing hands nothing. */
   private shownWaresKey = "";
   /** The scene's on-demand art (ADR-0071), what the merchant's group is fetched through. */
@@ -1237,6 +1241,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.merchant.forget();
     this.merchantParts.clear();
     this.trade.reset();
+    this.drinking.reset();
     this.shownWaresKey = "";
     this.onDemand = undefined;
     this.sealLights.clear();
@@ -3540,7 +3545,7 @@ export class BarrowspireScene extends Phaser.Scene {
         // the wares panel's Buy: one purchase at a time, Paying… until its reply (FS-9JV5K §F R23)
         buy: (ware) => this.buyWare(ware),
         // the gear overlay's Drink on a bagged antidote (FS-9JV5K §F R24)
-        drink: (item) => socketManager.sendMessage(ActionType.UseItem, { item_entity_id: item }),
+        drink: (item) => this.drink(item),
         // a dread lore line started on the UI scene: this camera trembles, as it did under the run's own
         // lines (FS-XWHZP R10; FS-TQZ5J § Change: Merge with main, 2026-11-14)
         tremor: (durationMs, intensity) => tremble(this.cameras.main, durationMs, intensity),
@@ -4003,6 +4008,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // a late frame from the floor the party has climbed from (FS-KE075 §H.41)
     if (held && state.floor !== undefined && state.floor < held.floor) return;
     this.lastGameState = state;
+    // a drunk antidote gone from the bag: the drink is answered (FS-9JV5K §F R24)
+    this.drinking.see(state.current_player?.inventory ?? []);
 
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
     // the new one, so nothing waits on the transition, which only plays over the result.
@@ -5143,19 +5150,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.merchantParts.set(body, parts);
     this.dressMerchant(body, look);
     this.standMerchant(body, at);
-    const dungeon = this.dungeon;
-    if (dungeon) {
-      const feet = worldToScreen(at.x, at.y);
-      parts.lantern = merchantLantern(feet, tileHash(Math.round(at.x), Math.round(at.y), 31));
-      dungeon.lights.add("merchant_lantern", parts.lantern, at);
-      this.lightNearChunks();
-    }
     body.once("destroy", () => {
       name.destroy();
-      if (parts.lantern) {
-        this.dungeon?.lights.remove([parts.lantern]);
-        this.lightNearChunks();
-      }
+      this.unlightMerchant(parts);
       this.merchantParts.delete(body);
     });
     return body;
@@ -5174,12 +5171,40 @@ export class BarrowspireScene extends Phaser.Scene {
     if (look.tint === undefined) body.clearTint();
     else body.setTint(look.tint);
     this.placeMerchantName(body);
+    this.lightMerchant(body);
   }
 
-  /** His body stood at `at`, his nameplate over his head. */
+  /** His body stood at `at`, his nameplate over his head, his lantern over him. */
   private standMerchant(body: Phaser.GameObjects.Sprite, at: Point): void {
+    const parts = this.merchantParts.get(body);
+    if (parts) parts.at = at;
     standAt(body, at, 1);
     this.placeMerchantName(body);
+    this.lightMerchant(body);
+  }
+
+  /**
+   * His lantern among the floor's fixed lights, hung at its lit glass by his sheet's crown (R21), hung
+   * again as his own sheet lands or he is stood elsewhere.
+   */
+  private lightMerchant(body: Phaser.GameObjects.Sprite): void {
+    const parts = this.merchantParts.get(body);
+    const dungeon = this.dungeon;
+    if (!parts?.at || !dungeon) return;
+    this.unlightMerchant(parts);
+    const { at } = parts;
+    // the crown is screen px at his drawn size (manifest `crown`), and he stands at size 1
+    parts.lantern = merchantLantern(worldToScreen(at.x, at.y), tileHash(Math.round(at.x), Math.round(at.y), 31), parts.anim?.crown);
+    dungeon.lights.add("merchant_lantern", parts.lantern, at);
+    this.lightNearChunks();
+  }
+
+  /** His lantern off the floor's lights, if it is lit. */
+  private unlightMerchant(parts: MerchantParts): void {
+    if (!parts.lantern) return;
+    this.dungeon?.lights.remove([parts.lantern]);
+    parts.lantern = undefined;
+    this.lightNearChunks();
   }
 
   /** His nameplate over his sheet's head (its `crown`), as a player's name stands. */
@@ -5201,18 +5226,15 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Each broadcast while the panel is open: it follows his stock and a purchase in flight, and shuts,
-   * silently and with nothing sent, once he is gone, the player walked out of reach or left the delve
-   * (R22: closing it changes nothing on the server).
+   * Each broadcast while the panel is open: what is in reach and in play handed to the trade, whose
+   * {@link WaresTrade.follow} says whether the panel shows again or shuts (R22).
    */
   private keepWares(state: ClientGameState): void {
-    const open = this.trade.openFor;
-    if (!open) return;
-    const merchant = this.merchant.current();
     const me = this.playerPos;
-    const near = me ? this.merchant.reach(me) : null;
-    if (!merchant || merchant.entity_id !== open || !near || resolved(state.current_player)) return this.closeWares();
-    this.showWares(this.trade.view(merchant));
+    const inReach = me !== undefined && this.merchant.reach(me) !== null;
+    const next = this.trade.follow(this.merchant.current(), inReach, !resolved(state.current_player));
+    if (next?.kind === "show") this.showWares(next.wares);
+    else if (next?.kind === "close") this.closeWares();
   }
 
   /** The panel's data to the UI scene, only when it changed. */
@@ -5252,6 +5274,11 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.trade.openFor && merchant) this.showWares(this.trade.view(merchant));
   }
 
+  /** The gear's Drink on a bag antidote (R24): its `use_item`, unless one is still to be answered. */
+  private drink(item: string): void {
+    if (this.drinking.press(item)) socketManager.sendMessage(ActionType.UseItem, { item_entity_id: item });
+  }
+
   /**
    * The `use_item` reply (R24): a refusal in its words, nothing spent; a success plays the potion
    * shimmer in the poison tint's colours and clears nothing else (the state's `poisoned_for` going
@@ -5259,7 +5286,10 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private itemUsed(reply: UseItemReply): void {
     const refusal = drinkRefusal(reply ?? { success: false });
-    if (refusal) return this.showNotification(refusal, NOTICE_BACKING.refused);
+    if (refusal) {
+      this.drinking.refused();
+      return this.showNotification(refusal, NOTICE_BACKING.refused);
+    }
     this.shimmers?.playGranted(ANTIDOTE_LOOK, this.playerAnim?.crown);
   }
 

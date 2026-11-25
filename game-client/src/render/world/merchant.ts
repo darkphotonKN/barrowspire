@@ -14,7 +14,7 @@
 import type { Point } from "@/render/iso/projection";
 import { npcArtFor } from "@/render/art/sceneArt";
 import type { LightSource } from "@/render/lighting/lighting";
-import { BARROW_HEX } from "@/utils/theme";
+import { palette } from "@/utils/canvasPalette";
 import type { MerchantState } from "@/types/gameState";
 import { INTERACT_RANGE } from "./stairs";
 
@@ -42,21 +42,28 @@ export interface MerchantArt {
   fetch(group: string, landed: () => void): void;
 }
 
-/** How far above his feet, in screen px, his lantern hangs: at his hand, where the baked lantern is. */
-const LANTERN_LIFT = 34;
+/**
+ * How far under his sheet's crown (its head's top, screen px) the lantern's lit glass hangs: the pack's
+ * arm hangs it out beside his head, its glass a little below his hat's crown (the bake's `peddlerPack`).
+ */
+const GLASS_UNDER_CROWN = 6;
+/** Where his sheet measures no crown (the stand-in without one): about a head's height up, at his hat. */
+const UNMEASURED_LIFT = 80;
 
 /**
- * His soft lantern light (R21), at `feet` (screen px): a small warm pool at his hand, brighter at its
- * heart than an interactable's glint and far softer than a sconce, flickering as a flame does. Amber,
- * because the player can act on him (guideline "Gameplay accent"). One of the floor's fixed lights,
- * kind `merchant_lantern`.
+ * His soft lantern light (R21), at `feet` (screen px): a small warm pool at the lit glass, hung beside
+ * his head, so lifted from `crown` (his sheet's head height over its anchor, screen px, as drawn),
+ * brighter at its heart than an interactable's glint and far softer than a sconce, flickering as a
+ * flame does. Amber, because the player can act on him (guideline "Gameplay accent"). One of the
+ * floor's fixed lights, kind `merchant_lantern`.
  */
-export function merchantLantern(feet: Point, seed: number): LightSource {
+export function merchantLantern(feet: Point, seed: number, crown?: number): LightSource {
+  const lift = crown === undefined ? UNMEASURED_LIFT : crown - GLASS_UNDER_CROWN;
   return {
     x: feet.x,
-    y: feet.y - LANTERN_LIFT,
+    y: feet.y - lift,
     radius: 120,
-    color: BARROW_HEX.amberBright,
+    color: palette.merchantLantern,
     intensity: 0.42,
     flicker: 0.18,
     seed,

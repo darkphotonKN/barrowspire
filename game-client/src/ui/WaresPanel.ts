@@ -2,7 +2,8 @@
  * The wares panel, drawn on the UI scene (FS-9JV5K §F R22, R23): every window's frame and title, a row
  * per ware (its icon, its name, its price in gold and count left, and Buy, or "Paying…" while it is
  * paid for, dimmed when it cannot be pressed), the last refusal's line in plain words, and the purse
- * line under them (the FS-7TGZ3 read, its split shown under it, since held gold cannot be spent).
+ * line under them as the gear overlay's (the FS-7TGZ3 read): the coin icon and the total, with
+ * "Available X · Held in bids Y" in a tip while the pointer is over it.
  *
  * It draws only what the run hands it (`ShownWares`) and the purse its reader hands it; its Buy and its
  * × are the wiring's (`UiWaresSlot`). Over the gear overlay (1100) and the party panel (1110), under the
@@ -10,12 +11,14 @@
  */
 
 import type Phaser from "phaser";
+import { iconSheet } from "@/render/art/itemIcons";
 import { artSprite } from "@/render/art/phaser";
 import type { ArtLibrary } from "@/render/art/library";
 import { crispen, viewport } from "@/render/viewport";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 import { PURSE_UNKNOWN, type PurseView } from "./purse";
+import { buildPurseTip, type PurseTip } from "./purseTip";
 import { uiGround } from "./uiGround";
 import type { WaresPiece, WaresWiring } from "./uiSceneWares";
 import type { ShownWares } from "./wares";
@@ -24,19 +27,26 @@ import { waresLayout } from "./waresLayout";
 /** Over the gear overlay (1100) and the party panel (1110), under the controls panel (1200). */
 export const WARES_PANEL_DEPTH = 1150;
 
-const text = (size: number, colour: number) => ({ fontFamily: CANVAS_FONT.body, fontSize: `${size}px`, color: toCss(colour) });
+/** The purse line's split, as every UI tip stands (UI depth 2200). */
+const PURSE_TIP_DEPTH = 2200;
+/** The gap between the coin and the total, and between the line and its tip over it. */
+const PURSE_ICON_GAP = 6;
+const PURSE_TIP_GAP = 4;
 
-/** The purse line's words: the total in gold, or the dash when it could not be read. */
-export function purseLine(view: PurseView): string {
-  return view.amount === PURSE_UNKNOWN ? `Purse: ${PURSE_UNKNOWN}` : `Purse: ${view.amount} gold`;
-}
+const text = (size: number, colour: number) => ({ fontFamily: CANVAS_FONT.body, fontSize: `${size}px`, color: toCss(colour) });
 
 export class WaresPanel implements WaresPiece {
   private shown?: ShownWares;
   private purse: PurseView = { amount: PURSE_UNKNOWN };
   /** What is drawn now, taken down whole on a redraw. */
   private parts: { destroy(): void }[] = [];
-  private purseTexts?: { line: Phaser.GameObjects.Text; tip: Phaser.GameObjects.Text };
+  /** The purse line's total, set again as the reader answers. */
+  private purseAmount?: Phaser.GameObjects.Text;
+  /** Where the purse line stands, while drawn: its tip stands over it. */
+  private purseAt?: { x: number; y: number };
+  /** Whether the pointer is over the purse line, and the split shown there meanwhile. */
+  private overPurse = false;
+  private purseTip?: PurseTip;
   /** The data last drawn, as a key: a show that changes nothing draws nothing. */
   private drawnKey = "";
 
@@ -56,9 +66,9 @@ export class WaresPanel implements WaresPiece {
 
   setPurse(view: PurseView): void {
     this.purse = { ...view };
-    if (!this.purseTexts) return;
-    this.purseTexts.line.setText(purseLine(view));
-    this.purseTexts.tip.setText(view.tip ?? "");
+    this.purseAmount?.setText(view.amount);
+    // the pointer over the line: the new split, or none with the dash
+    if (this.overPurse) this.showPurseTip();
   }
 
   relayout(): void {
@@ -120,10 +130,7 @@ export class WaresPanel implements WaresPiece {
       line.setOrigin(0.5);
       words.push(line);
     }
-    const purse = keep(fixed(scene.add.text(layout.purse.x, layout.purse.y, purseLine(this.purse), text(12, palette.waresPrice))));
-    const tip = keep(fixed(scene.add.text(layout.purse.x, layout.purse.y + 18, this.purse.tip ?? "", text(10, palette.hudFaint))));
-    this.purseTexts = { line: purse, tip };
-    words.push(purse, tip);
+    words.push(this.purseLine(layout.purse, fixed, keep));
 
     const close = frame.close;
     keep(
@@ -138,9 +145,59 @@ export class WaresPanel implements WaresPiece {
     crispen(words);
   }
 
+  /**
+   * The purse line in `r`, as the gear overlay's: the coin icon, the total beside it, and a hover over
+   * the line that shows the split in a tip (FS-7TGZ3 R3, R5). Returns the total, to crispen.
+   */
+  private purseLine(
+    r: { x: number; y: number; width: number; height: number },
+    fixed: <T extends Phaser.GameObjects.GameObject & { setDepth(d: number): T; setScrollFactor(f: number): T }>(o: T) => T,
+    keep: <T extends { destroy(): void }>(o: T) => T,
+  ): Phaser.GameObjects.Text {
+    const scene = this.scene;
+    const coin = keep(fixed(artSprite(scene, this.art(), r.x + r.height / 2, r.y + r.height / 2, iconSheet("coins"))));
+    coin.setOrigin(0.5).setScale(r.height / (Math.max(coin.width, coin.height) || 1));
+    const amount = keep(fixed(scene.add.text(r.x + r.height + PURSE_ICON_GAP, r.y + r.height / 2, this.purse.amount, text(12, palette.hudText))));
+    amount.setOrigin(0, 0.5);
+    this.purseAmount = amount;
+    this.purseAt = { x: r.x, y: r.y };
+    keep(
+      fixed(scene.add.zone(r.x, r.y, r.width, r.height))
+        .setOrigin(0, 0)
+        .setInteractive()
+        .on("pointerover", () => {
+          this.overPurse = true;
+          this.showPurseTip();
+        })
+        .on("pointerout", () => {
+          this.overPurse = false;
+          this.hidePurseTip();
+        }),
+    );
+    return amount;
+  }
+
+  /** The split over the purse line; none while the purse is not read (the dash has no tip). */
+  private showPurseTip(): void {
+    this.hidePurseTip();
+    const at = this.purseAt;
+    if (!at || this.purse.tip === undefined) return;
+    const tip = buildPurseTip(this.scene, this.purse.tip);
+    tip.container.setPosition(at.x, at.y - tip.height - PURSE_TIP_GAP).setDepth(PURSE_TIP_DEPTH).setScrollFactor(0);
+    this.purseTip = tip;
+  }
+
+  private hidePurseTip(): void {
+    this.purseTip?.container.destroy();
+    this.purseTip = undefined;
+  }
+
   private takeDown(): void {
+    this.hidePurseTip();
+    this.overPurse = false;
     for (const part of this.parts) part.destroy();
     this.parts = [];
-    this.purseTexts = undefined;
+    this.purseAmount = undefined;
+    this.purseAt = undefined;
   }
 }

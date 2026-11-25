@@ -102,6 +102,7 @@ const typeInChat = (run: object, on = true) => uiSceneOn(run, "run", { row: fals
 const { barShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { GameUiBridge, NO_UI, worldContainer } = await import("@/ui/uiBridge");
 const { ANTIDOTE_LOOK } = await import("@/render/effects/shimmer");
+const { merchantLantern } = await import("@/render/world/merchant");
 
 /**
  * The lore lines the run says through the UI bridge (FS-XWHZP; FS-TQZ5J § Change: Merge with main, the
@@ -12688,6 +12689,15 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(run.dungeon.lights.all.filter((l) => l.kind === "merchant_lantern")).toHaveLength(1);
     });
 
+    it("should hang his lantern's light at the lit glass, lifted from his sheet's crown (R21)", () => {
+      const { run } = merchantStage();
+      const crown = shippedManifest().sheets.npc_merchant.crown!;
+      const [lantern] = run.dungeon.lights.all.filter((l) => l.kind === "merchant_lantern") as unknown as { at: { y: number } }[];
+      const feet = await_iso.worldToScreen(ME.x + 30, ME.y);
+      expect(lantern.at.y).toBe(merchantLantern(feet, 0, crown).y);
+      expect(lantern.at.y).not.toBe(merchantLantern(feet, 0).y);
+    });
+
     it("should draw his stand-in under its wash while his sheet is not in", () => {
       const { stage } = dungeonStage(mine(), { merchant: merchant() }, { without: "npc_merchant" });
       const [body] = dressed(stage.made, "char_mercenary_base/");
@@ -12790,11 +12800,38 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(notified).not.toHaveBeenCalled();
     });
 
+    it("should show an unknown outcome's line on the open panel and have the purse read again (R23, amended 2026-11-25)", () => {
+      const { run, told, answer } = merchantStage();
+      pressE(run, ME);
+      sending();
+      answer({ kind: "buy", ware: "antidote" });
+      run.waresAnswered({ success: false, reason: "outcome_unknown" });
+      expect(told.map((m) => m.kind)).toContain("answered");
+      expect(told.at(-1)!.wares!.line).toBe("Your purse did not answer. Check your gold before you buy again.");
+    });
+
     it("should send use_item for the gear's Drink (R24)", () => {
       const { answer } = merchantStage();
       const sent = sending();
       answer({ kind: "drink", item: "antidote-1" });
       expect(sent.mock.calls).toEqual([[ActionType.UseItem, { item_entity_id: "antidote-1" }]]);
+    });
+
+    it("should send one use_item for Drink pressed twice, and again once the state drops it or a refusal answers (R24)", () => {
+      const { run, answer, next } = merchantStage();
+      const antidote = { entity_id: "antidote-1", item_id: "a", name: "Antidote", quantity: 1, item_type: "consumable" };
+      next(undefined, mine({ inventory: [antidote] }));
+      const sent = sending();
+      answer({ kind: "drink", item: "antidote-1" });
+      next(undefined, mine({ inventory: [antidote] }));
+      answer({ kind: "drink", item: "antidote-1" });
+      expect(sent).toHaveBeenCalledTimes(1);
+      run.itemUsed({ success: false, reason: "not_poisoned" });
+      answer({ kind: "drink", item: "antidote-1" });
+      expect(sent).toHaveBeenCalledTimes(2);
+      next(undefined, mine({ inventory: [] }));
+      answer({ kind: "drink", item: "antidote-2" });
+      expect(sent).toHaveBeenCalledTimes(3);
     });
 
     it("should say You are not poisoned. on that refusal, and play the antidote's shimmer on a success (R24)", () => {

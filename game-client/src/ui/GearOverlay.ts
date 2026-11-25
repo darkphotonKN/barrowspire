@@ -61,7 +61,6 @@ import { itemShine, strokeWellOutline } from "./itemShine";
 import {
   buildItemTip,
   rarityEdge,
-  tipGround,
   topTier,
   type ItemTip,
 } from "./itemTip";
@@ -100,6 +99,7 @@ import {
 } from "./gearOverlayLayout";
 import { viewport } from "@/render/viewport";
 import { PURSE_UNKNOWN, type PurseShelf, type PurseView } from "./purse";
+import { buildPurseTip, type PurseTip } from "./purseTip";
 import { drinksFromBag } from "./potions";
 import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 import { uiGround } from "./uiGround";
@@ -140,6 +140,9 @@ export const GEAR_HINT =
  */
 export const STASH_HINT =
   "Right-click or E: move between bag and stash, or take off  //  Shift: compare  //  I, B or Esc: close";
+/** Over a bag antidote the overlay drinks, the gesture drinks it (FS-9JV5K §F R24). */
+export const DRINK_HINT =
+  "Right-click or E: drink  //  Shift: compare  //  I, B or Esc: close";
 
 /** A worn tip's caption (FS-NV54P R14): "Worn" for a weapon or armour, and which ring for a ring. */
 function wornCaption(slot: EquipmentSlot): string {
@@ -182,9 +185,6 @@ function compareSlots(item: ItemState): EquipmentSlot[] {
   return getItemType(item) === "consumable" ? [] : getValidSlotsForItem(item);
 }
 
-/** The purse tip's padding and text size, as the item tip's body (FS-7TGZ3 R6). */
-const PURSE_TIP_PAD = 10;
-const PURSE_TIP_SIZE = 12;
 /** The gap between the coins icon and the amount. */
 const PURSE_ICON_GAP = 6;
 
@@ -258,6 +258,8 @@ export class GearOverlay implements HudPanel, PurseShelf {
   /** The hover ring, redrawn as the pointer moves. */
   private hoverRing?: Phaser.GameObjects.Graphics;
   private hovered?: Hovered;
+  /** The hint under the bag, naming what the gesture does to what is hovered. */
+  private hint?: Phaser.GameObjects.Text;
   /** The hovered item's tip, then its worn tips while comparing (FS-NV54P R17). */
   private tips: ItemTip[] = [];
   private pointer = { x: -1, y: -1 };
@@ -272,11 +274,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
   /** What the purse line shows: the dash until the wallet has answered (FS-7TGZ3 R10). */
   private purse: PurseView = { amount: PURSE_UNKNOWN };
   /** The purse's tip, while the pointer is over the line (FS-7TGZ3 R5–6). */
-  private purseTip?: {
-    container: Phaser.GameObjects.Container;
-    width: number;
-    height: number;
-  };
+  private purseTip?: PurseTip;
 
   /**
    * `world` is the world the overlay is drawn in; only a run marks unsafe finds (FS-18Z5F R36–37).
@@ -655,7 +653,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     const hint = this.scene.add.text(
       g.innerX + g.innerW / 2,
       g.hintY + 4,
-      this.stash ? STASH_HINT : GEAR_HINT,
+      this.hintFor(this.hovered),
       {
         fontFamily: CANVAS_FONT.body,
         fontSize: "10px",
@@ -665,6 +663,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
       },
     );
     hint.setOrigin(0.5, 0);
+    this.hint = hint;
     children.push(hint);
     children.push(...this.purseLine(g.purse));
     return children;
@@ -674,6 +673,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.hideTip();
     this.hidePurseTip();
     this.hovered = undefined;
+    this.hint = undefined;
     this.stats?.destroy();
     this.stats = undefined;
     this.statsView = undefined;
@@ -923,19 +923,10 @@ export class GearOverlay implements HudPanel, PurseShelf {
   }
 
   /** One line on the item tip's own ground (design-guideline "UI Chrome"). */
-  private buildPurseTip(words: string) {
-    const text = this.scene.add.text(PURSE_TIP_PAD, PURSE_TIP_PAD, words, {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: `${PURSE_TIP_SIZE}px`,
-      color: toCss(palette.hudText),
-      letterSpacing: 1,
-    });
-    const width = Math.round(text.width + PURSE_TIP_PAD * 2);
-    const height = Math.round(text.height + PURSE_TIP_PAD * 2);
-    const bg = tipGround(this.scene, width, height);
-    const container = this.scene.add.container(0, 0, [bg, text]);
-    container.setDepth(TIP_DEPTH).setScrollFactor(0);
-    return { container, width, height };
+  private buildPurseTip(words: string): PurseTip {
+    const tip = buildPurseTip(this.scene, words);
+    tip.container.setDepth(TIP_DEPTH).setScrollFactor(0);
+    return tip;
   }
 
   private hidePurseTip(): void {
@@ -1258,6 +1249,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
       return;
     }
     this.hovered = now;
+    this.hint?.setText(this.hintFor(now));
     this.hideTip();
     this.hoverRing?.clear();
     if (!now) return;
@@ -1304,8 +1296,20 @@ export class GearOverlay implements HudPanel, PurseShelf {
     if (!item) return;
     if (at.kind === "slot") this.unequip(item, at.slot);
     else if (this.stash) this.move(item, at.kind === "bag" ? "stash" : "bag");
-    else if (at.kind === "bag" && this.onDrink && drinksFromBag(item)) this.onDrink(item);
+    else if (at.kind === "bag" && this.drinks(item)) this.onDrink?.(item);
     else if (at.kind === "bag") this.equip(item);
+  }
+
+  /** Whether the gesture on this bag item drinks it: an antidote, where this overlay drinks at all (R24). */
+  private drinks(item: ItemState): boolean {
+    return this.onDrink !== undefined && drinksFromBag(item);
+  }
+
+  /** The hint for what is hovered: the stash's, Drink over a bag antidote it drinks, else wear or take off. */
+  private hintFor(at: Hovered | undefined): string {
+    if (this.stash) return STASH_HINT;
+    const item = at?.kind === "bag" ? this.itemOf(at) : undefined;
+    return item && this.drinks(item) ? DRINK_HINT : GEAR_HINT;
   }
 
   /** To the end of the other side (FS-VPD8Y R41), unless the move is not allowed (R39). */

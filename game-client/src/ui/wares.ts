@@ -105,6 +105,9 @@ const BUY_REFUSALS: Readonly<Record<string, string | null>> = {
   out_of_reach: "Too far away.",
   wallet_unavailable: PURSE_UNREACHED,
   no_wallet: PURSE_UNREACHED,
+  // the wallet's answer was lost and the debit may have applied (§B R10, amended 2026-11-25): never
+  // "nothing was taken"; the purse line reads the wallet again, as on every answer
+  outcome_unknown: "Your purse did not answer. Check your gold before you buy again.",
   tome_held: "You already carry a tome.",
   not_in_play: "You can't trade now.",
   // a purchase is already in flight: its own answer is still to come, so nothing new is said
@@ -116,6 +119,9 @@ export function buyRefusalLine(reason: string | undefined): string | null {
   if (reason !== undefined && Object.hasOwn(BUY_REFUSALS, reason)) return BUY_REFUSALS[reason];
   return "Nothing was bought.";
 }
+
+/** What a broadcast does to the open panel: shows it as it now stands, or closes it. */
+export type WaresFollow = { readonly kind: "show"; readonly wares: ShownWares } | { readonly kind: "close" };
 
 /** What a `buy` answer says beside the panel: a HUD notice, if any. */
 export interface TradeAnswer {
@@ -169,6 +175,19 @@ export class WaresTrade {
       rows: waresRows(merchant.wares, this.inFlight),
       ...(this.line ? { line: this.line } : {}),
     };
+  }
+
+  /**
+   * The open panel against a broadcast (R22): shown again as `merchant` now stands; closed, silently
+   * and with nothing sent, once he is no longer listed (or another merchant is, a new floor's), the
+   * player is out of his reach or out of play. None with the panel shut. A close is the caller's to
+   * make ({@link close}), with its own take-down.
+   */
+  follow(merchant: MerchantState | undefined, inReach: boolean, inPlay: boolean): WaresFollow | null {
+    const open = this.merchantId;
+    if (!open) return null;
+    if (!merchant || merchant.entity_id !== open || !inReach || !inPlay) return { kind: "close" };
+    return { kind: "show", wares: this.view(merchant) };
   }
 
   /**

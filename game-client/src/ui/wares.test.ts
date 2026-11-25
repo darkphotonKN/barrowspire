@@ -53,6 +53,8 @@ describe("buyRefusalLine: a refusal in plain words (FS-9JV5K §F R23)", () => {
     ["out_of_reach", "Too far away."],
     ["wallet_unavailable", "Your purse can't be reached. Nothing was taken."],
     ["no_wallet", "Your purse can't be reached. Nothing was taken."],
+    // FS-9JV5K R10, R23 amended 2026-11-25: the debit may have applied, so nothing is promised
+    ["outcome_unknown", "Your purse did not answer. Check your gold before you buy again."],
     ["tome_held", "You already carry a tome."],
   ])("should say %s as %j", (reason, line) => expect(buyRefusalLine(reason)).toBe(line));
 
@@ -120,6 +122,17 @@ describe("WaresTrade: the run's side of the wares panel (FS-9JV5K §F R22, R23)"
     expect(trade.view(merchant()).line).toBeUndefined();
   });
 
+  it("should say an unknown outcome as a refused notice once the panel is shut, never that nothing was taken", () => {
+    const trade = new WaresTrade();
+    trade.open(merchant());
+    trade.buy("health_potion");
+    trade.close();
+    expect(trade.answer({ success: false, reason: "outcome_unknown" })).toEqual({
+      notice: { text: "Your purse did not answer. Check your gold before you buy again.", tone: "refused" },
+    });
+    expect(trade.paying).toBeUndefined();
+  });
+
   it("should keep a purchase in flight across a close, and say its refusal as a notice once the panel is shut", () => {
     const trade = new WaresTrade();
     trade.open(merchant());
@@ -167,5 +180,31 @@ describe("WaresTrade: the run's side of the wares panel (FS-9JV5K §F R22, R23)"
     trade.reset();
     expect(trade.openFor).toBeUndefined();
     expect(trade.paying).toBeUndefined();
+  });
+
+  describe("follow: the open panel kept to each broadcast (R22)", () => {
+    it("should show his wares as they now stand while he is listed, in reach and the player in play", () => {
+      const trade = new WaresTrade();
+      trade.open(merchant());
+      const sold = merchant({ wares: [{ ware: "health_potion", price: 60, left: 0 }] });
+      const next = trade.follow(sold, true, true);
+      expect(next?.kind).toBe("show");
+      expect(next?.kind === "show" && next.wares.rows.map((r) => r.left)).toEqual(["Sold out"]);
+    });
+
+    it.each([
+      ["he is gone from the state", undefined, true, true],
+      ["another merchant is listed (a new floor's)", merchant({ entity_id: "merchant-2" }), true, true],
+      ["the player walked out of reach", merchant(), false, true],
+      ["the player is out of play", merchant(), true, false],
+    ])("should close when %s, changing nothing on the server", (_why, him, inReach, inPlay) => {
+      const trade = new WaresTrade();
+      trade.open(merchant());
+      expect(trade.follow(him, inReach, inPlay)).toEqual({ kind: "close" });
+    });
+
+    it("should say nothing with the panel shut", () => {
+      expect(new WaresTrade().follow(merchant(), true, true)).toBeNull();
+    });
   });
 });

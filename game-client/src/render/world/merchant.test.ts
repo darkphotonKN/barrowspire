@@ -138,10 +138,31 @@ describe("MerchantSet: the wandering merchant on the canvas (FS-9JV5K §F R21)",
 describe("merchantLantern: his soft lantern light (FS-9JV5K §F R21)", () => {
   it("should be a small warm light at his lantern, softer than a sconce, steady per place", () => {
     const at = { x: 120, y: 80 };
-    const light = merchantLantern(at, 7);
-    expect(light).toMatchObject({ x: 120, color: BARROW_HEX.amberBright, seed: 7 });
+    const light = merchantLantern(at, 7, 89);
+    expect(light).toMatchObject({ x: 120, color: palette.merchantLantern, seed: 7 });
     expect(light.y).toBeLessThan(at.y);
     expect(light.intensity).toBeLessThan(0.6);
-    expect(merchantLantern(at, 7)).toEqual(light);
+    expect(merchantLantern(at, 7, 89)).toEqual(light);
+  });
+
+  it("should take its colour from the palette's merchant lantern, the interactable's amber", () => {
+    expect(palette.merchantLantern).toBe(BARROW_HEX.amberBright);
+  });
+
+  // the lantern hangs out beside his head from the pack's frame: its glass sits just under his sheet's crown
+  it("should hang the light at the lit glass, just under his sheet's crown, wherever the crown is", () => {
+    const feet = { x: 0, y: 500 };
+    for (const crown of [89, 120]) {
+      const lift = feet.y - merchantLantern(feet, 1, crown).y;
+      expect(lift).toBeLessThanOrEqual(crown);
+      expect(lift).toBeGreaterThan(crown * 0.85);
+    }
+  });
+
+  it("should hang it about a head's height up where the sheet measures no crown (the stand-in)", () => {
+    const feet = { x: 0, y: 500 };
+    const lift = feet.y - merchantLantern(feet, 1).y;
+    expect(lift).toBeGreaterThan(70);
+    expect(lift).toBeLessThan(95);
   });
 });

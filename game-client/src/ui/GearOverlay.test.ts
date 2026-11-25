@@ -13,6 +13,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import {
+  DRINK_HINT,
   GEAR_HINT,
   GEAR_OVERLAY_DEPTH,
   GearOverlay,
@@ -189,6 +190,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     const self: Record<string, unknown> = chain({
       destroy: () => void (t.destroyed = true),
       setColor: (c: string) => ((t.color = c), self),
+      setText: (c: string) => ((t.content = c), self),
     });
     return self;
   };
@@ -438,6 +440,29 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
     expect(onDrink.mock.calls).toEqual([[antidote], [antidote]]);
     expect(onEquip).not.toHaveBeenCalled();
     expect(shown()).toContain("1 / 30");
+  });
+
+  // FS-9JV5K §F R24: the screen names the gesture over a drinkable antidote
+  it("should hint Right-click or E: drink over a bagged antidote it drinks, and wear or take off again off it", () => {
+    const antidote = item("antidote-1", { name: "Antidote", item_type: "consumable" });
+    const sword = item("sword-1", { item_type: "weapon" });
+    const { overlay, move, cell, shown } = overlayOnStage([antidote, sword]);
+    overlay.onDrink = vi.fn();
+    move(...cell(0));
+    expect(shown()).toContain(DRINK_HINT);
+    expect(shown()).not.toContain(GEAR_HINT);
+    move(...cell(1));
+    expect(shown()).toContain(GEAR_HINT);
+    expect(shown()).not.toContain(DRINK_HINT);
+    expect(DRINK_HINT).toBe("Right-click or E: drink  //  Shift: compare  //  I, B or Esc: close");
+  });
+
+  it("should keep wear or take off over an antidote where nothing drinks it", () => {
+    const antidote = item("antidote-1", { name: "Antidote", item_type: "consumable" });
+    const { move, cell, shown } = overlayOnStage([antidote]);
+    move(...cell(0));
+    expect(shown()).toContain(GEAR_HINT);
+    expect(shown()).not.toContain(DRINK_HINT);
   });
 
   it("should wear an antidote as any consumable where nothing drinks it (the town's gear)", () => {

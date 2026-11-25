@@ -13,9 +13,11 @@ const ICON = 30;
 const BUY_W = 86;
 const BUY_H = 26;
 const SIDE = 20;
-/** The refusal line's band, and the purse line's band with its split under it, and the foot. */
+/** The refusal line's band, the purse line's band (its coin and total; its split is its hover's tip), and the foot. */
 const LINE_H = 22;
-const PURSE_H = 38;
+const PURSE_H = 26;
+/** The purse line's height in its band. */
+const PURSE_LINE = 18;
 const FOOT = 12;
 
 /** One ware's row: its top, its icon's square, where its words start, its Buy. */
@@ -31,8 +33,8 @@ export interface WaresLayout {
   rows: WareRowLayout[];
   /** The refusal line's centre. */
   line: { x: number; y: number };
-  /** The purse line's top left. */
-  purse: { x: number; y: number };
+  /** The purse line: its coin at the left, its total beside it; the whole rect is its hover. */
+  purse: FrameRect;
 }
 
 /** The panel about `centre` for `count` wares. */
@@ -54,6 +56,6 @@ export function waresLayout(centre: { x: number; y: number }, count: number): Wa
     panel,
     rows,
     line: { x: centre.x, y: after + LINE_H / 2 },
-    purse: { x: panel.x + SIDE, y: after + LINE_H },
+    purse: { x: panel.x + SIDE, y: after + LINE_H + (PURSE_H - PURSE_LINE) / 2, width: panel.width - SIDE * 2, height: PURSE_LINE },
   };
 }

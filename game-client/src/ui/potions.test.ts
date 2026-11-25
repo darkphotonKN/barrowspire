@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EquipmentState, ItemState } from "@/types/gameState";
-import { drinksFromBag, healthPotionCount, drinkRefusal } from "./potions";
+import { DrinkInFlight, drinksFromBag, healthPotionCount, drinkRefusal } from "./potions";
 
 const item = (fields: Partial<ItemState>): ItemState =>
   ({
@@ -99,5 +99,39 @@ describe("drinkRefusal (FS-9JV5K §F R24)", () => {
   it("should fall back to the server's words, then to its own, for a reason it does not know", () => {
     expect(drinkRefusal({ success: false, reason: "cursed", message: "that item is cursed" })).toBe("That item is cursed.");
     expect(drinkRefusal({ success: false })).toBe("That cannot be drunk.");
+  });
+});
+
+// FS-9JV5K §F R24: one drink at a time, the antidote held until the server answers it
+describe("DrinkInFlight", () => {
+  const bag = (...ids: string[]) => ids.map((entity_id) => ({ entity_id }));
+
+  it("should send the first Drink and nothing for a second while its antidote is still in the bag", () => {
+    const drinking = new DrinkInFlight();
+    expect(drinking.press("antidote-1")).toBe(true);
+    drinking.see(bag("antidote-1"));
+    expect(drinking.press("antidote-1")).toBe(false);
+    expect(drinking.press("antidote-2")).toBe(false);
+  });
+
+  it("should let a Drink go again once a state's bag has dropped the drunk antidote", () => {
+    const drinking = new DrinkInFlight();
+    drinking.press("antidote-1");
+    drinking.see(bag("antidote-2"));
+    expect(drinking.press("antidote-2")).toBe(true);
+  });
+
+  it("should let the same antidote be drunk again after a refusal, which left it in the bag", () => {
+    const drinking = new DrinkInFlight();
+    drinking.press("antidote-1");
+    drinking.refused();
+    expect(drinking.press("antidote-1")).toBe(true);
+  });
+
+  it("should forget the drink on reset (a new run)", () => {
+    const drinking = new DrinkInFlight();
+    drinking.press("antidote-1");
+    drinking.reset();
+    expect(drinking.press("antidote-1")).toBe(true);
   });
 });

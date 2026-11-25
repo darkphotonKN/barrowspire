@@ -33,4 +33,11 @@ describe("waresLayout: where the wares panel's pieces stand (FS-9JV5K §F R22)",
     expect(purse.y).toBeGreaterThan(line.y);
     expect(purse.y).toBeLessThan(panel.y + panel.height);
   });
+
+  it("should give the purse line a band inside the panel, its hover's rect (FS-7TGZ3 R5)", () => {
+    const { panel, purse } = waresLayout({ x: 640, y: 360 }, 3);
+    expect(purse.width).toBeGreaterThan(0);
+    expect(purse.height).toBeGreaterThan(0);
+    expect(inside(purse, panel)).toBe(true);
+  });
 });

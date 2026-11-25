@@ -3,7 +3,7 @@ import { ArtLibrary } from "@/render/art/library";
 import { shippedManifest } from "@/render/art/artLoader.standin";
 import { recordingStage, type Made } from "@/scenes/recordingStage.standin";
 import { palette, toCss } from "@/utils/canvasPalette";
-import { WARES_PANEL_DEPTH, WaresPanel, purseLine } from "./WaresPanel";
+import { WARES_PANEL_DEPTH, WaresPanel } from "./WaresPanel";
 import { waresRows, type ShownWares } from "./wares";
 
 const shown = (paying?: string, line?: string): ShownWares => ({
@@ -54,8 +54,8 @@ describe("WaresPanel: the wares panel drawn (FS-9JV5K §F R22, R23)", () => {
   it("should give Buy a hit only where it can be pressed, and buy that ware on its release", () => {
     const { panel, wiring, zones } = onStage();
     panel.set(shown());
-    // the ground, the two Buys with some left, the ×
-    expect(zones()).toHaveLength(4);
+    // the ground, the two Buys with some left, the purse line's hover, the ×
+    expect(zones()).toHaveLength(5);
     zones()[1].handlers.pointerup();
     zones()[2].handlers.pointerup();
     expect(wiring.buy.mock.calls).toEqual([["health_potion"], ["tome_of_filth"]]);
@@ -65,7 +65,8 @@ describe("WaresPanel: the wares panel drawn (FS-9JV5K §F R22, R23)", () => {
     const { panel, words, zones, text } = onStage();
     panel.set(shown("health_potion"));
     expect(words()).toContain("Paying…");
-    expect(zones()).toHaveLength(2);
+    // the ground, the purse line's hover, the ×
+    expect(zones()).toHaveLength(3);
     expect(text("Paying…")!.args[3]).toMatchObject({ color: toCss(palette.hudFaint) });
   });
 
@@ -82,16 +83,54 @@ describe("WaresPanel: the wares panel drawn (FS-9JV5K §F R22, R23)", () => {
     expect(wiring.close).toHaveBeenCalledTimes(1);
   });
 
-  it("should show the purse line, the dash until it is read, then the gold and its split", () => {
-    const { panel, words, text } = onStage();
+  // the purse line as the gear overlay's (game-client CONTEXT "Purse line", FS-7TGZ3 R3, R5)
+  it("should show the purse line as the coin icon and the total, the dash until it is read", () => {
+    const { panel, words, text, live } = onStage();
     panel.set(shown());
-    expect(words()).toContain("Purse: —");
+    expect(words()).toContain("—");
     panel.setPurse({ amount: "1,250", tip: "Available 1,000 · Held in bids 250" });
-    expect(text("Purse: 1,250 gold")).toBeDefined();
-    expect(text("Available 1,000 · Held in bids 250")).toBeDefined();
+    expect(text("1,250")).toBeDefined();
+    expect(words().some((w) => w.startsWith("Available"))).toBe(false);
+    const coins = live().filter((m) => m.kind === "sprite" && String(m.args[3] ?? m.args[2]).startsWith("icon_coins"));
+    expect(coins).toHaveLength(1);
     // kept across a redraw
     panel.set(shown(undefined, "Sold out."));
-    expect(text("Purse: 1,250 gold")).toBeDefined();
+    expect(text("1,250")).toBeDefined();
+  });
+
+  it("should show the split, Available X · Held in bids Y, only while the pointer is over the purse line", () => {
+    const { panel, text, zones } = onStage();
+    panel.set(shown());
+    panel.setPurse({ amount: "1,250", tip: "Available 1,000 · Held in bids 250" });
+    const hover = zones().at(-2)!;
+    hover.handlers.pointerover({ x: 0, y: 0 });
+    expect(text("Available 1,000 · Held in bids 250")).toBeDefined();
+    hover.handlers.pointerout();
+    expect(text("Available 1,000 · Held in bids 250")).toBeUndefined();
+  });
+
+  it("should show the split as the purse is read while the pointer is already over the line", () => {
+    const { panel, text, zones } = onStage();
+    panel.set(shown());
+    zones().at(-2)!.handlers.pointerover({ x: 0, y: 0 });
+    panel.setPurse({ amount: "1,250", tip: "Available 1,000 · Held in bids 250" });
+    expect(text("Available 1,000 · Held in bids 250")).toBeDefined();
+  });
+
+  it("should show no split over the dash: the purse is not read", () => {
+    const { panel, live, zones } = onStage();
+    panel.set(shown());
+    zones().at(-2)!.handlers.pointerover({ x: 0, y: 0 });
+    expect(live().filter((m) => m.kind === "container")).toEqual([]);
+  });
+
+  it("should take the split down with the panel", () => {
+    const { panel, live, zones } = onStage();
+    panel.set(shown());
+    panel.setPurse({ amount: "1,250", tip: "Available 1,000 · Held in bids 250" });
+    zones().at(-2)!.handlers.pointerover({ x: 0, y: 0 });
+    panel.destroy();
+    expect(live()).toEqual([]);
   });
 
   it("should draw nothing anew for a show that changes nothing, and take everything down", () => {
@@ -102,10 +141,5 @@ describe("WaresPanel: the wares panel drawn (FS-9JV5K §F R22, R23)", () => {
     expect(stage.made.length).toBe(count);
     panel.destroy();
     expect(live()).toEqual([]);
-  });
-
-  it("should write the purse line's words", () => {
-    expect(purseLine({ amount: "—" })).toBe("Purse: —");
-    expect(purseLine({ amount: "60" })).toBe("Purse: 60 gold");
   });
 });

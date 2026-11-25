@@ -395,6 +395,11 @@ export const palette = {
    */
   merchantStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.vellumDark, 0.5), 0.45),
   /**
+   * FS-9JV5K §F R21: the wandering merchant's soft lantern light, in the interactable's amber (design
+   * guideline "Gameplay accent"): the player can act on him.
+   */
+  merchantLantern: BARROW_HEX.amberBright,
+  /**
    * FS-9JV5K §F R22, R23: the wares panel's price in gold (the purse's brass, as gold reads in the
    * gear overlay) and its refusal line (error copy's lifted oxblood: money clarity, never lore).
    */
