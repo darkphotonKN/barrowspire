@@ -1315,7 +1315,7 @@ func (s *Server) createRun(players *types.ResolvedMatchedPlayers, newWorld newRu
 
 	// a run's purchases are paid from the pod's wallet (FS-9JV5K §B R7)
 	if s.wallet != nil {
-		newGameSession.UseWallet(s.wallet)
+		newGameSession.UseWallet(s.ctx, s.wallet)
 	}
 
 	newGameSession.InitialSystems()

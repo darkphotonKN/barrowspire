@@ -25,7 +25,13 @@ type debitCall struct {
 	key    string
 	amount int64
 	auth   []string
+	// traced is the trace value the call's context carried, if any
+	traced any
 }
+
+// traceKey is a context value standing in for tracing's, carried from the
+// server's context into each debit.
+type traceKey struct{}
 
 /**
 * fakeWallet is wallet-service's debit as a test drives it: it records every
@@ -44,7 +50,7 @@ func (f *fakeWallet) Debit(ctx context.Context, amount int64, key string) (bool,
 	md, _ := metadata.FromOutgoingContext(ctx)
 	f.mu.Lock()
 	n := len(f.calls)
-	f.calls = append(f.calls, debitCall{key: key, amount: amount, auth: md.Get("authorization")})
+	f.calls = append(f.calls, debitCall{key: key, amount: amount, auth: md.Get("authorization"), traced: ctx.Value(traceKey{})})
 	f.mu.Unlock()
 
 	if f.gate != nil {
@@ -94,7 +100,7 @@ func newShopOffering(t *testing.T, delvers int, tomeChance float64) *shop {
 		s.EntityManager.RemoveEntity(m.ID)
 	}
 	wallet := &fakeWallet{}
-	s.UseWallet(wallet)
+	s.UseWallet(context.Background(), wallet)
 	s.purchaseRetry = purchaseRetry{budget: 2 * time.Second, first: time.Millisecond, most: 5 * time.Millisecond}
 	merchant, wares := theMerchant(t, s)
 	at := transformOf(t, merchant)
@@ -214,6 +220,20 @@ func TestBuy_RefusalsAtOnce_NoReserveNoWalletCall(t *testing.T) {
 			plan.Burned = true
 			return sh.merchant.ID
 		}},
+		// R6 (amended 2026-11-25): tome_held is checked before stock
+		{RefusalTomeHeld, components.WareTomeOfFilth, func(_ *testing.T, sh *shop) uuid.UUID {
+			sh.wares.Wares = append(sh.wares.Wares, components.Ware{Kind: components.WareTomeOfFilth, Price: MerchantTomePrice, Left: 0})
+			sh.s.setTomePlan(2, 3)
+			plan, _ := sh.s.tomePlan()
+			plan.Carried = true
+			return sh.merchant.ID
+		}},
+		{RefusalTomeHeld, components.WareTomeOfFilth, func(_ *testing.T, sh *shop) uuid.UUID {
+			sh.s.setTomePlan(2, 3)
+			plan, _ := sh.s.tomePlan()
+			plan.Carried = true
+			return sh.merchant.ID
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.reason+" "+string(tc.ware), func(t *testing.T) {
@@ -300,10 +320,11 @@ func TestBuy_TransientFailureRetriedWithTheSameKey(t *testing.T) {
 	assert.Equal(t, types.AntidoteName, itemOf(t, sh.s, bag[len(bag)-1]).Name)
 }
 
-// FS-9JV5K §B R9-R10, Edge States "The wallet is down": retries stop once
-// the budget is spent; the buyer is told wallet_unavailable and the reserve
-// is released.
-func TestBuy_WalletDownForTheWholeBudget_WalletUnavailable(t *testing.T) {
+// FS-9JV5K §B R9-R10 (amended 2026-11-25), Edge States "The wallet is
+// down": retries stop once the budget is spent; a debit tried and never
+// answered may have landed, so the buyer is told outcome_unknown, never that
+// nothing was taken, and the reserve is released.
+func TestBuy_WalletDownForTheWholeBudget_OutcomeUnknown(t *testing.T) {
 	sh := newShop(t, 1)
 	sh.s.purchaseRetry = purchaseRetry{budget: 60 * time.Millisecond, first: 5 * time.Millisecond, most: 10 * time.Millisecond}
 	sh.wallet.answer = func(int) error { return fmt.Errorf("%w: unavailable", types.ErrWalletTransient) }
@@ -313,7 +334,7 @@ func TestBuy_WalletDownForTheWholeBudget_WalletUnavailable(t *testing.T) {
 	sh.s.buy(sh.buyer, sh.merchant.ID, components.WareHealthPotion)
 
 	reply := sh.replied(t, sh.buyer, 1)
-	assert.Equal(t, RefusalWalletUnavailable, reply["reason"])
+	assert.Equal(t, RefusalOutcomeUnknown, reply["reason"])
 	assert.Less(t, time.Since(started), time.Second, "bounded by the budget")
 	calls := sh.wallet.taken()
 	assert.Greater(t, len(calls), 1, "retried")
@@ -324,13 +345,36 @@ func TestBuy_WalletDownForTheWholeBudget_WalletUnavailable(t *testing.T) {
 	assert.Len(t, sh.bag(t, sh.buyer), bagBefore, "nothing granted")
 }
 
+// A debit runs on the server's context without its cancellation: its values
+// (tracing's) carry into the call, and a server shutting down does not cut
+// a debit in flight, which would leave its outcome unknown. FS-9JV5K §B R9.
+func TestBuy_DebitCarriesTheServersContextButNotItsCancel(t *testing.T) {
+	sh := newShop(t, 1)
+	server, stop := context.WithCancel(context.WithValue(context.Background(), traceKey{}, "trace-1"))
+	sh.s.UseWallet(server, sh.wallet)
+	sh.wallet.gate = make(chan struct{})
+
+	sh.s.buy(sh.buyer, sh.merchant.ID, components.WareAntidote)
+	require.Eventually(t, func() bool { return len(sh.wallet.taken()) == 1 }, time.Second, time.Millisecond)
+	stop()
+	time.Sleep(20 * time.Millisecond)
+	close(sh.wallet.gate)
+
+	assert.Equal(t, true, sh.replied(t, sh.buyer, 1)["success"], "not cancelled with the server")
+	calls := sh.wallet.taken()
+	require.Len(t, calls, 1)
+	assert.Equal(t, "trace-1", calls[0].traced)
+}
+
 // The default budget is 10 s in all. FS-9JV5K §B R9.
 func TestDefaultPurchaseRetry_TenSecondsInAll(t *testing.T) {
 	assert.Equal(t, 10*time.Second, defaultPurchaseRetry.budget)
 }
 
-// FS-9JV5K §B R10: a refusal releases the reserve, grants nothing and replies
-// the mapped reason; a refusal is not retried.
+// FS-9JV5K §B R10 (amended 2026-11-25): a refusal releases the reserve,
+// grants nothing and replies the mapped reason; a refusal is not retried. An
+// unauthenticated or malformed call took nothing (wallet_unavailable); a
+// failure after the debit may have committed is outcome_unknown.
 func TestBuy_RefusalReleasesTheReserveAndRepliesTheReason(t *testing.T) {
 	cases := []struct {
 		err    error
@@ -338,7 +382,9 @@ func TestBuy_RefusalReleasesTheReserveAndRepliesTheReason(t *testing.T) {
 	}{
 		{fmt.Errorf("%w: short", types.ErrNotEnoughGold), RefusalNotEnoughGold},
 		{fmt.Errorf("%w: none", types.ErrNoWallet), RefusalNoWallet},
-		{errors.New("rpc error: code = Unauthenticated"), RefusalWalletUnavailable},
+		{fmt.Errorf("%w: unauthenticated", types.ErrWalletRefused), RefusalWalletUnavailable},
+		{fmt.Errorf("%w: invalid argument", types.ErrWalletRefused), RefusalWalletUnavailable},
+		{errors.New("rpc error: code = Internal"), RefusalOutcomeUnknown},
 	}
 	for _, tc := range cases {
 		t.Run(tc.reason, func(t *testing.T) {
@@ -506,6 +552,46 @@ func TestBuy_BuyerGoneAtGrant_LoggedNothingGranted(t *testing.T) {
 	assert.Len(t, sh.bag(t, sh.buyer), bagBefore, "nothing granted")
 }
 
+// FS-9JV5K §B R10 (amended 2026-11-25): an unknown outcome, the retries run
+// out or the wallet failing after it may have committed, is logged at warn
+// with the purchase key, buyer, ware and price, so support can make it good;
+// a definite refusal is not.
+func TestBuy_OutcomeUnknown_LoggedForSupport(t *testing.T) {
+	cases := []struct {
+		name   string
+		err    error
+		logged bool
+	}{
+		{"retries ran out", fmt.Errorf("%w: unavailable", types.ErrWalletTransient), true},
+		{"internal", errors.New("rpc error: code = Internal"), true},
+		{"not enough gold", fmt.Errorf("%w: short", types.ErrNotEnoughGold), false},
+		{"unauthenticated", fmt.Errorf("%w: unauthenticated", types.ErrWalletRefused), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureWarnings(t)
+			sh := newShop(t, 1)
+			sh.s.purchaseRetry = purchaseRetry{budget: 30 * time.Millisecond, first: 5 * time.Millisecond, most: 10 * time.Millisecond}
+			sh.wallet.answer = func(int) error { return tc.err }
+
+			sh.s.buy(sh.buyer, sh.merchant.ID, components.WareAntidote)
+			sh.replied(t, sh.buyer, 1)
+
+			line := logs.String()
+			if !tc.logged {
+				assert.NotContains(t, line, "Purchase outcome unknown")
+				return
+			}
+			assert.Contains(t, line, "level=WARN msg=\"Purchase outcome unknown\"")
+			assert.Contains(t, line, fmt.Sprintf("purchase_key=purchase:%s:%s:1", sh.s.ID, sh.buyer))
+			assert.Contains(t, line, "buyer="+sh.buyer.String())
+			assert.Contains(t, line, "ware=antidote")
+			assert.Contains(t, line, fmt.Sprintf("price=%d", MerchantAntidotePrice))
+			assert.NotContains(t, line, buyerToken, "the token is never logged")
+		})
+	}
+}
+
 // FS-9JV5K §B R11: a run that ends before a paid purchase is applied logs it.
 func TestBuy_RunEndsBeforeTheGrant_Logged(t *testing.T) {
 	logs := captureWarnings(t)
@@ -519,6 +605,25 @@ func TestBuy_RunEndsBeforeTheGrant_Logged(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return bytes.Contains([]byte(logs.String()), []byte("Purchase paid but not granted"))
+	}, time.Second, time.Millisecond)
+	assert.Contains(t, logs.String(), "purchase_key=purchase:"+sh.s.ID.String())
+}
+
+// FS-9JV5K §B R10-R11 (amended 2026-11-25): an unknown outcome that lands
+// after the run ended is logged for support too.
+func TestBuy_RunEndsBeforeAnUnknownOutcome_Logged(t *testing.T) {
+	logs := captureWarnings(t)
+	sh := newShop(t, 1)
+	sh.s.isRunning = true // as a started world is, so Shutdown closes it
+	sh.wallet.gate = make(chan struct{})
+	sh.wallet.answer = func(int) error { return errors.New("rpc error: code = Internal") }
+	sh.s.buy(sh.buyer, sh.merchant.ID, components.WareAntidote)
+
+	sh.s.Shutdown()
+	close(sh.wallet.gate)
+
+	require.Eventually(t, func() bool {
+		return bytes.Contains([]byte(logs.String()), []byte("Purchase outcome unknown"))
 	}, time.Second, time.Millisecond)
 	assert.Contains(t, logs.String(), "purchase_key=purchase:"+sh.s.ID.String())
 }
@@ -580,4 +685,122 @@ func TestBuy_RoutedAsARunAction(t *testing.T) {
 	t.Cleanup(func() { close(sh.s.stopChan) })
 
 	assert.Equal(t, map[string]interface{}{"success": true, "ware": "antidote"}, sh.replied(t, sh.buyer, 1))
+}
+
+// FS-9JV5K §B R8: only a run keeps its members' tokens, as only a run has a
+// merchant to pay; the hub and the fields hold none, seated or renewed.
+func TestTokens_KeptOnlyInARun(t *testing.T) {
+	warrior := types.CharacterInPlay{ID: uuid.New(), Name: "Kaelen", Class: "warrior", Level: 5}
+	worlds := []struct {
+		name string
+		s    *Session
+		kept bool
+	}{
+		{"run", unstartedRun(t), true},
+		{"hub", newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, HubBounds()), false},
+		{"field", newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, FieldBounds(GentleMeadows())), false},
+	}
+	for _, w := range worlds {
+		t.Run(w.name, func(t *testing.T) {
+			seated, placed := uuid.New(), uuid.New()
+			w.s.AddPlayer(seated, warrior, "seated-token")
+			w.s.AddPlayerAt(placed, warrior, "placed-token", 100, 100)
+			w.s.KeepToken(seated, "renewed-token")
+
+			if w.kept {
+				assert.Equal(t, types.BearerToken("renewed-token"), w.s.tokens.of(seated))
+				assert.Equal(t, types.BearerToken("placed-token"), w.s.tokens.of(placed))
+				return
+			}
+			assert.Empty(t, w.s.tokens.of(seated))
+			assert.Empty(t, w.s.tokens.of(placed))
+		})
+	}
+}
+
+/**
+* A buy or use_item whose id is not an entity id is judged on the tick as a
+* valid id is: outside a run, and out of play, it is ignored quietly; in a
+* run, in play, it is refused as an id that names nothing (out_of_reach,
+* not_in_bag). Never refused from the message goroutine. FS-9JV5K §B R5-R6,
+* §D R17.
+**/
+func TestMalformedIDs_JudgedOnTheTickAsAValidID(t *testing.T) {
+	hub := func(t *testing.T) *Session {
+		return newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, HubBounds())
+	}
+	run := func(t *testing.T) *Session { return coopRun(t) }
+	buy := types.Message{Action: string(constants.ActionBuy), Payload: map[string]interface{}{"merchant_id": "not-an-id", "ware": "antidote"}}
+	use := types.Message{Action: string(constants.ActionUseItem), Payload: map[string]interface{}{"item_entity_id": "not-an-id"}}
+	cases := []struct {
+		name   string
+		world  func(t *testing.T) *Session
+		dead   bool
+		msg    types.Message
+		reason string // "" when ignored quietly
+	}{
+		{"buy in the hub", hub, false, buy, ""},
+		{"use_item in the hub", hub, false, use, ""},
+		{"buy out of play", run, true, buy, RefusalNotInPlay},
+		{"use_item out of play", run, true, use, ""},
+		{"buy in play", run, false, buy, RefusalOutOfReach},
+		{"use_item in play", run, false, use, RefusalNotInBag},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := tc.world(t)
+			sender := &recordingSender{}
+			s.sender = sender
+			playerID, delver := seatedDelver(t, s, "warrior", 500, 500)
+			if tc.dead {
+				kill(t, delver)
+			}
+			go s.manageClientMessages()
+			t.Cleanup(func() { close(s.stopChan) })
+
+			s.MessageCh <- types.ClientPackage{PlayerID: playerID, Message: tc.msg}
+
+			// the replies to this action: a death sends its settlement too
+			replies := func() []types.Message {
+				var out []types.Message
+				for _, m := range sender.to(playerID) {
+					if m.Action == tc.msg.Action {
+						out = append(out, m)
+					}
+				}
+				return out
+			}
+			if tc.reason == "" {
+				assert.Never(t, func() bool {
+					tick(s)
+					return len(replies()) > 0
+				}, 100*time.Millisecond, 5*time.Millisecond, "ignored quietly")
+				return
+			}
+			require.Eventually(t, func() bool {
+				tick(s)
+				return len(replies()) > 0
+			}, time.Second, time.Millisecond)
+			assert.Equal(t, tc.reason, replies()[0].Payload["reason"])
+		})
+	}
+}
+
+// A ware the merchant has no such kind of is refused sold_out on the wire,
+// and logged at debug, since no client sends one but a broken one.
+// FS-9JV5K §B R6.
+func TestBuy_UnknownWare_SoldOutAndLoggedAtDebug(t *testing.T) {
+	logs := &logBuffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	sh := newShop(t, 1)
+
+	sh.s.buy(sh.buyer, sh.merchant.ID, "a_crown")
+
+	replies := sh.buyReplies(sh.buyer)
+	require.Len(t, replies, 1)
+	assert.Equal(t, RefusalSoldOut, replies[0]["reason"])
+	assert.Contains(t, logs.String(), "level=DEBUG msg=\"Refusing buy of an unknown ware\"")
+	assert.Contains(t, logs.String(), "ware=a_crown")
 }

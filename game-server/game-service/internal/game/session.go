@@ -231,6 +231,10 @@ type Session struct {
 	// builds the run; nil in every other world and in a run built without
 	// one. Guarded by mu. FS-9JV5K §B R7, ADR-0093.
 	wallet WalletDebiter
+	// walletCtx is what each debit's context is built on: the host's
+	// lifetime context without its cancellation, so its values (tracing's)
+	// carry and a shutdown never cuts a debit in flight. Guarded by mu.
+	walletCtx context.Context
 	// tokens are each seated member's latest bearer token, the one a
 	// purchase's debit is made with (FS-9JV5K §B R8)
 	tokens *memberTokens
@@ -686,11 +690,13 @@ func (s *Session) manageClientMessages() {
 				}
 				usePayload := parsedPayload.(types.PlayerUseItemPayload)
 
+				// an id that is not an entity id is judged on the tick as
+				// the nil id, in no one's bag: refused there as a valid id
+				// is, or ignored quietly outside a run or out of play
 				itemEntityID, err := uuid.Parse(usePayload.ItemEntityID)
 				if err != nil {
-					// no id that is not an entity id is in anyone's bag
-					s.refuseUse(playerID, systems.ErrUseNotInBag)
-					continue
+					slog.Debug("use_item names no entity id", "player_id", playerID, "item_entity_id", usePayload.ItemEntityID)
+					itemEntityID = uuid.Nil
 				}
 
 				s.queueIntent(func() { s.useItem(playerID, itemEntityID) })
@@ -706,11 +712,13 @@ func (s *Session) manageClientMessages() {
 				}
 				buyPayload := parsedPayload.(types.PlayerBuyPayload)
 
+				// an id that is not an entity id is judged on the tick as
+				// the nil id, no merchant in reach: refused there as a valid
+				// id is, or ignored quietly outside a run
 				merchantID, err := uuid.Parse(buyPayload.MerchantID)
 				if err != nil {
-					// no id that is not an entity id is a merchant in reach
-					s.refuseBuy(playerID, RefusalOutOfReach)
-					continue
+					slog.Debug("buy names no entity id", "player_id", playerID, "merchant_id", buyPayload.MerchantID)
+					merchantID = uuid.Nil
 				}
 				ware := components.WareKind(buyPayload.Ware)
 
@@ -1179,7 +1187,7 @@ func (s *Session) AddPlayerAt(playerID uuid.UUID, character types.CharacterInPla
 	}
 
 	loadout, bag := s.seatGearLocked(playerID, character, token)
-	s.tokens.seat(playerID, token)
+	s.holdToken(playerID, token)
 	return s.buildBodyLocked(playerID, character, x, y, loadout, bag)
 }
 
@@ -1200,7 +1208,7 @@ func (s *Session) addPlayerLocked(playerID uuid.UUID, character types.CharacterI
 	spawnX, spawnY := s.spawnPoint()
 
 	loadout, bag := s.seatGearLocked(playerID, character, token)
-	s.tokens.seat(playerID, token)
+	s.holdToken(playerID, token)
 	return s.buildBodyLocked(playerID, character, spawnX, spawnY, loadout, bag)
 }
 
@@ -1433,7 +1441,7 @@ func (s *Session) seatPlayerLocked(player *types.Player, gear *pbitems.CheckOutR
 		slog.Warn("No loadout for handoff arrival, player spawns with no equipment.", "player_id", player.ID)
 	}
 	s.buildBodyLocked(player.ID, character, spawnX, spawnY, gear.GetLoadout(), gear.GetBag())
-	s.tokens.seat(player.ID, player.Token)
+	s.holdToken(player.ID, player.Token)
 
 	// remove them from the pending list
 	delete(s.playersPendingConnection, player.ID)

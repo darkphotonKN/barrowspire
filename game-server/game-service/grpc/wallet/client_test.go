@@ -65,6 +65,8 @@ func TestDebit_FailuresMapToWhatTheRunReads(t *testing.T) {
 		{codes.Unavailable, types.ErrWalletTransient},
 		{codes.DeadlineExceeded, types.ErrWalletTransient},
 		{codes.Aborted, types.ErrWalletTransient},
+		{codes.Unauthenticated, types.ErrWalletRefused},
+		{codes.InvalidArgument, types.ErrWalletRefused},
 	}
 	for _, tc := range cases {
 		t.Run(tc.code.String(), func(t *testing.T) {
@@ -74,12 +76,14 @@ func TestDebit_FailuresMapToWhatTheRunReads(t *testing.T) {
 		})
 	}
 
-	for _, code := range []codes.Code{codes.Unauthenticated, codes.InvalidArgument, codes.Internal} {
+	// an answer after the debit may have committed is none of them: its
+	// outcome is unknown (FS-9JV5K §B R10, amended 2026-11-25)
+	for _, code := range []codes.Code{codes.Internal, codes.Unknown} {
 		t.Run(code.String()+" is final and none of them", func(t *testing.T) {
 			client := &Client{rpc: &fakeDebitRPC{err: status.Error(code, "no")}, timeout: callTimeout}
 			_, err := client.Debit(asBuyer("t"), 5, "k")
 			require.Error(t, err)
-			for _, sentinel := range []error{types.ErrNotEnoughGold, types.ErrNoWallet, types.ErrWalletTransient} {
+			for _, sentinel := range []error{types.ErrNotEnoughGold, types.ErrNoWallet, types.ErrWalletTransient, types.ErrWalletRefused} {
 				assert.NotErrorIs(t, err, sentinel)
 			}
 		})

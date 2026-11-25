@@ -92,7 +92,9 @@ EOF
 # never write min_item_level (default 1), so it is set by SQL afterwards.
 # Each template is created only if no template has its name yet, so a run that
 # died half-way resumes instead of duplicating.
-n=$(sql "$ITEMS_DSN" -c "SELECT count(*) FROM item_templates")
+# The Antidote is migration 000032's, not this list's (FS-9JV5K §D), so it
+# counts toward neither.
+n=$(sql "$ITEMS_DSN" -c "SELECT count(*) FROM item_templates WHERE item_name <> 'Antidote'")
 u=$(sql "$ITEMS_DSN" -c "SELECT count(*) FROM unique_items")
 if [ "$n" = "$CATALOGUE" ] && [ "$u" = "$UNIQUES" ]; then
   echo "$CATALOGUE templates and $UNIQUES uniques present, skipping"

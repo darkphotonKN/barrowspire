@@ -29,19 +29,23 @@ import (
 // WalletDebiter is wallet-service as a run's purchase uses it: take amount
 // from the wallet of the member whose bearer token ctx carries outgoing, once
 // per key. applied false is a key already debited, success too. A failure
-// wraps types.ErrNotEnoughGold, types.ErrNoWallet or types.ErrWalletTransient
-// (the same key may land if tried again); anything else is final.
+// wraps types.ErrNotEnoughGold, types.ErrNoWallet, types.ErrWalletRefused
+// (nothing taken) or types.ErrWalletTransient (the same key may land if
+// tried again); anything else is final, and may have committed.
 type WalletDebiter interface {
 	Debit(ctx context.Context, amount int64, key string) (applied bool, err error)
 }
 
-// UseWallet has the run pay its purchases from wallet. The host sets it as it
-// builds a run, before the run is reachable; without one, every buy is
-// refused wallet_unavailable.
-func (s *Session) UseWallet(wallet WalletDebiter) {
+// UseWallet has the run pay its purchases from wallet, each debit on ctx, the
+// host's lifetime context, kept without its cancellation: its values carry
+// into the call, and a host shutting down does not cut a debit in flight (its
+// outcome would be unknown). The host sets it as it builds a run, before the
+// run is reachable; without one, every buy is refused wallet_unavailable.
+func (s *Session) UseWallet(ctx context.Context, wallet WalletDebiter) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.wallet = wallet
+	s.walletCtx = context.WithoutCancel(ctx)
 }
 
 // The buy replies' refusal reasons, from which the client writes its own
@@ -56,6 +60,10 @@ const (
 	RefusalNotEnoughGold     = "not_enough_gold"
 	RefusalNoWallet          = "no_wallet"
 	RefusalWalletUnavailable = "wallet_unavailable"
+	// RefusalOutcomeUnknown is a debit whose answer never came, or came as a
+	// failure after it may have committed: the gold may have been taken
+	// (amended 2026-11-25)
+	RefusalOutcomeUnknown = "outcome_unknown"
 )
 
 // buyRefusalMessages are the plain words beside each reason.
@@ -69,6 +77,7 @@ var buyRefusalMessages = map[string]string{
 	RefusalNotEnoughGold:     "not enough gold",
 	RefusalNoWallet:          "your purse can't be reached",
 	RefusalWalletUnavailable: "your purse can't be reached",
+	RefusalOutcomeUnknown:    "your purse did not answer",
 }
 
 // purchaseRetry is how a debit is retried: at most budget in all, waiting
@@ -143,9 +152,7 @@ func (b *purchaseBook) answer(runID uuid.UUID, p *purchase, err error, queue fun
 	defer b.mu.Unlock()
 	p.err, p.answered = err, true
 	if b.closed {
-		if err == nil {
-			warnPaidNotGranted(runID, p, "the run ended")
-		}
+		warnUnsettled(runID, p)
 		return
 	}
 	queue()
@@ -175,10 +182,29 @@ func (b *purchaseBook) close(runID uuid.UUID) {
 	}
 	b.closed = true
 	for _, p := range b.inFlight {
-		if p.answered && p.err == nil {
-			warnPaidNotGranted(runID, p, "the run ended")
+		if p.answered {
+			warnUnsettled(runID, p)
 		}
 	}
+}
+
+// warnUnsettled logs an answered purchase no tick will apply, as the run
+// ended, when support may have to make it good: paid, or its outcome unknown.
+func warnUnsettled(runID uuid.UUID, p *purchase) {
+	switch {
+	case p.err == nil:
+		warnPaidNotGranted(runID, p, "the run ended")
+	case debitRefusal(p.err) == RefusalOutcomeUnknown:
+		warnOutcomeUnknown(runID, p)
+	}
+}
+
+// warnOutcomeUnknown logs a purchase whose debit may or may not have taken
+// the gold, with what support needs to check and make it good (R10, amended
+// 2026-11-25). The reserve is released as for a refusal.
+func warnOutcomeUnknown(runID uuid.UUID, p *purchase) {
+	slog.Warn("Purchase outcome unknown",
+		"sessionID", runID, "purchase_key", p.key, "buyer", p.buyer, "ware", p.ware, "price", p.price, "error", p.err)
 }
 
 // warnPaidNotGranted logs a purchase whose gold was spent and whose ware was
@@ -201,7 +227,7 @@ func (s *Session) buy(playerID, merchantID uuid.UUID, kind components.WareKind) 
 	}
 	s.mu.RLock()
 	entityID, here := s.playerIDToEntitiesID[playerID]
-	wallet := s.wallet
+	wallet, walletCtx := s.wallet, s.walletCtx
 	s.mu.RUnlock()
 	if !here {
 		return
@@ -230,7 +256,7 @@ func (s *Session) buy(playerID, merchantID uuid.UUID, kind components.WareKind) 
 	s.purchases.open(s.ID, p)
 	slog.Info("Purchase reserved", "session_id", s.ID, "purchase_key", p.key, "buyer", playerID, "ware", kind, "price", p.price)
 
-	go s.pay(wallet, p, s.tokens.of(playerID), s.purchaseRetry)
+	go s.pay(walletCtx, wallet, p, s.tokens.of(playerID), s.purchaseRetry)
 }
 
 // judgeBuy is the buy's ware, or the R6 refusal that turns it away.
@@ -246,21 +272,37 @@ func (s *Session) judgeBuy(playerID uuid.UUID, buyer *ecs.Entity, merchantID uui
 		// a merchant gone with his floor is out of anyone's reach
 		return nil, RefusalOutOfReach
 	}
+	if !knownWare(kind) {
+		// no client sends one but a broken one; sold_out on the wire
+		slog.Debug("Refusing buy of an unknown ware", "session_id", s.ID, "player_id", playerID, "ware", kind)
+		return nil, RefusalSoldOut
+	}
+	// a party carrying a tome, or done with it, is told so before stock
+	// (R6, amended 2026-11-25)
+	if kind == components.WareTomeOfFilth {
+		if plan, ok := s.tomePlan(); ok && (plan.Carried || plan.Burned) {
+			return nil, RefusalTomeHeld
+		}
+	}
 	mc, _ := merchant.GetComponent(ecs.ComponentTypeMerchant)
 	ware := mc.(*components.MerchantComponent).Ware(kind)
 	if ware == nil || ware.Left <= 0 {
 		return nil, RefusalSoldOut
 	}
-	if kind == components.WareTomeOfFilth {
-		if plan, ok := s.tomePlan(); ok && (plan.Carried || plan.Burned) {
-			return nil, RefusalTomeHeld
-		}
-		return ware, ""
-	}
-	if bag, ok := bagOf(buyer); ok && bagFull(bag) {
+	// the tome goes in no bag (§E R20)
+	if bag, ok := bagOf(buyer); ok && kind != components.WareTomeOfFilth && bagFull(bag) {
 		return nil, RefusalBagFull
 	}
 	return ware, ""
+}
+
+// knownWare is whether kind is a ware any merchant sells. FS-9JV5K §A R3.
+func knownWare(kind components.WareKind) bool {
+	switch kind {
+	case components.WareHealthPotion, components.WareAntidote, components.WareTomeOfFilth:
+		return true
+	}
+	return false
 }
 
 // withinReach is whether a is in interact range of b.
@@ -293,10 +335,11 @@ func (s *Session) refuseBuy(playerID uuid.UUID, reason string) {
 * pay debits the purchase as its buyer, off the tick: a transient failure is
 * tried again with the same key, backing off, for at most retry.budget in all
 * (each call bounded by the wallet client). The answer is queued for the tick.
-* The token is never logged.
+* parent carries the host's values and no cancellation. The token is never
+* logged.
 **/
-func (s *Session) pay(wallet WalletDebiter, p *purchase, token types.BearerToken, retry purchaseRetry) {
-	ctx, cancel := context.WithTimeout(context.Background(), retry.budget)
+func (s *Session) pay(parent context.Context, wallet WalletDebiter, p *purchase, token types.BearerToken, retry purchaseRetry) {
+	ctx, cancel := context.WithTimeout(parent, retry.budget)
 	defer cancel()
 	ctx = asMember(ctx, token)
 
@@ -355,23 +398,33 @@ func (s *Session) settlePurchase(p *purchase) {
 
 	s.releaseReserve(p)
 	reason := debitRefusal(p.err)
-	slog.Info("Purchase refused", "session_id", s.ID, "purchase_key", p.key, "buyer", p.buyer, "reason", reason, "error", p.err)
+	if reason == RefusalOutcomeUnknown {
+		warnOutcomeUnknown(s.ID, p)
+	} else {
+		slog.Info("Purchase refused", "session_id", s.ID, "purchase_key", p.key, "buyer", p.buyer, "reason", reason, "error", p.err)
+	}
 	if present {
 		s.refuseBuy(p.buyer, reason)
 	}
 }
 
-// debitRefusal is the reply reason a failed debit stands for: retries run
-// out, an unauthenticated call and anything unknown are all the purse not
-// being reached.
+/**
+* debitRefusal is the reply reason a failed debit stands for. Only a definite
+* non-debit says nothing was taken: not enough gold, no wallet, or a call the
+* wallet turned away (wallet_unavailable). Retries run out on transient
+* failures, and any other failure, may have committed: outcome_unknown
+* (FS-9JV5K §B R10, amended 2026-11-25).
+**/
 func debitRefusal(err error) string {
 	switch {
 	case errors.Is(err, types.ErrNotEnoughGold):
 		return RefusalNotEnoughGold
 	case errors.Is(err, types.ErrNoWallet):
 		return RefusalNoWallet
-	default:
+	case errors.Is(err, types.ErrWalletRefused):
 		return RefusalWalletUnavailable
+	default:
+		return RefusalOutcomeUnknown
 	}
 }
 
@@ -483,6 +536,16 @@ func (m *memberTokens) of(member uuid.UUID) types.BearerToken {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.byMember[member]
+}
+
+// holdToken keeps member's token as they are seated, in a run only: only a
+// run has a merchant to pay, so the hub and the fields hold no buyer's token.
+// FS-9JV5K §B R8.
+func (s *Session) holdToken(member uuid.UUID, token types.BearerToken) {
+	if s.worldType != types.WorldTypeRun {
+		return
+	}
+	s.tokens.seat(member, token)
 }
 
 // KeepToken replaces a seated member's held token with the one they just
