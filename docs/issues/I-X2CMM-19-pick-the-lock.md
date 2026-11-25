@@ -1,6 +1,6 @@
 ---
 id: I-X2CMM-19
-status: open
+status: done
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-11", "FS-5FZ4J (locked doors)", "FS-4EC7Z (cages)"]
 labels: [ready-for-agent]

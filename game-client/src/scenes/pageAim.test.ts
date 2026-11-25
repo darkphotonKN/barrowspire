@@ -115,6 +115,21 @@ describe("pageReticle (FS-X2CMM R41)", () => {
     const lever = { id: "lever", at: { x: 1050, y: 1000 }, kind: "lever" } as const;
     expect(pageReticle("pick_the_lock", scene(lever.at, { interactables: [lever] })).valid).toBe(false);
   });
+
+  // I-X2CMM-19: Pick the Lock names a shut cage only (the sealed floors built no locked doors or chests),
+  // within 1.5 cells of the player (FS-X2CMM §J R55, §B R12)
+  it("should pick Pick the Lock's cage within 1.5 cells, and no chest or door beside it", () => {
+    const cage = { id: "cage", at: { x: 1000 + 1.5 * CELL, y: 1000 }, kind: "cage" } as const;
+    const chest = { id: "chest", at: { x: 1000 + 1.5 * CELL - 5, y: 1000 }, kind: "chest" } as const;
+    const door = { id: "door", at: { x: 1000 + 1.5 * CELL + 5, y: 1000 }, kind: "door" } as const;
+    expect(pageReticle("pick_the_lock", scene(cage.at, { interactables: [chest, door, cage] }))).toMatchObject({
+      valid: true,
+      targetId: "cage",
+    });
+    const beyond = { id: "beyond", at: { x: 1000 + 1.5 * CELL + 1, y: 1000 }, kind: "cage" } as const;
+    expect(pageReticle("pick_the_lock", scene(beyond.at, { interactables: [beyond] })).valid).toBe(false);
+    expect(pageReticle("far_hand", scene(cage.at, { interactables: [cage] })).valid).toBe(false);
+  });
 });
 
 describe("PageAim's click (FS-X2CMM R41)", () => {

@@ -86,8 +86,10 @@ func (s *BookSystem) MarkHealth(entities []*ecs.Entity) {
 // cast on a tick completes on the 60th at 60 Hz, its own counted. attackers is
 // the bodies whose attack or cast went off in the tick's combat
 // (CombatSystem.Attackers); ground is the floor a completed page has its
-// effect on, a ground page's point judged again on it.
-func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID, ground BookGround) {
+// effect on, a ground page's point judged again on it. What comes back is
+// each completed page an entry point refused, for its caster to be told.
+func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID, ground BookGround) []CastRefusal {
+	var refused []CastRefusal
 	for _, entity := range entities {
 		book, ok := bookOf(entity)
 		if !ok || book.Casting == nil {
@@ -100,9 +102,20 @@ func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, att
 		}
 		if casting.Elapsed += deltaTime; casting.Elapsed >= casting.Total-castEpsilon {
 			book.Casting = nil
-			s.complete(entity, book, casting, ground)
+			if err := s.complete(entity, book, casting, ground); err != nil {
+				refused = append(refused, CastRefusal{Member: memberIDOf(entity), Err: err})
+			}
 		}
 	}
+	return refused
+}
+
+// CastRefusal is a page whose cast completed and whose entry point then
+// refused it, nothing spent: the caster, a member id, is told Err as an
+// instant page's refusal is told (game's refusePage).
+type CastRefusal struct {
+	Member uuid.UUID
+	Err    error
 }
 
 // castBroken is whether the tick's movement and combat broke the caster's
@@ -128,10 +141,13 @@ func (s *BookSystem) castBroken(caster *ecs.Entity, casting *components.BookCast
 // complete judges the page's cost and target once more, the target within
 // range plus one cell, and the page's own conditions, and, if they hold, pays
 // for the page and has its effect; if not, the cast ends with nothing (R17).
-func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent, casting *components.BookCasting, ground BookGround) {
+// A page that is an entry point may still be refused by the world: it too
+// ends with nothing, and the refusal comes back for its caster to be told.
+// A failed gate's is never told, as the cast's own are not.
+func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent, casting *components.BookCasting, ground BookGround) error {
 	page, ok := classBooks[casting.Page]
 	if !ok {
-		return
+		return nil
 	}
 	cast := BookCast{
 		Caster:     caster,
@@ -146,14 +162,13 @@ func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent
 	recheck.Page.RangeCells += castRangeSlackCells
 	for _, gate := range []bookGate{gateInPlay, gateCost, gateTarget} {
 		if gate(recheck, book) != nil {
-			return
+			return nil
 		}
 	}
 	if s.ownGate(cast) != nil {
-		return
+		return nil
 	}
-	// an entry point's refusal ends the cast with nothing, as a failed gate does
-	_ = s.resolve(cast, book)
+	return s.resolve(cast, book)
 }
 
 // castTarget is the entity a cast named, nil when it named none or it is gone.

@@ -82,6 +82,9 @@ type BookGround struct {
 	// FarReach is the world's interact from a distance, Far Hand's effect
 	// (book_far_hand.go, R50). Nil works nothing.
 	FarReach FarReach
+	// Cages is the world's open-cage entry point, Pick the Lock's effect
+	// (book_pick_the_lock.go, R55). Nil opens none.
+	Cages CageOpener
 }
 
 // pageResolver has a page's effect, once its cast is accepted and paid for.
@@ -112,6 +115,7 @@ type pageEntry func(cast BookCast) error
 // by page id, as pageResolvers holds the rest.
 var pageEntries = map[components.PageID]pageEntry{
 	components.PageFarHand:       enterFarHand,
+	components.PagePickTheLock:   enterPickTheLock,
 	components.PageTakeAContract: enterTakeAContract,
 }
 
@@ -119,7 +123,8 @@ var pageEntries = map[components.PageID]pageEntry{
 // may name, where the page says (Far Hand's levers, chests, doors and traps);
 // any other interactable page names an entity the world takes an interact on.
 var pageInteractables = map[components.PageID]func(*ecs.Entity) bool{
-	components.PageFarHand: farHandTarget,
+	components.PageFarHand:     farHandTarget,
+	components.PagePickTheLock: isCage,
 }
 
 // interactableFor is whether target is one the interactable page may name.

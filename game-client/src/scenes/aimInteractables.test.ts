@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ContainerState, DoorState, SealPieceState, TrapState } from "@/types/gameState";
+import type { CageState, ContainerState, DoorState, SealPieceState, TrapState } from "@/types/gameState";
 import { aimInteractables } from "./aimInteractables";
 
 // FS-X2CMM §H R41, §J R50, R52 (I-X2CMM-15): the run's interactables an interactable page may name, each
@@ -73,6 +73,13 @@ describe("aimInteractables (FS-X2CMM R41)", () => {
 
   it("should name a door at its doorway's middle, as the server measures its reach", () => {
     expect(aimInteractables({ containers: [], doors: [door] }, CELL)).toEqual([{ id: "door", at: { x: 340, y: 508 }, kind: "door" }]);
+  });
+
+  // I-X2CMM-19: Pick the Lock's cage (FS-X2CMM §J R55; FS-4EC7Z §F R23)
+  it("should name a shut cage as a cage, never an open one", () => {
+    const cage = (entity_id: string, open: boolean): CageState => ({ entity_id, position: { x: 640, y: 320 }, open });
+    const named = aimInteractables({ containers: [], doors: [], cages: [cage("shut", false), cage("open", true)] }, CELL);
+    expect(named).toEqual([{ id: "shut", at: { x: 640, y: 320 }, kind: "cage" }]);
   });
 
   it("should name a detected trap still armed at its cell's centre, never one waiting to re-arm", () => {

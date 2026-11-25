@@ -60,6 +60,12 @@ describe("encounterReplyNotice: the encounters' refusals (FS-4EC7Z §F R27, §G 
     expect(said("contract_no_room")).toBe("No mark can be set on this floor.");
   });
 
+  it("should say why a Pick the Lock was refused: the cage already open, too many allies (FS-X2CMM §J R55)", () => {
+    const said = (reason: string) => encounterReplyNotice({ success: false, message: "server words", reason })?.text;
+    expect(said("cage_open")).toBe("The cage is already open.");
+    expect(said("too_many_allies")).toBe("Too many follow you already.");
+  });
+
   it("should say nothing for any other reply", () => {
     expect(encounterReplyNotice({ success: false, message: "", reason: "stairs_sealed" })).toBeNull();
     expect(encounterReplyNotice({ success: true, message: "" })).toBeNull();

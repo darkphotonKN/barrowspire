@@ -2,8 +2,9 @@
  * The run's interactables as an armed interactable page sees them (FS-X2CMM §H R41): each one an
  * interactable page may name, with what it is, where it stands (world px) and the entity id its cast
  * sends. Which of them a page takes is the page's own, in data (`PAGE_COPY[page].targets`): Far Hand's
- * levers, chests, doors and traps (§J R50), Heave's stone blocks (R52). A later page adds its own kind
- * here once, and names it in its targets; the run scene never asks which page is armed.
+ * levers, chests, doors and traps (§J R50), Heave's stone blocks (R52), Pick the Lock's shut cage (R55).
+ * A later page adds its own kind here once, and names it in its targets; the run scene never asks which
+ * page is armed.
  *
  * Pure and Phaser-free, as the aim it feeds (`pageAim.ts`). What a kind leaves out mirrors the server's
  * own rule (`systems/book_far_hand.go`): a lever already down, an open coffer, a trap waiting to re-arm.
@@ -15,7 +16,7 @@ import type { ClientGameState } from "@/types/gameState";
 import type { AimBody } from "./pageAim";
 
 /** The parts of a state the interactables are named from. */
-export type AimInteractableState = Pick<ClientGameState, "containers" | "doors" | "seal_pieces" | "traps">;
+export type AimInteractableState = Pick<ClientGameState, "containers" | "doors" | "seal_pieces" | "traps" | "cages">;
 
 /** A seal piece's kind as an aim target: levers still up, and the stone blocks. */
 const PIECE_TARGETS: Readonly<Record<string, (active: boolean) => AimTargetKind | null>> = {
@@ -43,6 +44,10 @@ export function aimInteractables(state: AimInteractableState, cell: number): Aim
   // every trap sent is detected; one waiting to re-arm cannot be sprung
   for (const t of state.traps ?? []) {
     if (t.armed) named.push({ id: t.entity_id, at: { x: (t.cell.x + 0.5) * cell, y: (t.cell.y + 0.5) * cell }, kind: "trap" });
+  }
+  // a cage is picked shut; an open one has no lock left
+  for (const c of state.cages ?? []) {
+    if (!c.open) named.push({ id: c.entity_id, at: { x: c.position.x, y: c.position.y }, kind: "cage" });
   }
   return named;
 }

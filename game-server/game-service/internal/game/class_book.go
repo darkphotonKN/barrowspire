@@ -125,13 +125,17 @@ func (s *Session) markCasts(entities []*ecs.Entity) {
 // advanceCasts counts the run's casts in progress on the tick, after its
 // movement and combat: each breaks, completes with its effect, or counts the
 // tick. attackers is the bodies whose attack or cast went off in the tick's
-// combat. Nothing is sent: the next state shows the cast gone, or its effect.
-// FS-X2CMM §D R16–R18.
+// combat. Nothing is sent, the next state showing the cast gone or its effect,
+// but for a completed page an entry point refused, whose caster is told why
+// as at an instant page's cast (refusePage). FS-X2CMM §D R16–R18.
 func (s *Session) advanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID) {
 	if s.worldType != types.WorldTypeRun {
 		return
 	}
-	systems.NewBookSystem(s.EntityManager).AdvanceCasts(deltaTime, entities, attackers, s.bookGround())
+	for _, refused := range systems.NewBookSystem(s.EntityManager).AdvanceCasts(deltaTime, entities, attackers, s.bookGround()) {
+		slog.Debug("Refusing a book ability at its cast's end", "session_id", s.ID, "player_id", refused.Member, "reason", refused.Err)
+		s.refusePage(refused.Member, refused.Err)
+	}
 }
 
 // bookGround is the run's floor as a page reads it: its ground, the walk's own
@@ -145,6 +149,7 @@ func (s *Session) bookGround() systems.BookGround {
 		Ground:    s.movementSystem,
 		EndCharge: s.combatSystem.EndCharge,
 		Contracts: s,
+		Cages:     s,
 		FarReach:  s,
 	}
 	// a nil grid is no footing, never a footing holding a nil grid

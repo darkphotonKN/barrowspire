@@ -31,10 +31,12 @@ export function encounterLineText(key: string): string | null {
 
 /**
  * The encounters' refusal reasons (§F R27), each the HUD notice's, never a lore line; the contract's
- * top floor and no-room refusals are Take a Contract's (FS-X2CMM §J R57), on the cast's reply.
+ * top floor and no-room refusals are Take a Contract's (FS-X2CMM §J R57), and an already open cage
+ * Pick the Lock's (R55), on the cast's reply.
  */
 export const ENCOUNTER_REPLY_REASONS = [
   "cage_locked",
+  "cage_open",
   "too_many_allies",
   "not_willing",
   "already_hired",
@@ -49,6 +51,7 @@ export const ENCOUNTER_REPLY_REASONS = [
  */
 const REPLY_LINES: Readonly<Record<(typeof ENCOUNTER_REPLY_REASONS)[number], string>> = {
   cage_locked: "Locked. Find the key.",
+  cage_open: "The cage is already open.",
   too_many_allies: "Too many follow you already.",
   not_willing: "They will not follow you.",
   already_hired: "Already sworn to another.",
