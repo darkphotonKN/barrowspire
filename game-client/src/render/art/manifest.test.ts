@@ -641,6 +641,87 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     });
   });
 
+  describe("the encounters' cage and its key, added to the sealed props (FS-4EC7Z §H R36)", () => {
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+    const sealed = () => Object.entries(baked.sheets as Record<string, { atlas: string }>).filter(([, s]) => atlasGroup(s.atlas) === "sealed");
+
+    it("packs them on a page of their own after the floor's props, so the committed sealed-0 keeps its bytes", () => {
+      expect(baked.sheets.cage.atlas).toBe("sealed-1");
+      expect(baked.sheets.cage_key.atlas).toBe("sealed-1");
+      expect(sealed().filter(([, s]) => s.atlas === "sealed-1").map(([n]) => n).sort()).toEqual(["cage", "cage_key"]);
+    });
+
+    it("frames the whole cage and its two layers together, so the layers lie on the whole", () => {
+      const cage = baked.sheets.cage;
+      expect(cage.directions).toBe(1);
+      for (const state of ["shut", "open"])
+        for (const layer of ["", "_back", "_front"]) expect(cage.animations[`${state}${layer}`].frames[0], `${state}${layer}`).toHaveLength(1);
+      expect(cage.source).toBe("procedural: tools/bake/page/models/sealed.js#cage");
+      expect(baked.sheets.cage_key.source).toBe("procedural: tools/bake/page/models/sealed.js#cageKey");
+    });
+
+    it("stands the cage a floor cell wide at most and taller than a delver, the key smaller than the stair key's stone", () => {
+      const cage = baked.sheets.cage;
+      // a crown is measured in screen px at 1x, as the cage's frame is baked
+      expect(cage.frameWidth).toBeLessThanOrEqual(4 * baked.tile.width);
+      expect(cage.frameHeight).toBeGreaterThan(baked.sheets.char_knight_base.crown);
+      expect(baked.sheets.cage_key.frameWidth).toBeLessThan(baked.sheets.stair_key.frameWidth);
+    });
+  });
+
+  describe("the encounter cast (FS-4EC7Z §H R36)", () => {
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+    /** Each sheet, its variants' letters after the first, and its own clip. */
+    const CAST: [string, string[], string | null][] = [
+      ["npc_pilgrim", ["b", "c"], "cower"],
+      ["npc_captive", ["b"], "bound"],
+      ["npc_cutthroat", ["b"], null],
+      ["npc_hooded_duelist", [], null],
+      ["npc_debtor_knight", [], null],
+    ];
+
+    it("bakes each in eight facings: idle, walk, attack and death, its own clip, then each variant's", () => {
+      for (const [name, letters, own] of CAST) {
+        const sheet = baked.sheets[name];
+        expect(sheet.directions, name).toBe(8);
+        const clips = ["idle", "walk", "attack", "death", ...(own ? [own] : [])];
+        expect(Object.keys(sheet.animations), name).toEqual([...clips, ...letters.flatMap((l) => clips.map((c) => `${c}_${l}`))]);
+        expect(sheet.source, name).toMatch(/^authored: tools\/bake\/page\/characters\/encounter\.js#/);
+      }
+    });
+
+    it("times the clips as the classes' and the folk's: a short breathing idle, the classes' walk, attack and death", () => {
+      for (const [name] of CAST) {
+        const a = baked.sheets[name].animations;
+        expect(a.idle, name).toMatchObject({ fps: 3, loop: true });
+        expect(a.idle.frames[0], name).toHaveLength(4);
+        expect(a.walk, name).toMatchObject({ fps: 10, loop: true });
+        expect(a.attack, name).toMatchObject({ fps: 12, loop: false });
+        expect(a.attack.frames[0], name).toHaveLength(7);
+        expect(a.death, name).toMatchObject({ loop: false });
+      }
+      expect(baked.sheets.npc_pilgrim.animations.cower).toMatchObject({ fps: 6, loop: true });
+      expect(baked.sheets.npc_captive.animations.bound).toMatchObject({ fps: 3, loop: true });
+    });
+
+    it("packs them alone on their own scene-scoped group, so no committed atlas reflows", () => {
+      expect(SCENE_SCOPED_GROUPS.has("encounter")).toBe(true);
+      const onGroup = Object.entries(baked.sheets as Record<string, { atlas: string }>)
+        .filter(([, s]) => atlasGroup(s.atlas) === "encounter")
+        .map(([n]) => n)
+        .sort();
+      expect(onGroup).toEqual(CAST.map(([n]) => n).sort());
+    });
+
+    it("measures each one's crown, where its plate and bar sit, at a townsman's height, no staff or blade over it", () => {
+      const townsman = baked.sheets.folk_resident_trousers.crown;
+      for (const [name] of CAST) {
+        expect(baked.sheets[name].crown, name).toBeGreaterThanOrEqual(townsman * 0.9);
+        expect(baked.sheets[name].crown, name).toBeLessThanOrEqual(townsman * 1.15);
+      }
+    });
+  });
+
   describe("the sealed floor's props (FS-5FZ4J §K R57)", () => {
     type PropSheet = {
       atlas: string;
@@ -678,6 +759,9 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ["trap_gas_vent", ["armed", "sprung", "puff"]],
       ["healing_fountain", ["full", "dry"]],
       ["hallowed_altar", ["dormant", "prayed"]],
+      // the encounters' cage and its key (FS-4EC7Z §H R36), on the group's second page
+      ["cage", ["shut", "shut_back", "shut_front", "open", "open_back", "open_front"]],
+      ["cage_key", ["default"]],
     ];
 
     it("bakes every prop with the states the client plays, framed together on one sheet", () => {
@@ -2019,11 +2103,13 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       },
     );
 
-    it("writes a per-animation atlas only on the boss's spilled animations and a spec look's, never on existing sheets", () => {
+    it("writes a per-animation atlas only on the boss's spilled animations, a spec look's and the encounter cast's, never on existing sheets", () => {
       // the 1.5x archer is one page again (FS-HF0WW § Change: Class sheets at 1.5x R34); a spec
       // look alone in its group may spill to a second page of it (the Berserker's off-hand clips,
-      // FS-1J1CB R15, R28)
-      const spills = [...ROSTER.map(([n]) => n), ...specLooks()];
+      // FS-1J1CB R15, R28), and an encounter sheet over the pages of its own group (the pilgrim's
+      // three variants, FS-4EC7Z §H R36)
+      const encounter = Object.keys(baked.sheets).filter((n) => atlasGroup(baked.sheets[n].atlas) === "encounter");
+      const spills = [...ROSTER.map(([n]) => n), ...specLooks(), ...encounter];
       for (const [name, sheet] of Object.entries(baked.sheets) as [
         string,
         RosterSheet,

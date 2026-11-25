@@ -54,9 +54,9 @@ import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, RUN_ANIMATIONS, pose, withOf
  * ({@link RUN_SCEPTRE}: 26.0–37.3°, {@link WIZARD_SPRINT_TILT}) and the arm stands a little further
  * out ({@link SCEPTRE_RUN_OUT}).
  */
-const REST_ARM = [-0.05, 0, 0];
-const REST_ELBOW = [-0.12, 0, 0];
-const REST_BLADE = [0.95, 0, 0];
+export const REST_ARM = [-0.05, 0, 0];
+export const REST_ELBOW = [-0.12, 0, 0];
+export const REST_BLADE = [0.95, 0, 0];
 /** The sceptre's lean at rest, off vertical (degrees; the owner's "可以垂一點"): measured on the rig, the idle 37–41°, the walk 33–44°. */
 export const SCEPTRE_TILT = 40;
 const REST_SCEPTRE = [-0.68, -0.25, 0];

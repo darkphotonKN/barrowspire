@@ -103,6 +103,8 @@ window.bakeSheet = (name) => {
     ...(light ? { light } : {}),
     // frames cut to their pixels at pack time (bake.mjs, lib/trim.mjs)
     ...(sheet.trim ? { trim: true } : {}),
+    // packed after its group's other sheets, from a page of its own (lib/pack.mjs)
+    ...(sheet.appendPage ? { appendPage: true } : {}),
     source: sheet.source,
     licence: sheet.licence,
   };

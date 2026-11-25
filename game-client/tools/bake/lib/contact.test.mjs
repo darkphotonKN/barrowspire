@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { WARE_ICONS, composeDarkRoom, composeLooks, composeOutline, contactPages, lookSets, outlineTexts, writeReview } from "./contact.mjs";
+import { LINEUPS, WARE_ICONS, composeDarkRoom, composeLineup, composeLooks, composeOutline, contactPages, lineupSets, lookSets, outlineTexts, writeReview } from "./contact.mjs";
 import { decodePng } from "./png.mjs";
 
 // a creature sheet as the bake hands it to the review: 8 facings, four clips of `n` frames
@@ -218,5 +218,45 @@ describe("the wandering merchant's contact sheet (FS-9JV5K §G R26, lib/contact.
     expect(count(202)).toBe(4 * 64);
     expect(count(203)).toBe(0);
     expect(count(204)).toBe(0);
+  });
+});
+
+describe("the encounter cast's lineup (FS-4EC7Z §H R36, lib/contact.mjs)", () => {
+  // solid, opaque 4 x 4 frames, one grey per clip, so each clip's cells can be counted apart
+  const frame = (v) => Buffer.from(Array.from({ length: 16 }, () => [v, v, v, 255]).flat()).toString("base64");
+  const clip = (v, n) => ({ fps: 3, loop: true, frames: Array.from({ length: 8 }, () => Array.from({ length: n }, () => frame(v))) });
+  const pilgrim = {
+    name: "npc_pilgrim",
+    frameWidth: 4,
+    frameHeight: 4,
+    anchor: { x: 0.5, y: 1 },
+    directions: 8,
+    animations: { idle: clip(211, 4), walk: clip(212, 8), attack: clip(213, 7), death: clip(214, 7), cower: clip(215, 4), idle_b: clip(216, 4), walk_b: clip(217, 8), cower_b: clip(218, 4) },
+  };
+  const count = (png, v) => {
+    let n = 0;
+    for (let i = 0; i < png.rgba.length; i += 4) if (png.rgba[i] === v) n++;
+    return n;
+  };
+
+  it("lines up the cast beside a townsman of its builds, then the cage and its key", () => {
+    const l = LINEUPS.find((x) => x.file === "contact-encounter-2x.png");
+    expect(l.sheets).toEqual(["folk_resident_trousers", "npc_pilgrim", "npc_captive", "npc_cutthroat", "npc_hooded_duelist", "npc_debtor_knight", "cage", "cage_key"]);
+    const named = (n) => ({ ...pilgrim, name: n });
+    expect(lineupSets(l.sheets.map(named)).map((x) => x.file)).toContain("contact-encounter-2x.png");
+  });
+
+  it("shows a sheet's idle in every facing, its walk, strike and death, then each variant's idle and its own clip, once each", () => {
+    const png = composeLineup([pilgrim], FACINGS, new Map(), THEME, 1);
+    // 16 px a cell at 1x: 8 idle facings, one walk, two attack keys, one death; one cower and one idle_b
+    expect(count(png, 211)).toBe(8 * 16);
+    expect(count(png, 212)).toBe(16);
+    expect(count(png, 213)).toBe(2 * 16);
+    expect(count(png, 214)).toBe(16);
+    expect(count(png, 215)).toBe(16);
+    expect(count(png, 216)).toBe(16);
+    // a variant's other clips are its contact sheet's, not the lineup's
+    expect(count(png, 217)).toBe(0);
+    expect(count(png, 218)).toBe(0);
   });
 });

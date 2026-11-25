@@ -21,9 +21,10 @@ const PAD = 2;
 const roundUp4 = (n) => Math.ceil(n / 4) * 4;
 
 /**
- * @param sheets [{ name, group, frameWidth, frameHeight, frameCount, animations?, frames? }],
+ * @param sheets [{ name, group, frameWidth, frameHeight, frameCount, animations?, frames?, appendPage? }],
  *   where `animations` lists [{ name, frameCount }] in frame order (needed only to split a
- *   sheet), and `frames` gives a trimmed sheet's [{ w, h }] per frame, in frame order
+ *   sheet), `frames` gives a trimmed sheet's [{ w, h }] per frame, in frame order, and
+ *   `appendPage` packs a sheet after its group's others, from a new page (packGroup)
  * @returns [{ key, group, width, height, placements: { [sheet]: [{ x, y }] },
  *   parts: { [sheet]: { [animation]: [{ x, y }] } } }]: each frame's top-left, in frame order
  */
@@ -160,11 +161,24 @@ function packGroup(group, sheets) {
   // animations share pages instead of opening one each. Every other group keeps filling only its
   // newest page, the layout its committed atlases were packed with.
   const firstFit = blocks.some((b) => b.anim);
+  const fill = (run, from) => {
+    for (const b of run) {
+      const candidates = firstFit ? pages.slice(from) : [pages[pages.length - 1]];
+      if (candidates.some((st) => place(st, b))) continue;
+      if (!place(open(), b)) throw new Error(`pack: ${b.key} does not fit a page`);
+    }
+  };
+  // A sheet added to a group whose committed pages must keep their bytes (`appendPage`) packs after
+  // the group's others, from a page of its own: its blocks, tallest first, would otherwise take
+  // their place among the others' and move every block shorter than them.
+  const added = blocks.filter((b) => b.sheet.appendPage);
+  const kept = blocks.filter((b) => !b.sheet.appendPage);
   open();
-  for (const b of blocks) {
-    const candidates = firstFit ? pages : [pages[pages.length - 1]];
-    if (candidates.some((st) => place(st, b))) continue;
-    if (!place(open(), b)) throw new Error(`pack: ${b.key} does not fit a page`);
+  fill(kept, 0);
+  if (added.length) {
+    const from = kept.length ? pages.length : 0;
+    if (kept.length) open();
+    fill(added, from);
   }
   return pages.map((st) => st.page);
 }
