@@ -87,6 +87,21 @@ describe("itemIcon over the two wire shapes", () => {
     expect(itemIcon({ name: "Antidote", healing_amount: 50 })).toBe("potion_health");
   });
 
+  // FS-9JV5K §Change: The Restoring Draught D6 (I-9JV5K-7): its template carries no healing or mana
+  // either, so it too is found by its name, and its flask is its own icon
+  it.each([
+    ["the canvas item state", { name: "Restoring Draught", item_type: "consumable" }],
+    ["the marketplace summary", { name: "Restoring Draught", itemType: "Consumable" }],
+    ["a ware's display data", { name: "restoring draught" }],
+  ])("should draw a Restoring Draught from %s with its own icon", (_label, item) => {
+    expect(itemIcon(item)).toBe("restoring_draught");
+    expect(ITEM_ICONS).toContain("restoring_draught");
+  });
+
+  it("should not take a draught of any other name for the Restoring Draught", () => {
+    expect(itemIcon({ name: "Bitter Draught" })).toBe("generic");
+  });
+
   it("should draw an item with no name as generic", () => {
     expect(itemIcon({})).toBe("generic");
   });

@@ -58,7 +58,7 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { DrinkInFlight, healthPotionCount, drinkRefusal, type UseItemReply } from "@/ui/potions";
+import { DrinkInFlight, bagDrink, healthPotionCount, drinkRefusal, type UseItemReply } from "@/ui/potions";
 import { WaresTrade, type BuyReply, type ShownWares } from "@/ui/wares";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
@@ -166,7 +166,7 @@ import { FOG_FLOOR_AMBIENT, HALO_DEPTH, LightMap, type LightSource } from "@/ren
 import { ensurePointerLook, findPointerLook, type PointerLook } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
-import { ANTIDOTE_LOOK, HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
+import { ANTIDOTE_LOOK, HEAL_LOOK, restoreLook, ShimmerFx } from "@/render/effects/shimmer";
 import { Auras } from "@/render/effects/aura";
 import { prefersReducedMotion } from "@/render/effects/mist";
 import { playSlash } from "@/render/effects/slash";
@@ -3716,7 +3716,7 @@ export class BarrowspireScene extends Phaser.Scene {
         burn: (altar) => socketManager.sendMessage(ActionType.Interact, { entity_id: altar }),
         // the wares panel's Buy: one purchase at a time, Paying… until its reply (FS-9JV5K §F R23)
         buy: (ware) => this.buyWare(ware),
-        // the gear overlay's Drink on a bagged antidote (FS-9JV5K §F R24)
+        // the gear overlay's Drink on a bagged antidote or Restoring Draught (FS-9JV5K §F R24; §Change D6)
         drink: (item) => this.drink(item),
         // a dread lore line started on the UI scene: this camera trembles, as it did under the run's own
         // lines (FS-XWHZP R10; FS-TQZ5J § Change: Merge with main, 2026-11-14)
@@ -4225,7 +4225,7 @@ export class BarrowspireScene extends Phaser.Scene {
       if (refusal) this.showNotification(refusal, NOTICE_BACKING.refused);
     });
 
-    // a purchase answered (FS-9JV5K §F R23) and an antidote drunk or refused (R24)
+    // a purchase answered (FS-9JV5K §F R23) and an antidote or draught drunk or refused (R24, D6)
     socketManager.on("buy", (reply: BuyReply) => this.waresAnswered(reply));
     socketManager.on("use_item", (reply: UseItemReply) => this.itemUsed(reply));
 
@@ -4276,7 +4276,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // a late frame from the floor the party has climbed from (FS-KE075 §H.41)
     if (held && state.floor !== undefined && state.floor < held.floor) return;
     this.lastGameState = state;
-    // a drunk antidote gone from the bag: the drink is answered (FS-9JV5K §F R24)
+    // a drunk antidote or draught gone from the bag: the drink is answered (FS-9JV5K §F R24, D6)
     this.drinking.see(state.current_player?.inventory ?? []);
 
     // The party climbed (FS-F6F88 req 28, 32): the old floor goes before this broadcast builds
@@ -5578,15 +5578,22 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.trade.openFor && merchant) this.showWares(this.trade.view(merchant));
   }
 
-  /** The gear's Drink on a bag antidote (R24): its `use_item`, unless one is still to be answered. */
+  /**
+   * The gear's Drink on a bag antidote (R24) or Restoring Draught (§Change: The Restoring Draught D6):
+   * its `use_item`, unless one is still to be answered. What it is drunk as is read from the last
+   * state's bag; one not in it is the antidote's, which the server refuses `not_in_bag` anyway.
+   */
   private drink(item: string): void {
-    if (this.drinking.press(item)) socketManager.sendMessage(ActionType.UseItem, { item_entity_id: item });
+    const held = this.lastGameState?.current_player?.inventory?.find((i) => i.entity_id === item);
+    if (this.drinking.press(item, (held && bagDrink(held)) ?? "antidote"))
+      socketManager.sendMessage(ActionType.UseItem, { item_entity_id: item });
   }
 
   /**
-   * The `use_item` reply (R24): a refusal in its words, nothing spent; a success plays the potion
-   * shimmer in the poison tint's colours and clears nothing else (the state's `poisoned_for` going
-   * clears the tint).
+   * The `use_item` reply (R24, D6): a refusal in its words, nothing spent; a success plays the potion
+   * shimmer and clears nothing else. An antidote's is in the poison tint's colours (the state's
+   * `poisoned_for` going clears the tint); a draught's in the drinker's resource colour, from the
+   * pool's kind on the wire (the state's `resource` carries the refill).
    */
   private itemUsed(reply: UseItemReply): void {
     const refusal = drinkRefusal(reply ?? { success: false });
@@ -5594,7 +5601,11 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drinking.refused();
       return this.showNotification(refusal, NOTICE_BACKING.refused);
     }
-    this.shimmers?.playGranted(ANTIDOTE_LOOK, this.playerAnim?.crown);
+    const look =
+      this.drinking.drunk() === "restoring_draught"
+        ? restoreLook(this.lastGameState?.current_player?.resource?.kind)
+        : ANTIDOTE_LOOK;
+    this.shimmers?.playGranted(look, this.playerAnim?.crown);
   }
 
   /**

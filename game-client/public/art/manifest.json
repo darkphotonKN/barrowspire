@@ -295,7 +295,7 @@
       "image": "icons-0.png",
       "width": 2052,
       "height": 136,
-      "sha256": "836861137a75297e640ada95f1238434cb104449343641f8a3c0fa39f9955cb8"
+      "sha256": "4ee5f46da28725e2a146f10215aad8462c5ec0deb496b9ab03c684ba24676f8a"
     },
     "interior-0": {
       "image": "interior-0.png",
@@ -90527,7 +90527,7 @@
       "source": "procedural: tools/bake/page/models/items.js#potion_mana",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_ring_t1": {
+    "icon_restoring_draught": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -90544,6 +90544,32 @@
             [
               {
                 "x": 728,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#restoring_draught",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_ring_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 794,
                 "y": 68
               }
             ]
@@ -90569,7 +90595,7 @@
           "frames": [
             [
               {
-                "x": 794,
+                "x": 860,
                 "y": 68
               }
             ]
@@ -90595,7 +90621,7 @@
           "frames": [
             [
               {
-                "x": 860,
+                "x": 926,
                 "y": 68
               }
             ]
@@ -90621,7 +90647,7 @@
           "frames": [
             [
               {
-                "x": 926,
+                "x": 992,
                 "y": 68
               }
             ]
@@ -90647,7 +90673,7 @@
           "frames": [
             [
               {
-                "x": 992,
+                "x": 1058,
                 "y": 68
               }
             ]
@@ -90673,7 +90699,7 @@
           "frames": [
             [
               {
-                "x": 1058,
+                "x": 1124,
                 "y": 68
               }
             ]
@@ -90699,7 +90725,7 @@
           "frames": [
             [
               {
-                "x": 1124,
+                "x": 1190,
                 "y": 68
               }
             ]
@@ -90725,7 +90751,7 @@
           "frames": [
             [
               {
-                "x": 1190,
+                "x": 1256,
                 "y": 68
               }
             ]
@@ -90751,7 +90777,7 @@
           "frames": [
             [
               {
-                "x": 1256,
+                "x": 1322,
                 "y": 68
               }
             ]
@@ -90777,7 +90803,7 @@
           "frames": [
             [
               {
-                "x": 1322,
+                "x": 1388,
                 "y": 68
               }
             ]
@@ -90803,7 +90829,7 @@
           "frames": [
             [
               {
-                "x": 1388,
+                "x": 1454,
                 "y": 68
               }
             ]
@@ -90829,7 +90855,7 @@
           "frames": [
             [
               {
-                "x": 1454,
+                "x": 1520,
                 "y": 68
               }
             ]
@@ -90855,7 +90881,7 @@
           "frames": [
             [
               {
-                "x": 1520,
+                "x": 1586,
                 "y": 68
               }
             ]
@@ -90881,7 +90907,7 @@
           "frames": [
             [
               {
-                "x": 1586,
+                "x": 1652,
                 "y": 68
               }
             ]
@@ -90907,7 +90933,7 @@
           "frames": [
             [
               {
-                "x": 1652,
+                "x": 1718,
                 "y": 68
               }
             ]
@@ -90933,7 +90959,7 @@
           "frames": [
             [
               {
-                "x": 1718,
+                "x": 1784,
                 "y": 68
               }
             ]
@@ -90959,7 +90985,7 @@
           "frames": [
             [
               {
-                "x": 1784,
+                "x": 1850,
                 "y": 68
               }
             ]
@@ -90985,7 +91011,7 @@
           "frames": [
             [
               {
-                "x": 1850,
+                "x": 1916,
                 "y": 68
               }
             ]
@@ -91011,7 +91037,7 @@
           "frames": [
             [
               {
-                "x": 1916,
+                "x": 1982,
                 "y": 68
               }
             ]

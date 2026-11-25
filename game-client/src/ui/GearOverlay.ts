@@ -140,7 +140,7 @@ export const GEAR_HINT =
  */
 export const STASH_HINT =
   "Right-click or E: move between bag and stash, or take off  //  Shift: compare  //  I, B or Esc: close";
-/** Over a bag antidote the overlay drinks, the gesture drinks it (FS-9JV5K §F R24). */
+/** Over a bag antidote or Restoring Draught the overlay drinks, the gesture drinks it (FS-9JV5K §F R24; §Change D6). */
 export const DRINK_HINT =
   "Right-click or E: drink  //  Shift: compare  //  I, B or Esc: close";
 
@@ -1300,7 +1300,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     else if (at.kind === "bag") this.equip(item);
   }
 
-  /** Whether the gesture on this bag item drinks it: an antidote, where this overlay drinks at all (R24). */
+  /** Whether the gesture on this bag item drinks it: an antidote or a draught, where this overlay drinks at all (R24, D6). */
   private drinks(item: ItemState): boolean {
     return this.onDrink !== undefined && drinksFromBag(item);
   }

@@ -457,6 +457,20 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
     expect(DRINK_HINT).toBe("Right-click or E: drink  //  Shift: compare  //  I, B or Esc: close");
   });
 
+  // FS-9JV5K §Change: The Restoring Draught D6 (I-9JV5K-7): Drink on a draught in the bag, as on an antidote
+  it("should drink a hovered Restoring Draught on right-click or E, hinting drink over it and wearing nothing", () => {
+    const draught = item("draught-1", { name: "Restoring Draught", item_type: "consumable" });
+    const { overlay, move, press, cell, onEquip, shown } = overlayOnStage([draught]);
+    const onDrink = vi.fn();
+    overlay.onDrink = onDrink;
+    move(...cell(0));
+    expect(shown()).toContain(DRINK_HINT);
+    press(...cell(0), 2);
+    overlay.handleEquipKey();
+    expect(onDrink.mock.calls).toEqual([[draught], [draught]]);
+    expect(onEquip).not.toHaveBeenCalled();
+  });
+
   it("should keep wear or take off over an antidote where nothing drinks it", () => {
     const antidote = item("antidote-1", { name: "Antidote", item_type: "consumable" });
     const { move, cell, shown } = overlayOnStage([antidote]);

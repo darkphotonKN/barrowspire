@@ -460,8 +460,11 @@ export interface HallowedAltarState {
   prayed: boolean;
 }
 
-/** What the wandering merchant sells (FS-9JV5K §A R3–R4): a ware the client does not know keeps its own name. */
-export type WareKind = "health_potion" | "antidote" | "tome_of_filth";
+/**
+ * What the wandering merchant sells (FS-9JV5K §A R3–R4; the Restoring Draught by §Change: The Restoring
+ * Draught D2): a ware the client does not know keeps its own name.
+ */
+export type WareKind = "health_potion" | "antidote" | "restoring_draught" | "tome_of_filth";
 
 /**
  * A ware's display data (FS-9JV5K §A R4): its template's name, rarity and the stats the icon resolver

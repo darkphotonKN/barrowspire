@@ -105,7 +105,7 @@ const chatMayOpen = (run: object) => chatWiring(uiSceneOn(run, "run", { row: fal
 const typeInChat = (run: object, on = true) => uiSceneOn(run, "run", { row: false }).bridge.reportUi({ typing: on });
 const { barShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { GameUiBridge, NO_UI, worldContainer } = await import("@/ui/uiBridge");
-const { ANTIDOTE_LOOK } = await import("@/render/effects/shimmer");
+const { ANTIDOTE_LOOK, restoreLook } = await import("@/render/effects/shimmer");
 const { merchantLantern } = await import("@/render/world/merchant");
 
 /**
@@ -13269,6 +13269,42 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(shimmers.playGranted).not.toHaveBeenCalled();
       run.itemUsed({ success: true });
       expect(shimmers.playGranted).toHaveBeenCalledWith(ANTIDOTE_LOOK, expect.anything());
+    });
+
+    // FS-9JV5K §Change: The Restoring Draught D6 (I-9JV5K-7)
+    const draught = { entity_id: "draught-1", item_id: "d", name: "Restoring Draught", quantity: 1, item_type: "consumable" };
+    const mage = { kind: "mana", current: 40, max: 150, ability_cost: 30 };
+
+    it("should send use_item for Drink on a Restoring Draught in the bag (D6)", () => {
+      const { answer, next } = merchantStage();
+      next(undefined, mine({ inventory: [draught], resource: mage }));
+      const sent = sending();
+      answer({ kind: "drink", item: "draught-1" });
+      expect(sent.mock.calls).toEqual([[ActionType.UseItem, { item_entity_id: "draught-1" }]]);
+    });
+
+    it("should say You are already full. on resource_full, the draught kept and drinkable again (D4, D6)", () => {
+      const { run, answer, next, notified } = merchantStage();
+      next(undefined, mine({ inventory: [draught], resource: mage }));
+      const sent = sending();
+      answer({ kind: "drink", item: "draught-1" });
+      run.itemUsed({ success: false, reason: "resource_full", message: "your resource is already full" });
+      expect(notified.mock.calls).toEqual([["You are already full.", palette.damageBright]]);
+      answer({ kind: "drink", item: "draught-1" });
+      expect(sent).toHaveBeenCalledTimes(2);
+    });
+
+    it("should play the potion shimmer in the drinker's resource colour on a drunk draught, even once the state has dropped it (D6)", () => {
+      const { run, answer, next } = merchantStage();
+      const shimmers = { playGranted: vi.fn() };
+      run.shimmers = shimmers;
+      next(undefined, mine({ inventory: [draught], resource: mage }));
+      sending();
+      answer({ kind: "drink", item: "draught-1" });
+      next(undefined, mine({ inventory: [], resource: { ...mage, current: 115 } }));
+      run.itemUsed({ success: true });
+      expect(shimmers.playGranted).toHaveBeenCalledWith(restoreLook("mana"), expect.anything());
+      expect(shimmers.playGranted).not.toHaveBeenCalledWith(ANTIDOTE_LOOK, expect.anything());
     });
   });
 

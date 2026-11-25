@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EquipmentState, ItemState } from "@/types/gameState";
-import { DrinkInFlight, drinksFromBag, healthPotionCount, drinkRefusal } from "./potions";
+import { DrinkInFlight, bagDrink, drinksFromBag, healthPotionCount, drinkRefusal } from "./potions";
 
 const item = (fields: Partial<ItemState>): ItemState =>
   ({
@@ -85,6 +85,19 @@ describe("drinksFromBag (FS-9JV5K §F R24)", () => {
     ["a mana potion", mana],
     ["a sword", item({ name: "Rusted Sword", weapon_type: "sword", item_type: "weapon" })],
   ])("should not drink %s from the bag", (_, it_) => expect(drinksFromBag(it_)).toBe(false));
+
+  // FS-9JV5K §Change: The Restoring Draught D6 (I-9JV5K-7): the draught, drunk from the bag as the antidote is
+  it("should drink a Restoring Draught from the bag, by the icon resolver's own rule", () => {
+    expect(drinksFromBag(item({ name: "Restoring Draught" }))).toBe(true);
+  });
+});
+
+describe("bagDrink (FS-9JV5K §F R24; §Change: The Restoring Draught D6)", () => {
+  it.each([
+    ["an antidote", item({ name: "Antidote" }), "antidote"],
+    ["a Restoring Draught", item({ name: "Restoring Draught" }), "restoring_draught"],
+    ["a health potion", health, null],
+  ])("should name what %s is drunk as", (_, it_, want) => expect(bagDrink(it_)).toBe(want));
 });
 
 describe("drinkRefusal (FS-9JV5K §F R24)", () => {
@@ -92,6 +105,8 @@ describe("drinkRefusal (FS-9JV5K §F R24)", () => {
     ["not_poisoned", "You are not poisoned."],
     ["not_in_bag", "That is no longer in your bag."],
     ["not_usable", "That cannot be drunk."],
+    // §Change: The Restoring Draught D6: stamina, mana and parry charges alike
+    ["resource_full", "You are already full."],
   ])("should say %s as %j", (reason, line) => expect(drinkRefusal({ success: false, reason })).toBe(line));
 
   it("should say nothing on a success", () => expect(drinkRefusal({ success: true })).toBeNull());
@@ -108,30 +123,43 @@ describe("DrinkInFlight", () => {
 
   it("should send the first Drink and nothing for a second while its antidote is still in the bag", () => {
     const drinking = new DrinkInFlight();
-    expect(drinking.press("antidote-1")).toBe(true);
+    expect(drinking.press("antidote-1", "antidote")).toBe(true);
     drinking.see(bag("antidote-1"));
-    expect(drinking.press("antidote-1")).toBe(false);
-    expect(drinking.press("antidote-2")).toBe(false);
+    expect(drinking.press("antidote-1", "antidote")).toBe(false);
+    expect(drinking.press("antidote-2", "antidote")).toBe(false);
   });
 
   it("should let a Drink go again once a state's bag has dropped the drunk antidote", () => {
     const drinking = new DrinkInFlight();
-    drinking.press("antidote-1");
+    drinking.press("antidote-1", "antidote");
     drinking.see(bag("antidote-2"));
-    expect(drinking.press("antidote-2")).toBe(true);
+    expect(drinking.press("antidote-2", "antidote")).toBe(true);
   });
 
   it("should let the same antidote be drunk again after a refusal, which left it in the bag", () => {
     const drinking = new DrinkInFlight();
-    drinking.press("antidote-1");
+    drinking.press("antidote-1", "antidote");
     drinking.refused();
-    expect(drinking.press("antidote-1")).toBe(true);
+    expect(drinking.press("antidote-1", "antidote")).toBe(true);
+  });
+
+  // §Change: The Restoring Draught D6: the success reply names no item, so the drink it answers is the last one sent
+  it("should remember what the last drink sent was, through the state that drops it, for its success to show", () => {
+    const drinking = new DrinkInFlight();
+    expect(drinking.drunk()).toBeUndefined();
+    drinking.press("draught-1", "restoring_draught");
+    drinking.see(bag());
+    expect(drinking.drunk()).toBe("restoring_draught");
+    drinking.press("antidote-1", "antidote");
+    expect(drinking.drunk()).toBe("antidote");
+    drinking.reset();
+    expect(drinking.drunk()).toBeUndefined();
   });
 
   it("should forget the drink on reset (a new run)", () => {
     const drinking = new DrinkInFlight();
-    drinking.press("antidote-1");
+    drinking.press("antidote-1", "antidote");
     drinking.reset();
-    expect(drinking.press("antidote-1")).toBe(true);
+    expect(drinking.press("antidote-1", "antidote")).toBe(true);
   });
 });

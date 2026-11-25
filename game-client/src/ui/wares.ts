@@ -59,6 +59,7 @@ export interface BuyReply {
 const WARE_NAMES: Readonly<Record<string, string>> = {
   health_potion: "Health Potion",
   antidote: "Antidote",
+  restoring_draught: "Restoring Draught",
   tome_of_filth: "Tome of Filth",
 };
 

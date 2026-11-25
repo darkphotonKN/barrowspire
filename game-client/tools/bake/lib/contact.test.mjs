@@ -196,7 +196,7 @@ describe("the wandering merchant's contact sheet (FS-9JV5K §G R26, lib/contact.
   };
 
   it("lists the icons of his wares, the antidote among the potions it must stand apart from", () => {
-    expect(WARE_ICONS).toEqual(["icon_potion_health", "icon_potion_mana", "icon_vial_tonic", "icon_antidote"]);
+    expect(WARE_ICONS).toEqual(["icon_potion_health", "icon_potion_mana", "icon_vial_tonic", "icon_antidote", "icon_restoring_draught"]);
   });
 
   it("writes him, every facing of his idle, and the wares' icons at 2x, and nothing else", () => {
@@ -213,9 +213,9 @@ describe("the wandering merchant's contact sheet (FS-9JV5K §G R26, lib/contact.
       for (let i = 0; i < png.rgba.length; i += 4) if (png.rgba[i] === v) n++;
       return n;
     };
-    // 8 facings x 4 frames of him, the four wares once each, each frame 8 x 8 px at 2x
+    // 8 facings x 4 frames of him, the five wares once each, each frame 8 x 8 px at 2x
     expect(count(201)).toBe(8 * 4 * 64);
-    expect(count(202)).toBe(4 * 64);
+    expect(count(202)).toBe(5 * 64);
     expect(count(203)).toBe(0);
     expect(count(204)).toBe(0);
   });
