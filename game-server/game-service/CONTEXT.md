@@ -311,6 +311,9 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   opens and a key fits), "puzzle" for the seal itself (the puzzle is how a seal is broken).
 - **Seal piece** — one interactable a seal is broken through: a lever, a pressure plate, the stair
   key, the bridge lever, a brazier. Stands on a branch other than the stairs'.
+- **Lore piece** — an interactable that tells, never breaks a seal: the Lever Order's **mural**
+  (answers the glyph order) and a hidden room's **lore shrine**. Not a seal piece and wakes nothing;
+  on the wire it rides `seal_pieces` beside them. *Avoid*: calling the mural a seal piece.
 - **Solvable by one** — every seal, gap and hidden room the way up depends on can be passed by one
   living delver of any class with no book page (ADR-0092). A shortcut (a book page, an ally, a
   second delver) is faster, never required.
