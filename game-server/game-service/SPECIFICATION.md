@@ -73,6 +73,7 @@ matchmaking); this service is the engine they feed. ✅
 
 - [x] Server-authoritative player entities
 - [x] Continuous-velocity movement
+- [ ] Dodge roll → FS-7P736
 - [x] Apply attack damage in a combat system rather than inline → FS-77AB6
 - [x] Item pickup
 - [x] Equip and unequip

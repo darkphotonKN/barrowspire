@@ -372,6 +372,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   key. The gold the client shows is its **purse line** (FS-7TGZ3), a read, not this.
 - **Antidote** — a consumable item template: drunk from the bag (the `use` action), it ends
   poison at once; refused and not spent when its drinker is not poisoned.
+- **Restoring Draught** — a consumable item template the merchant sells: drunk from the bag (`use_item`), it refills half the drinker's class resource max (at least 1). Held apart from the loot pool, as the antidote is (FS-9JV5K §Change: The Restoring Draught).
 
 ### Encounters (FS-4EC7Z)
 
@@ -786,6 +787,8 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 
 ### Classes and abilities (FS-8AY7S, FS-MAMHR, FS-JTNPR, FS-04EEA, ADR-0030)
 
+- **Roll** (FS-7P736) — a delver's dodge: on `roll {dir_x, dir_y}`, a fixed 200 px tumble over 0.4 s, swept against walls, through bodies, untouchable while **rolling**; then a 3 s **roll cooldown** (`current_player.roll_cooldown`). Free, no class resource. Not an ability: it has no attack row and no class.
+
 - **Class** — a character's archetype, by its server id: `warrior`, `mage`, `archer`, `mercenary`
   (FS-MAMHR). The id is the term in code and on the wire. Display names belong to game-client:
   the screen and the art say other things (the warrior is drawn from the *knight* sheet, the mage
@@ -850,7 +853,7 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - **Draught** (FS-X2CMM, Brew) — the drink the Brew page sets down; any delver drinks it by
   interacting. Heals over time; lasts until drunk or the floor ends. Not a **health potion**
   (carried, key 1).
-- **Hound** (FS-X2CMM, Call the Hound) — the archer's summoned beast: an ally entity for 40 s that
+- **Hound** (FS-X2CMM, Call the Hound) — the archer's summoned beast, a **wolf** to players (FS-X2CMM §Change: The archer's wolf: the page reads *Call the Wolf*; every code, wire and file name stays *hound*): an ally entity for 40 s that
   fights monsters. Not a monster and not a delver: monsters may strike it, it never counts toward
   a floor's clear or a party's roster, and it leaves no body.
   It holds a pressure plate as a delver does (its own body kind, which weighs). It **bays**: every

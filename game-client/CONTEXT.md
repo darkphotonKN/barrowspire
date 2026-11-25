@@ -836,6 +836,9 @@ The server owns every rule ([`game-service/CONTEXT.md`](../game-server/game-serv
   panel**: each ware's icon, name, price in gold and count left, and the buyer's purse line. A
   buy waits on the server ("Paying…") and then lands in the bag or says why it did not.
 - **Antidote**: the bag item that ends poison, drunk from the bag (**Drink**).
+- **Restoring Draught**: the bag item that refills half the class resource, drunk from the bag (**Drink**), sold by the merchant.
+- **Wolf**: the player-facing name of the archer's summon (*Call the Wolf*); code, sheets and the wire keep *hound* (FS-X2CMM §Change: The archer's wolf).
+- **Roll** (FS-7P736): Space's dodge, predicted like walking; **rolling** while it runs; the **roll pip** on the HUD shows its cooldown.
 - **Encounter NPC**: a pilgrim, captive or cutthroat drawn from the town cast's looks with a
   variant tint, gear and face; speaks with a short **over-head line**. *Avoid*: "monster" for one
   until it turns hostile, and "mob" in copy.

@@ -718,3 +718,71 @@ C9. **The look stays swappable**: inks in `pageRoundel.ts`, the spread's tones a
 
 - Any change to casting, the bridge, the wire or the server.
 - New pictures for the pages.
+
+## Change: The archer's wolf
+
+Status: work-order
+Date: 2026-11-25
+
+> Charter item C (W1–W2) of the 2026-11-25 dungeon-crawler pace charter, promoted
+> `--from-thread` by charter child C. **(owner)** marks the charter's locked words; **(charter
+> default)** what it left open. The page's cost moves with the charter's ×1.5 retune (40 → 60
+> stamina) under `Tunes FS-X2CMM`, not here.
+
+### Requirements
+
+W1. **A wolf, not a hound (owner).** Call the Hound's summon is drawn as a **wolf**: a grey-brown
+    timber wolf built in code at the creature fidelity bar (ADR-0021: Ultima Online), heavier in the
+    chest and neck than R47's lean hound, a thick ruff, a long brush tail carried low, pricked
+    ears, a long muzzle; its run, bite and fall clips as R47's. It replaces the hound's baked sheet
+    in place (same sheet key, same clips, same group), so nothing that loads it changes. Art never
+    blocks: until the wolf bakes, the hound's sheet stands.
+W2. **Its words name the wolf (owner):** the page reads **"Call the Wolf"** in the book panel, its
+    tooltip, the reticle card and every client text that names it; its line reads of a wolf; the
+    summon's plate and any overhead text say *Wolf*; the page roundel's picture (R45's "a hound's
+    head in profile") becomes a wolf's head in profile, same pigment (verdigris). **Internal ids
+    stay (owner):** `call_the_hound`, `PageCallTheHound`, `book_hound.go`, `BookEffectHound`
+    (`"hound"` on the wire), the `Hound` component and the client's `hound` names in code. The
+    glossaries' *hound* gains *wolf* as its player-facing name.
+W3. **No delver-side hit lands on the wolf (owner: the same rule as co-op no-PvP).** No damage
+    reaches it from a delver, a hired ally, or anything either of them made: a strike, a cone, a
+    projectile (an arrow, a fireball, Shadow Shot, a split arrow), an area or ground effect (Arrow
+    Rain's volleys, Earthbreaker, Settle the Debt, a burning trail, a rune), a kicker or a reflect.
+    This holds whatever the world's player-damage setting is. It extends R28's "no delver's hit
+    lands on a hound" from the hits that name a delver attacker to **every** hit a delver or an
+    ally is the source of, by one rule at the one hit gate (`CanHit`), not by a check per source.
+W4. **Monsters still hurt it (owner),** as R28 and the wave-1 reconciliation keep: a monster's
+    strike and shot hit it; a monster's area or cone ability passes it by (`StruckByArea`,
+    unchanged). A trap's hit and poison are the floor's, not a delver's: they are unchanged
+    (charter default — reason: a trap is no ally of the party).
+W5. **Tests per source (owner):** one test for each delver-side source in W3 shows the wolf's
+    health unchanged and nothing applied (no stun, no kicker), and one shows a monster's strike
+    and shot still hurt it.
+
+### Acceptance Criteria
+
+- [ ] game-service: a wolf standing in each W3 source (a delver's slash, cut and riposte; arrow,
+      fireball, Shadow Shot and a split arrow; Arrow Rain, Earthbreaker, Settle the Debt, a
+      burning trail; a hired ally's strike; a reflect and a kicker) keeps its health and takes no
+      stun; a test per source.
+- [ ] game-service: a monster's strike and shot still lower the wolf's health; a monster's area
+      ability still passes it by.
+- [ ] game-service: the rule holds with player damage on.
+- [ ] game-client: the book panel, the tooltip and the reticle card read "Call the Wolf"; the
+      roundel shows a wolf's head; no player-facing text says hound.
+- [ ] game-client: the summon is drawn from the wolf sheet once baked (the same sheet key), the
+      hound's sheet until then; the contact sheet carries the wolf.
+- [ ] Internal ids are unchanged: the wire still says `call_the_hound` and `"hound"`.
+
+### Edge States
+
+- **Two archers' wolves:** each spared by every delver, its own archer's and the other's.
+- **A wolf under a delver's lasting ground effect at summon time:** spared from its first tick.
+- **A hired ally that turns on the party:** none exists; an ally's attacks never land on the wolf.
+- **Player damage on (a PvP world):** delvers may hurt each other; the wolf stays spared.
+
+### Out of Scope
+
+- Renaming any internal id, wire value, file or component.
+- The wolf's numbers (health, bite, reach, life): R28 unchanged.
+- Monster area abilities hitting the wolf.

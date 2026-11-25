@@ -259,3 +259,73 @@ drunk from the bag.
 - Making good a paid purchase that could not be granted (logged only).
 - An ability-bar square or hotkey for the antidote.
 - Any HTTP contract change.
+
+## Change: The Restoring Draught
+
+Status: work-order
+Date: 2026-11-25
+
+> Charter item C (E4) of the 2026-11-25 dungeon-crawler pace charter, promoted `--from-thread` by
+> charter child C. The same charter slows class-resource regen (stamina 20 → 7/s, mana 4 → 2/s,
+> `Tunes FS-8AY7S`) and raises ability and page costs ×1.5, so a resource refill is now worth
+> buying. **(owner)** marks the charter's locked words; **(charter default)** what it left open.
+
+### Requirements
+
+D1. **A new consumable template** "Restoring Draught" (common, no healing, no mana, stacks as the
+    antidote does), added by an additive items-service migration `000033_restoring_draught_template`
+    with fixed ids and a down migration, exactly as R16 added the antidote. It is **not** in the
+    random loot pool: game-service finds it by its name and holds it apart, as it holds the
+    antidote (**owner:** add it the way the Antidote was added).
+D2. **The merchant sells it (owner):** a third bag ware, after the health potion and the antidote,
+    at `MerchantDraughtPrice` = **50 gold** (between the antidote's 40 and the potion's 60,
+    **owner:** priced between them) with `MerchantDraughtStock` = **3** (charter default: as the
+    potion and the antidote). Bought through §B exactly as any bag ware. A catalogue without the
+    template sells no draught and logs it at warn, as for the antidote.
+D3. **Drinking it from the bag** goes through R17's `use_item { item_entity_id }`: a Restoring
+    Draught **refills 50 % of the drinker's class resource max (owner)**, added to current and
+    capped at max, then is spent (entity removed; a seated instance recorded consumed). Half the
+    max is rounded down, and is at least 1 (charter default — reason: a mercenary's parry charges
+    are whole: 1 of 3, 2 of a Sellsword's 5). Gear and passives count: it is half the pool's
+    current max.
+D4. **Refused and not spent** with `use_item {success: false, reason}`: `resource_full` when the
+    pool is already at max (charter default — reason: as `not_poisoned` keeps an antidote nobody
+    needs); `not_in_bag` and `not_usable` as R17. No cooldown (as the antidote).
+D5. **seed-dev.sh** leaves the draught out of its template count, as it leaves the antidote, since
+    the migration, not the script, adds it.
+D6. **The client:** the wares panel shows the draught's row from the ware on the wire (no new
+    field: name, price and left come as for any ware). The gear overlay offers **Drink** on a
+    draught in the bag as it does on an antidote and sends `use_item`; `resource_full` shows
+    *"You are already full."* (stamina, mana and parry charges alike); success plays the potion
+    shimmer in the drinker's resource colour (the design guideline: healing takes the resource's
+    colour). Its icon is its own baked item icon, a flask in the resource-refill tone, chosen by
+    the icon resolver for the template.
+
+### Acceptance Criteria
+
+- [ ] items-service: migration 000033 adds the Restoring Draught consumable and template; its down
+      removes them; a migration test pins the rows as the antidote's test does.
+- [ ] game-service: the item pool holds the draught apart from the loot pool; no loot roll ever
+      yields it.
+- [ ] game-service: a merchant's wares are potion, antidote, draught (when each template exists),
+      the draught at 50 gold, 3 in stock; buying it puts one in the bag.
+- [ ] game-service: `use_item` on a draught raises a warrior at 10/100 stamina to 60, a mage at
+      100/150 mana to 150 (capped), a merc at 0/3 parry charges to 1, and spends it; at max it is
+      refused `resource_full` and kept; not in the bag `not_in_bag`.
+- [ ] seed-dev.sh's count excludes the draught as it excludes the antidote.
+- [ ] game-client: the draught shows in the wares panel; Drink on it in the bag sends `use_item`;
+      `resource_full` reads *"You are already full."*; it has its own icon.
+
+### Edge States
+
+- **Dead or spectating:** `use_item` is refused as R17's other in-play refusals are.
+- **Pool max raised by gear after buying:** half is taken of the max at the moment of drinking.
+- **A merc with a pool of 3 at 2:** refills 1 to 3.
+- **Two draughts drunk on one tick:** the second sees the first's result (full → refused).
+- **Hub or field:** `use_item` is run-only already (R17).
+
+### Out of Scope
+
+- A hotkey or ability-bar square for the draught.
+- A draught in chests or monster drops.
+- A health-and-resource combined potion; changing the health potion or the antidote.

@@ -49,6 +49,7 @@ server state and sends intents. ✅
 - [x] Queue for a match
 - [x] Enter a run when matched
 - [x] Move, attack, and interact
+- [ ] Dodge roll → FS-7P736
 - [x] Equip and unequip from the loadout
 - [x] Render authoritative server state each tick
 - [x] Reconnect into an in-progress run
