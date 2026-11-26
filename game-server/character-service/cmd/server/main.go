@@ -52,6 +52,8 @@ func main() {
 	}
 	defer commontracing.Close(shutdownTracing)
 
+	commontelemetry.ServePprof(commonhelpers.GetEnvString("PPROF_ADDR", ""))
+
 	// --- database setup ---
 
 	db := config.InitDB()

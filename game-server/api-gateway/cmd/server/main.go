@@ -74,6 +74,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer commontracing.Close(shutdownTracing)
+
+	commontelemetry.ServePprof(commonhelpers.GetEnvString("PPROF_ADDR", ""))
 	commontelemetry.ServeMetrics(metricsPort)
 
 	// --- database setup removed - api gateway is stateless ---

@@ -44,6 +44,8 @@ func main() {
 	}
 	defer commontracing.Close(shutdownTracing)
 
+	commontelemetry.ServePprof(commonhelpers.GetEnvString("PPROF_ADDR", ""))
+
 	// --- stripe setup ---
 	if stripeSecretKey == "" {
 		log.Fatal("STRIPE_SECRET_KEY is required")

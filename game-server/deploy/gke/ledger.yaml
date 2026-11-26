@@ -11,7 +11,7 @@ spec:
     spec:
       containers:
         - name: ledger
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/ledger:6fcd619c
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/ledger:f9b85fe2
           ports:
             - { containerPort: 7129, name: grpc }
             - { containerPort: 8200, name: metrics }

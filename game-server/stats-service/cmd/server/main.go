@@ -17,6 +17,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/darkphotonKN/barrowspire-server/stats-service/config"
@@ -62,6 +63,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer commontracing.Close(shutdownTracing)
+
+	commontelemetry.ServePprof(commonhelpers.GetEnvString("PPROF_ADDR", ""))
 
 	// --- database setup ---
 	db := config.InitDB()
