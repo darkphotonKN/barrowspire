@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jmoiron/sqlx"
@@ -40,6 +41,9 @@ func InitDB() *sqlx.DB {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(5 * time.Minute)
+
+	// pool stats on /metrics as go_sql_*{db_name}; the pool settings above are unchanged
+	commontelemetry.RegisterDBStats(db.DB, dbname)
 
 	if err = db.Ping(); err != nil {
 		panic(fmt.Errorf("failed to ping database: %w", err))
