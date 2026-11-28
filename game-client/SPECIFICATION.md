@@ -49,7 +49,7 @@ server state and sends intents. ✅
 - [x] Queue for a match
 - [x] Enter a run when matched
 - [x] Move, attack, and interact
-- [ ] Dodge roll → FS-7P736
+- [x] Dodge roll → FS-7P736
 - [x] Equip and unequip from the loadout
 - [x] Render authoritative server state each tick
 - [x] Reconnect into an in-progress run
@@ -78,15 +78,15 @@ server state and sends intents. ✅
 - [ ] Allocated pickup notices → FS-V780R
 - [x] Unsafe marking on run finds → FS-18Z5F
 - [ ] Other delvers' names over their heads → FS-CH21F
-- [ ] Class book → FS-X2CMM
-- [ ] Floor seals → FS-5FZ4J
-- [ ] Traps shown and sprung → FS-5FZ4J
-- [ ] Secret doors and hidden rooms → FS-5FZ4J
-- [ ] Healing fountains and the hallowed altar → FS-5FZ4J
-- [ ] Dungeon NPC encounters and hired allies → FS-4EC7Z
-- [ ] Contract mark heading and result → FS-4EC7Z
-- [ ] Buy from the wandering merchant → FS-9JV5K
-- [ ] Drink an antidote → FS-9JV5K
+- [x] Class book → FS-X2CMM
+- [x] Floor seals → FS-5FZ4J
+- [x] Traps shown and sprung → FS-5FZ4J
+- [x] Secret doors and hidden rooms → FS-5FZ4J
+- [x] Healing fountains and the hallowed altar → FS-5FZ4J
+- [x] Dungeon NPC encounters and hired allies → FS-4EC7Z
+- [x] Contract mark heading and result → FS-4EC7Z
+- [x] Buy from the wandering merchant → FS-9JV5K
+- [x] Drink an antidote → FS-9JV5K
 
 ### Character
 
@@ -147,7 +147,7 @@ server state and sends intents. ✅
 - [ ] High-density canvas rendering → FS-ZAJMH
 - [ ] Canvas that resizes with the window → FS-ZAJMH
 - [ ] Fullscreen and windowed play → FS-ZAJMH
-- [ ] Class book page icons → FS-X2CMM
+- [x] Class book page icons → FS-X2CMM
 
 ### Sound
 

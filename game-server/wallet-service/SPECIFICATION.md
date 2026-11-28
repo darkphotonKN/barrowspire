@@ -128,7 +128,7 @@ Per-table detail (fields, keys, states, constraints, references) lives in `docs/
 - [x] Create a member's account on signup → FS-9KW9F
 - [x] Publish account creation for downstream consumers → FS-9KW9F
 - [x] Idempotent gold credit to the caller's account → FS-1GZGD
-- [ ] Idempotent gold debit for a purchase → FS-9JV5K
+- [x] Idempotent gold debit for a purchase → FS-9JV5K
 
 > **Known gap (observed 2026-09-27, undiagnosed) — signup does not create the account.** Five
 > fresh signups never reached the `wallet.auth.member.signedup` consumer (it was listening), so no

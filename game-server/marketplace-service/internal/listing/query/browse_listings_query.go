@@ -22,7 +22,7 @@ func NewBrowseListingsQuery(db *sqlx.DB) *BrowseListingsQuery {
 	}
 }
 
-// Execute returns one page of live auctions — ACTIVE and not yet past ends_at —
+// Execute returns one page of live auctions, ACTIVE and not yet past ends_at,
 // keyset-paged on (ends_at, id) ascending, each with its price facts. A nil
 // cursor is the first page.
 //
