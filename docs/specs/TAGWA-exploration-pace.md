@@ -1,6 +1,6 @@
 # FS-TAGWA: Exploration pace
 
-> Status: work-order · SPECIFICATION.md: none of its own: a change FS spanning several capabilities. It changes "Continuous-velocity movement" (`game-server/game-service/SPECIFICATION.md`, FS-none, its line kept as is) and the stated speeds of [FS-77AB6](77AB6-monsters-and-combat.md), [FS-B4SG9](B4SG9-ranged-monsters-and-the-bone-archer.md), [FS-C8VM7](C8VM7-tiered-enemy-roster-and-floor-pools.md), [FS-4EC7Z](4EC7Z-dungeon-encounters.md), [FS-JTNPR](JTNPR-shadow-shot.md), [FS-5FZ4J](5FZ4J-sealed-floors.md) (its brazier windows, R15) and [FS-JS7C8](JS7C8-class-run-attack-walk-pointer-facing.md); each carries `## Change: Exploration pace → FS-TAGWA` · Charter: item A of the old-school-crawl charter (2026-11-25; B, smaller rooms, and C, the dodge roll and economy, land after it) · Related ADRs: [ADR-0099](../adr/0099-movement-pace-is-one-scale-on-every-travel-speed-and-never-on-timings.md) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Pace scale"
+> Status: shipped · SPECIFICATION.md: none of its own: a change FS spanning several capabilities. It changes "Continuous-velocity movement" (`game-server/game-service/SPECIFICATION.md`, FS-none, its line kept as is) and the stated speeds of [FS-77AB6](77AB6-monsters-and-combat.md), [FS-B4SG9](B4SG9-ranged-monsters-and-the-bone-archer.md), [FS-C8VM7](C8VM7-tiered-enemy-roster-and-floor-pools.md), [FS-4EC7Z](4EC7Z-dungeon-encounters.md), [FS-JTNPR](JTNPR-shadow-shot.md), [FS-5FZ4J](5FZ4J-sealed-floors.md) (its brazier windows, R15) and [FS-JS7C8](JS7C8-class-run-attack-walk-pointer-facing.md); each carries `## Change: Exploration pace → FS-TAGWA` · Charter: item A of the old-school-crawl charter (2026-11-25; B, smaller rooms, and C, the dodge roll and economy, land after it) · Related ADRs: [ADR-0099](../adr/0099-movement-pace-is-one-scale-on-every-travel-speed-and-never-on-timings.md) · Vocabulary: [`game-service/CONTEXT.md`](../../game-server/game-service/CONTEXT.md) "Pace scale"
 
 > Promoted `--from-thread` on 2026-11-25 from the scope-it notes. The owner approved the charter's
 > decisions P1–P5 as given; everything else the notes left open is marked **(charter default)** with
@@ -175,7 +175,7 @@ reach stay as they are.
 - Any wire field: the snapshot already carries every speed the client needs.
 
 ## Change: The owner's play-test tweak and the town bonus
-Status: work-order
+Status: shipped
 Date: 2026-11-25
 
 The owner played the build at 0.5: a touch too slow, and the town felt big. Two changes, both his.

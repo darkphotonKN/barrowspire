@@ -370,7 +370,7 @@ changes.
 
 ## Change: A cost never exceeds the class's base pool
 
-Status: work-order
+Status: shipped
 Date: 2026-11-25
 
 > Charter item C (E1–E3) of the 2026-11-25 dungeon-crawler pace charter, promoted `--from-thread`

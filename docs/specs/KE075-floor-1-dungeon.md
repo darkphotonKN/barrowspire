@@ -723,7 +723,7 @@ themselves (this FS only avoids adding to them).
 ## Change: Sealed floors → FS-5FZ4J
 
 ## Change: Room variety
-Status: work-order
+Status: shipped
 Date: 2026-11-25
 
 > Anchored here: this FS owns the dungeon generator (§A), the floor build (§B) and the floor's

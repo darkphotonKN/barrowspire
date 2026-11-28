@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -36,6 +37,9 @@ func InitDB() *sqlx.DB {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(5 * time.Minute)
+
+	// pool stats on /metrics as go_sql_*{db_name}; the pool settings above are unchanged
+	commontelemetry.RegisterDBStats(db.DB, os.Getenv("DB_NAME"))
 
 	runMigrations(db.DB, os.Getenv("DB_NAME"))
 

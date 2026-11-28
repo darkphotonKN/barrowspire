@@ -10,6 +10,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/constants"
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/member"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -48,6 +49,9 @@ func InitDB() *sqlx.DB {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(5 * time.Minute)
+
+	// pool stats on /metrics as go_sql_*{db_name}; the pool settings above are unchanged
+	commontelemetry.RegisterDBStats(db.DB, os.Getenv("DB_NAME"))
 
 	slog.Info("Connected to the database successfully")
 

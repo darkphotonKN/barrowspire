@@ -1,0 +1,161 @@
+# postgres_exporter for the Cloud SQL instance (10.6.0.3), scraped by the
+# kube-prometheus-stack Prometheus through the ServiceMonitor below.
+#
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts && helm repo update
+#   helm upgrade --install postgres-exporter prometheus-community/prometheus-postgres-exporter --version 8.2.5 \
+#     --kube-context gke_barrowspire-512613_asia-east1_barrowspire-dev \
+#     -n monitoring -f deploy/observability/postgres-exporter.values.yaml
+#
+# The release name is the one already installed, so this upgrades it in place
+# instead of adding a second exporter.
+#
+# Credentials are never in this file. The Secret postgres-exporter-config holds
+# two keys, both for the read-only role metrics_exporter (pg_monitor):
+#   password               the role's password
+#   postgres_exporter.yml  the auth module every /probe uses (see below)
+#
+# Every scrape goes through /probe, one target per database:
+#   - "cluster" probes the postgres database for the instance-wide views
+#     (pg_stat_activity, pg_locks, pg_stat_database, settings, the custom queries).
+#   - one target per service database for pg_stat_user_tables and
+#     pg_statio_user_tables, which only show the database you are connected to.
+#     Everything else those probes return is cluster-wide, a duplicate of the
+#     cluster target, so their metricRelabelings keep only the per-table series.
+#
+# Connections: a probe opens 2 (the collector and the legacy query runner,
+# which runs the custom queries) and closes both when the scrape ends. Nothing
+# is held between scrapes: /metrics, the only path that keeps a connection
+# open, is no longer scraped. The role's CONNECTION LIMIT 4 caps the exporter
+# at 2 overlapping probes; a third fails that scrape (pg_up absent, target down)
+# rather than taking a connection from a service.
+#
+# Custom queries use --extend.query-path, DEPRECATED upstream but still in
+# v0.20.1. They live in the ConfigMap postgres-exporter-queries (extraManifests).
+
+config:
+  datasource:
+    host: 10.6.0.3
+    port: "5432"
+    database: postgres
+    user: metrics_exporter
+    passwordSecret:
+      name: postgres-exporter-config
+      key: password
+    sslmode: disable
+  # mounted at /etc/postgres_exporter.yml, the auth module for /probe
+  existingSecret:
+    enabled: true
+    name: postgres-exporter-config
+  extraArgs:
+    - --extend.query-path=/etc/postgres-exporter/queries.yaml
+
+extraVolumes:
+  - name: queries
+    configMap:
+      name: postgres-exporter-queries
+extraVolumeMounts:
+  - name: queries
+    mountPath: /etc/postgres-exporter
+    readOnly: true
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { memory: 128Mi }
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  timeout: 10s
+  multipleTarget:
+    enabled: true
+    sharedAuthModule:
+      enabled: true
+      name: monitor
+    targets:
+      - { name: cluster, endpoint: 10.6.0.3, databaseName: postgres }
+      - name: auth
+        endpoint: 10.6.0.3
+        databaseName: barrowspire_auth_service_db
+        metricRelabelings: &perTable
+          - action: keep
+            sourceLabels: [__name__]
+            regex: pg_stat_user_tables_.+|pg_statio_user_tables_.+|pg_up
+      - { name: character, endpoint: 10.6.0.3, databaseName: barrowspire_character_service_db, metricRelabelings: *perTable }
+      - { name: game, endpoint: 10.6.0.3, databaseName: barrowspire_game_service_db, metricRelabelings: *perTable }
+      - { name: items, endpoint: 10.6.0.3, databaseName: barrowspire_items_service_db, metricRelabelings: *perTable }
+      - { name: ledger, endpoint: 10.6.0.3, databaseName: barrowspire_ledger_service_db, metricRelabelings: *perTable }
+      - { name: marketplace, endpoint: 10.6.0.3, databaseName: barrowspire_marketplace_service_db, metricRelabelings: *perTable }
+      - { name: notification, endpoint: 10.6.0.3, databaseName: barrowspire_notification_service_db, metricRelabelings: *perTable }
+      - { name: payment, endpoint: 10.6.0.3, databaseName: barrowspire_payment_service_db, metricRelabelings: *perTable }
+      - { name: stats, endpoint: 10.6.0.3, databaseName: barrowspire_stats_service_db, metricRelabelings: *perTable }
+      - { name: wallet, endpoint: 10.6.0.3, databaseName: barrowspire_wallet_service_db, metricRelabelings: *perTable }
+
+extraManifests:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: postgres-exporter-queries
+      namespace: monitoring
+    data:
+      queries.yaml: |
+        # Instance-wide views, so one connection to any database sees every
+        # database's rows. Metric name: <top-level key>_<column>.
+
+        # pg_stat_database session counters (PostgreSQL 14+). total is every
+        # session ever opened, so its rate is connections opened per second:
+        # the churn signal.
+        pg_sessions:
+          query: |
+            SELECT datname,
+                   sessions AS total,
+                   sessions_abandoned AS abandoned,
+                   sessions_fatal AS fatal,
+                   sessions_killed AS killed,
+                   session_time / 1000 AS session_time_seconds,
+                   idle_in_transaction_time / 1000 AS idle_in_transaction_time_seconds
+            FROM pg_stat_database
+            WHERE datname IS NOT NULL
+          metrics:
+            - datname: { usage: LABEL, description: "Database name" }
+            - total: { usage: COUNTER, description: "Sessions opened" }
+            - abandoned: { usage: COUNTER, description: "Sessions ended because the client went away" }
+            - fatal: { usage: COUNTER, description: "Sessions ended by a fatal error" }
+            - killed: { usage: COUNTER, description: "Sessions ended by an operator" }
+            - session_time_seconds: { usage: COUNTER, description: "Time spent in sessions" }
+            - idle_in_transaction_time_seconds: { usage: COUNTER, description: "Time spent idle in a transaction" }
+
+        # Backends waiting on a lock right now, and the longest such wait.
+        # Joined through pg_stat_activity, not pg_locks.database, because row
+        # lock waits (locktype transactionid) carry no database.
+        pg_lock_waits:
+          query: |
+            SELECT d.datname,
+                   count(l.pid)::float8 AS waiting,
+                   COALESCE(max(EXTRACT(EPOCH FROM now() - l.waitstart)), 0)::float8 AS max_wait_seconds
+            FROM pg_database d
+            LEFT JOIN pg_stat_activity a ON a.datid = d.oid
+            LEFT JOIN pg_locks l ON l.pid = a.pid AND NOT l.granted
+            WHERE d.datallowconn AND NOT d.datistemplate
+            GROUP BY d.datname
+          metrics:
+            - datname: { usage: LABEL, description: "Database name" }
+            - waiting: { usage: GAUGE, description: "Backends waiting on a lock" }
+            - max_wait_seconds: { usage: GAUGE, description: "Longest current lock wait" }
+
+        # The oldest open transaction per database: how long ago it began, and
+        # how many transaction ids its snapshot holds back (what stops vacuum
+        # from removing dead tuples). The exporter's own backend is excluded.
+        pg_oldest_xact:
+          query: |
+            SELECT d.datname,
+                   COALESCE(max(EXTRACT(EPOCH FROM now() - a.xact_start)), 0)::float8 AS age_seconds,
+                   COALESCE(max(age(a.backend_xmin)), 0)::float8 AS xmin_age_xids
+            FROM pg_database d
+            LEFT JOIN pg_stat_activity a
+              ON a.datid = d.oid AND a.xact_start IS NOT NULL AND a.pid <> pg_backend_pid()
+            WHERE d.datallowconn AND NOT d.datistemplate
+            GROUP BY d.datname
+          metrics:
+            - datname: { usage: LABEL, description: "Database name" }
+            - age_seconds: { usage: GAUGE, description: "Age of the oldest open transaction" }
+            - xmin_age_xids: { usage: GAUGE, description: "Transaction ids held back by the oldest snapshot" }

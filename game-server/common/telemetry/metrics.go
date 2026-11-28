@@ -3,10 +3,29 @@ package telemetry
 import (
 	"log/slog"
 	"net/http"
+	"regexp"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// The default registry ships a Go collector registered in client_golang's own
+// init. It is swapped here for one that also exports the scheduler latency
+// histogram (go_sched_latencies_seconds): how long runnable goroutines waited
+// for a thread. WithGoCollectorRuntimeMetrics appends to the default rules, so
+// every go_* series the default collector exports is still there.
+//
+// init, not a call in ServeMetrics, because items and stats serve the default
+// registry through promhttp.Handler() and never call ServeMetrics.
+func init() {
+	prometheus.Unregister(collectors.NewGoCollector())
+	prometheus.MustRegister(collectors.NewGoCollector(
+		collectors.WithGoCollectorRuntimeMetrics(collectors.GoRuntimeMetricsRule{
+			Matcher: regexp.MustCompile(`^/sched/latencies:seconds$`),
+		}),
+	))
+}
 
 // LatencyBuckets are the request-latency histogram bounds every service shares,
 // gRPC and HTTP alike, so one service's p99 reads against another's. The
